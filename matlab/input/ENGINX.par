@@ -1,0 +1,26 @@
+# SOURCE
+pulse_width 88.4  # pulse width [us]
+pulse_shape 1 # pulse shape factor (set 1 for gaussian)
+src_dist 49730 # distance [mm] from the sample
+# NEUTRON GUIDE
+# included only if s0_on=0 (divergence slit is not used)
+gd_width 25    # width [mm]
+gd_dist 1500    # distance [mm] of the guide exit from the sample
+gd_m 3          # coating m-value
+# DIVERGENCE SLIT
+s0_width 14    # width [mm]
+s0_dist 4000   # distance [mm] from the sample
+s0_on 1        # = 1 to include this slit instead of the neutron guide
+# PRIMARY SLIT
+s1_width 2    # width [mm]
+s1_dist 60     # distance [mm] from the sample
+# RADIAL COLLIMATOR or SECONDARY SLIT
+s2_width 2   # gauge width [mm]
+s2_dist 0     # set to zero for a radial collimator
+# DETECTOR
+d_binwidth 3     # resolution fwhm [mm]
+d_binshape 1 # bin shape factor (set 1 for uniform)
+d_dist 1530      # distance from the sample [mm]
+d_angle_min 75  # minimum angle (integration range)
+d_angle_max 105 # maximum angle (integration range)
+d_resol 1        # time resolution [us]

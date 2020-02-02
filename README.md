@@ -51,7 +51,11 @@ available also as Jupyter notebook  files, *.ipynb (see http://jupyter.org)
 `Fe_mu.dat`: Total removal cross-section table for alpha-Fe
 `./input/*.dat`: example input data (synthetic data simulated by SIMRES)
 
+### Matlab tools:
+`./matlab` contains older matlab scripts implementing the analytical method for calculation of pseudo-strains based on instrument setup and difraction geometry parameters. It employs the matrix description of neutron transport through the instrument and derives analytical formulas for the pseudo strain in Guassian approximation. See https://doi.org/10.1107/S0021889813008194 for more details. 
+
 ### Other:
+
 `fit_centre.py`:	example script for fitting of sample centre from two perpendicular intensity scans.  
 `eps2sig.py`: script for conversion of strain distributions to stresses  
 `./input/strain_table.dat`:   strain and intensity distribution table used to simulate synthetic data in SIMRES
