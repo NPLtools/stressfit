@@ -7,7 +7,7 @@ Created on Tue Aug 15 13:44:06 2017
 """
 import numpy as np
 from numpy.linalg import norm
-import shapes.tracing as tr
+from . import tracing as tr
 # from numpy.linalg import norm
 
 

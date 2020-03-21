@@ -16,8 +16,8 @@ import datetime
 #import scipy.integrate as integrate
 from abc import ABC, abstractmethod
 # imports from stressfit
-import sample as sam
-import graphs as gr
+import stressfit.sample as sam
+import stressfit.graphs as gr
 
 _chi2 = np.inf
 _reg = np.inf

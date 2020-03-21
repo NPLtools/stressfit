@@ -35,27 +35,27 @@ For access to the latest source code, contact the author.
 
 ### Execution scripts:
 
-`stressfit-template.py`:	A commented template  
+`templates/stressfit-template.py`:	A commented template  
 available also as Jupyter notebook  files, *.ipynb (see http://jupyter.org)  
 
-### Libraries:
-
+### Module files:
+The STRESSFIT package files are in the subdidirectory `stressfit`: 
 `sample.py`: handling of sample properties and MC convolution  
 `mccfit.py`: classes and functions for data fitting using MC convolution  
 `graphs.py`: some plot functions and definitions  
-`./shapes/*.py`: classes with sample shape definitions and methods  
+`shapes/*.py`: classes with sample shape definitions and methods  
 
 ### Example data:
-`./input/events_B_1mm.dat`: sampling events for BEER@ESS, Fe(211), gauge volume ~ 1x1x3 mm  
-`./input/events_S_1mm.dat`: sampling events for STRESS-SPEC, Fe(211), gauge volume  ~ 1x1x3 mm, lambda=1.68 A  
-`Fe_mu.dat`: Total removal cross-section table for alpha-Fe
-`./input/*.dat`: example input data (synthetic data simulated by SIMRES)
+`input/events_B_1mm.dat`: sampling events for BEER@ESS, Fe(211), gauge volume ~ 1x1x3 mm  
+`input/events_S_1mm.dat`: sampling events for STRESS-SPEC, Fe(211), gauge volume  ~ 1x1x3 mm, lambda=1.68 A  
+`tables/Fe_mu.dat`: Total removal cross-section table for alpha-Fe
+`input/*.dat`: example input data (synthetic data simulated by SIMRES)
 
 ### Matlab tools:
-`./matlab` contains older matlab scripts implementing the analytical method for calculation of pseudo-strains based on instrument setup and difraction geometry parameters. It employs the matrix description of neutron transport through the instrument and derives analytical formulas for the pseudo strain in Guassian approximation. See https://doi.org/10.1107/S0021889813008194 for more details. 
+the `matlab` folder contains older matlab scripts implementing the analytical method for calculation of pseudo-strains based on instrument setup and difraction geometry parameters. It employs the matrix description of neutron transport through the instrument and derives analytical formulas for the pseudo strain in Guassian approximation. See https://doi.org/10.1107/S0021889813008194 for more details. 
 
 ### Other:
 
-`fit_centre.py`:	example script for fitting of sample centre from two perpendicular intensity scans.  
-`eps2sig.py`: script for conversion of strain distributions to stresses  
-`./input/strain_table.dat`:   strain and intensity distribution table used to simulate synthetic data in SIMRES
+`tools/fit_centre.py`:	example script for fitting of sample centre from two perpendicular intensity scans.  
+`tools/eps2sig.py`: script for conversion of strain distributions to stresses  
+`input/strain_table.dat`:   strain and intensity distribution table used to simulate synthetic data in SIMRES

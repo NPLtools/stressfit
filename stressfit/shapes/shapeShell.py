@@ -5,10 +5,11 @@ Created on Tue Aug 15 13:44:06 2017
 
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
-from shapes import ShapeAbstract
+
 import numpy as np
 from numpy.linalg import norm
-import shapes.tracing as tr
+from . import tracing as tr
+from .shapeAbstract import ShapeAbstract
 
 
 class ShapeShell(ShapeAbstract):

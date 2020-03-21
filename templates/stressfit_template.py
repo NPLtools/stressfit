@@ -4,10 +4,10 @@
 # In[ ]:
 
 import numpy as np
-import shapes as S
-import sample as sam
-import graphs as gr
-import mccfit as mc
+import stressfit.shapes as S
+import stressfit.sample as sam
+import stressfit.graphs as gr
+import stressfit.mccfit as mc
 from IPython.display import HTML
 deg = np.pi/180.
 HTML('''<script>
@@ -25,25 +25,12 @@ $( document ).ready(code_toggle);
 <b>To hide/show the code blocks, click <a href="javascript:code_toggle()">here</a>.</b>''')
 
 
-# ## Jupyter viewer
-# Examples with output of the STRESSFIT scripts are available via Jupyter viewer server:
-# <p>
-# <a href='http://nbviewer.jupyter.org/url/neutron.ujf.cas.cz/restrax/download/stressfit/stressfit_example1.ipynb'>STRESSFIT</a>: Example session with data fitting (this script).
-# </p>
-# <p>
-# For more information, see: <br/>
-# <a href='http://neutron.ujf.cas.cz/restrax/download/stressfit/saroun_MECASENS_2017.pdf'>MECASENS 2017 poster</a><br/>
-# <a href='http://neutron.ujf.cas.cz/restrax/download/stressfit/ECRS2018_stressfit.pdf'>ECRS10, 2018, slides</a><br/>
-# <a href='http://neutron.ujf.cas.cz/restrax/download/stressfit/saroun_ECNS2019_poster.pdf'>ECNS 2019, poster</a> <br/>
-# </p>
-# <p>
-# For access to the complete python code, contact the author.
-# </p>
-
 # # STRESSFIT
 # <p>
 # <i>Written by:</i> Jan Saroun, Nuclear Physics Institute CAS, Rez, saroun@ujf.cas.cz<br/>
-# <i>Date:</i> 22/05/2018
+# <i>Date:</i> 22/05/2018<br/>
+# <i>Version:</i> 0.9.2<br/>
+# <i>Source:</i> https://github.com/NPLtools/stressfit
 # </p>
 # <p>
 # This script permits to treat pseudo strains in neutron residual strain measurements. Pseudo strains due to partial immersion of sampling volume in the sample, steep intrinsic strain gradients and heterogeneous distribution of scattering probability can be treated. The script employs Monte Carlo convolution method, which uses sampling points produced by Monte Carlo ray-tracing simulation of the diffractometer to model smearing of intrinsic sample properties by instrumental response. Each point has all available information about a scattering event: position, initial and final neutron wave vector, probability and dhkl value associated with this sampling point. Such a sampling distribution can be simulated rather quickly for any instrument setup, for example by the ray-tracing program SIMRES (http://neutron.ujf.cas.cz/restrax). The sampling distribution is then reused to cary out the convolution with any sample shape, position, orientation and strain distribution. This decoupling of MC ray-tracing simulation from the convolution procedure permits to write a code which is rather fast (typically about 1s per one scan at 1 CPU). It is therefore possible to use the MC integration as a part of cost function for least squares fitting.
@@ -65,9 +52,7 @@ $( document ).ready(code_toggle);
 # <a href='http://neutron.ujf.cas.cz/restrax/download/stressfit/ECRS2018_stressfit.pdf'>ECRS10, 2018, slides</a><br/>
 # <a href='http://neutron.ujf.cas.cz/restrax/download/stressfit/saroun_ECNS2019_poster.pdf'>ECNS 2019, poster</a> <br/>
 # </p>
-# <p>
-# For access to the complete python code, contact the author.
-# </p>
+# 
 
 # In[ ]:
 
@@ -140,7 +125,7 @@ sam.shape = shape
 
 # Define beam attenuation coefficient. Uncomment one of the two options: 
 # Option 1: Set attenuation as a table (wavelength, mu), [1/cm]. The file must be in the input directory.
-exttab = np.loadtxt('Fe_mu.dat')
+exttab = np.loadtxt('tables/Fe_mu.dat')
 sam.setExtinction(table=exttab)  # lookup table
 
 # Option 2: Set attenuation as a single coefficient [1/cm]:
