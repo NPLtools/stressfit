@@ -1,7 +1,6 @@
 # STRESSFIT - fitting of residual stress distributions
-Written by: Jan Saroun, Nuclear Physics Institute CAS, Rez, saroun@ujf.cas.cz  
-Date: 11/09/2017  
-Last update: 23/2/2019
+*Written by*: Jan Saroun, Nuclear Physics Institute CAS, Rez, saroun@ujf.cas.cz  
+*Repository*: https://github.com/NPLtools/stressfit
 
 -------------------
 
@@ -15,7 +14,7 @@ Currently, STRESSFIT enables to model pseudo strains for several basic sample sh
 
 ## Documentation
 
-The package contains *Jupyter notebook files* whith comments that guide user through the fitting process. An examples with output of STRESSFIT is also available via Jupyter viewer server:
+The package contains *Jupyter notebook files* with comments that guide user through the fitting process. An example with output of STRESSFIT is also available via Jupyter viewer server:
 <p>
 <a href='http://nbviewer.jupyter.org/url/neutron.ujf.cas.cz/restrax/download/stressfit/stressfit_example1.ipynb'>
 Example 1</a>: ECNS2019, Fitting of strain gradient under the inner surface of a tube, test on synthetic data for STRESS-SPEC.
@@ -39,7 +38,7 @@ For access to the latest source code, contact the author.
 available also as Jupyter notebook  files, *.ipynb (see http://jupyter.org)  
 
 ### Module files:
-The STRESSFIT package files are in the subdidirectory `stressfit`: 
+The STRESSFIT package files are in the subdirectory `stressfit`: 
 `sample.py`: handling of sample properties and MC convolution  
 `mccfit.py`: classes and functions for data fitting using MC convolution  
 `graphs.py`: some plot functions and definitions  
@@ -52,7 +51,7 @@ The STRESSFIT package files are in the subdidirectory `stressfit`:
 `input/*.dat`: example input data (synthetic data simulated by SIMRES)
 
 ### Matlab tools:
-the `matlab` folder contains older matlab scripts implementing the analytical method for calculation of pseudo-strains based on instrument setup and difraction geometry parameters. It employs the matrix description of neutron transport through the instrument and derives analytical formulas for the pseudo strain in Guassian approximation. See https://doi.org/10.1107/S0021889813008194 for more details. 
+the `matlab` folder contains older matlab scripts implementing the analytical method for calculation of pseudo-strains based on instrument setup and diffraction geometry parameters. It employs the matrix description of neutron transport through the instrument and derives analytical formulas for the pseudo strain in Gaussian approximation. See https://doi.org/10.1107/S0021889813008194 for more details. 
 
 ### Other:
 
