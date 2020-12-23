@@ -3,11 +3,17 @@ https://github.com/NPLtools/stressfit
 --------------------------
 
 ========================
+release 1.0.0, 23/12/2020
+========================
+Release based on version 0.9.2
+- added absorption files for more relements
+
+========================
 version 0.9.2, 20/3/2020
 ========================
 - structure changed to isolate Python moudule files from user data
 - *.py modules moved to ./stressfit
-- standard import clause: import stressfi.modulename 
+- standard import clause: import stressfit.modulename 
 - updated example and template files to comply with the new structure
 - template files moved to ./templates
 - tabled data stored in ./tables
