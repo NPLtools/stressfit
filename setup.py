@@ -6,9 +6,9 @@ Created on Fri Jul  3 11:23:11 2020
 
 from setuptools import setup, find_packages
 
-stressfit_data = ['tables/*']
+stressfit_data = ['tables/*', 'examples/*']
 
-other_data = ['stressfit_example1.*', 
+other_data = ['stressfit_example1.py', 
                 'LICENSE', 
                 'README.md', 
                 'CHANGELOG']
@@ -36,5 +36,5 @@ setup(
     install_requires=['numpy', 'matplotlib'],
     packages=find_packages(),
     package_data={'stressfit': stressfit_data}, 
-   # data_files=[('data',package_data)]
+    data_files=[('.',other_data)]
 )
