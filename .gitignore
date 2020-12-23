@@ -5,3 +5,5 @@ output/*
 */output/*
 .spyproject
 tmp*
+*.egg-info/
+dist
