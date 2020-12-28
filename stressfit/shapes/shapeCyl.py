@@ -13,6 +13,10 @@ from .shapeAbstract import ShapeAbstract
 
 
 class ShapeCyl(ShapeAbstract):
+    """
+    Shape definition for a cylinder (y-axis vertical).
+    """
+    
     shape_type = 'cylinder'
 
     def __init__(self, radius, height):
