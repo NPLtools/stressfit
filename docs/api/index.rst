@@ -14,6 +14,7 @@ Modules
    :maxdepth: 1
    
    matrix_api.rst
+   matrix_components_api.rst
    shapes_api.rst
 
 

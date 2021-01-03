@@ -10,6 +10,7 @@ Created on Sat Dec  1 21:59:30 2018
 """
 
 import numpy as np
+import stressfit
 from .mxtof import MXmodel_tof as MX
 from .scans import PSModel
 from .components import Sample, Slit, Guide, Pulse, TofDetector
@@ -80,6 +81,7 @@ class INSTR():
         
         Parameters:
         -----------
+        
         sample: hash map
             Sample parameters in a hash map, containing at least:
             
@@ -176,6 +178,7 @@ class INSTR():
         # parameters:  distance [mm], wavelength [A], width[mm]
         sr.append(Slit(-par['s1_dist'],par['s1_width']))
 
+        # SAMPLE
         # parameters: dhkl [A], surface angle [rad], thickness [mm]
         sr.append(Sample(self.dhkl, self.thickness))
         self.i_sam = len(sr)-1 

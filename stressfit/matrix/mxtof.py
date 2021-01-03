@@ -80,6 +80,7 @@ def getDetBinsCyl(radius=2000.0, angle=[90.0], phi=None):
     list
         A list of bin data as [alpha, dL], where alpha [rad] is the take-off angle 
         and L is the distance difference with respect to the detector centre [mm]. 
+    
     """
     bins = []
     if (phi is None):
@@ -114,15 +115,15 @@ def getDetBinsFlat(distance=2000.0, angle=90, bx=[0.0], by=None):
     bx: list of float
         bins horizontal positions relative to the centre [mm] 
     by: list of float (optional)
-        bin horizontal positions relative to the centre [mm] 
-        
-        
+        bins vertical positions relative to the centre [mm] 
+               
     Returns
     -------
     list
     
         A list of bin data as [alpha, dL], where alpha [rad] is the take-off angle 
         and L is the distance difference with respect to the detector centre [mm].
+    
     """
     a0 = angle*deg
     bins = []

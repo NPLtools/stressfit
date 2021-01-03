@@ -1,23 +1,27 @@
 # -*- coding: utf-8 -*-
+# Created on Sun Dec  2 00:01:54 2018
+# @author: Jan Saroun, saroun@ujf.cas.cz
 """
 Classes describing instrument components in matrix representation.
 
-Created on Sun Dec  2 00:01:54 2018
-@author: Jan Saroun, saroun@ujf.cas.cz
 """
 
 import numpy as np
-from math import cos, sin, sqrt, log, tan
+import math
 
-g_uni=sqrt(1/6)
+#TODO: export all constants to a shared module stressfit.const
+
+#TODO: upgrade to allow for 2D detector bin arrays
+
+g_uni = math.sqrt(1/6)
 # circular distribution                 
-g_circ=sqrt(1/8)
+g_circ = math.sqrt(1/8)
 # triangular distribution
-g_tri=sqrt(1/3)
+g_tri = math.sqrt(1/3)
 # gaussian distribution
-g_norm=1/sqrt(4*log(2))
+g_norm = 1/math.sqrt(4*math.log(2))
 # exponential distribution
-g_exp=sqrt(2)
+g_exp = math.sqrt(2)
 # degree
 deg = np.pi/180
 # h/m [Ang*m/ms]
@@ -25,8 +29,9 @@ hovm = 3.95603402
 GammaNi = 1.731e-3
 
 
-
 def matrix2str(M):
+    """Convert numpy matrix to a string, columne separated by ``|``."""
+    
     sh = M.shape
     s = "\n"
     if (len(sh)>1):
@@ -39,12 +44,15 @@ def matrix2str(M):
             s += fmt.format(M[i])
     return s
 
+
 def prnMat(M, id=""):
     s = matrix2str(M)
     print("\ndump {}:".format(id)+s)
+
     
 def sign(x):
-    # redefine numpy.sign so that sign(0)=1, not 0
+    """ Redefine numpy.sign so that sign(0)=1, not 0. """
+    
     if (x<0):
         return -1
     else:
@@ -52,11 +60,11 @@ def sign(x):
 
 
 def CT(L, v ):
-    """Ray propagation matrix, free flight between two parallel planes
+    """Create ray propagation matrix, free flight between two parallel planes
     normal to z-axis. The array elements are ordered as 
     [x, alpha, d_lambda/lambda, time]
     
-    Arguments
+    Parameters
     ----------
     
     L: float
@@ -69,6 +77,7 @@ def CT(L, v ):
     CT: array(4,4)
         The propagation matrix.     
     """
+    
     C = [
             [1, L, 0, 0],
             [0, 1, 0, 0 ],
@@ -77,10 +86,14 @@ def CT(L, v ):
         ]        
     return np.array(C)
 
+
 def CU(L, alpha, v ):
     """Ray propagation matrix from the sample up-stream.
     
-    Arguments
+    Rows correspond to [x, alpha, d_lambda/lambda, time]
+    Columns correspond to [x, z, alpha, d_lambda/lambda, time]
+    
+    Parameters
     ----------
     
     L: float
@@ -98,8 +111,9 @@ def CU(L, alpha, v ):
         The propagation matrix.
     
     """
-    si = sin(alpha)
-    co = cos(alpha)
+    
+    si = math.sin(alpha)
+    co = math.cos(alpha)
     C = [
             [-si, co, -L, 0, 0],
             [0, 0, 1, 0, 0 ],
@@ -107,11 +121,15 @@ def CU(L, alpha, v ):
             [co/v, si/v, 0, L/v, 1]
         ]        
     return np.array(C)
-    
+ 
+   
 def CD(L, alpha, theta, v):
     """Ray propagation matrix from the sample down-stream.
     
-    Arguments
+    Rows correspond to [x, alpha, d_lambda/lambda, time]
+    Columns correspond to [x, z, alpha, d_lambda/lambda, time]
+    
+    Parameters
     ----------
     
     L: float
@@ -124,16 +142,18 @@ def CD(L, alpha, theta, v):
         Bragg angle [rad] 
     v: float
         neutron velocity
+        
     Returns
     --------
+    
     CD: array(4,5)
         The propagation matrix.     
     
     
     """ 
-    si = sin(alpha)
-    co = cos(alpha)
-    tt = tan(theta)
+    si = math.sin(alpha)
+    co = math.cos(alpha)
+    tt = math.tan(theta)
     C = [
             [si, co, L, 2*L*tt, 0],
             [0, 0, 1, 2*tt, 0 ],
@@ -143,102 +163,39 @@ def CD(L, alpha, theta, v):
     return np.array(C)
 
 
-class Comp():
-    """Matrix model of an abstract component, ToF version.
-    
-    Phase space variables are indexed in following order:
-    x, z, incident angle, d_lambda/lambda, time.
-    This component represents just a transparent plane. 
-    Actual components like slits or collimators should be derived from Comp.
-    
-    Arguments
-    ---------
-    distance: float
-        distance from the sample [mm]
-    
+class Sample():
     """
-      
-    def __init__(self, distance=0.0):
-        self.Cin = None
-        self.Cpre = None
-        self.L = distance 
-  
-    def initialize(self, C, v0): 
-        """Recalculates dependent data after change of instrument setting
-        (but not distances).
-        
-        Arguments
-        ---------
-            C: array
-                Transport matrix from the sample to the z=0 plane 
-                of the preceding component.
-            v0: float
-                Mean neutron velocity [mm/us].
-        """
-        self.Cpre = C
-        self.v0 = v0
-        self.Cin = self.getCin()
-        self.Cout = self.getCout()
-        self.T = np.zeros((5,5))
-        
-    def getCin(self):        
-        """Returns transport matrix from the sample to the z=0 plane of this component
-        at the input. 
-        """
-        if (self.Cpre is None):
-            C=CT(self.L, self.v0)
-        else:
-            C=CT(self.L, self.v0).dot(self.Cpre)
-        return C
-       
-    def getT(self):
-        """Transmission matrix"""
-        return self.T
-
-    def getCout(self):
-        """Returns transport matrix from the sample to the z=0 plane of this component
-        at the output. 
-        """
-        return self.Cin
-        
-    def display(self):
-        #print('\nComponent: {}\n'.format(self.id))
-        #print('Input matrix:\n')
-        #print(self.Cin)
-        #print('Output matrix:\n')
-        #print(self.getCout())
-        #print('Transmision matrix:\n')
-        #print(self.T)
-        prnMat(self.T, self.id+".T")
-        
-
-class Sample(Comp):
-    """Matrix model of the sample, ToF version.
+    Matrix model of the sample, ToF version.
     
     Phase space variables are indexed in following order:
     x, z, incident angle, d_lambda/lambda, time.
     This is the central component of the instrument, representing an ideal pane-parallel
-    polycrystalline sample. Instrument matrix is derived with respect ti its local
+    polycrystalline sample. Instrument matrix is derived with respect to its local
     coordinate system (z // depth). 
     
-    Arguments
-    ---------
+    Parameters
+    ----------
+        
     dhkl: float
         selected diffraction plane dhkl [AA]
-    thickness: float
-        sample thickness [mm]
+    
+    Note
+    ----
+    Always call ``initialize`` after construction, before using any property. 
     
     """
-    def __init__(self, dhkl=1.17, thickness=10):
-        self.dhkl = dhkl
-        self.thickness = thickness            
-        super().__init__(0.0)
+    
+    def __init__(self, dhkl=1.17):
+        self.dhkl = dhkl            
         self.id='Sample'
+        self.__isvalid = False 
         
     def initialize(self, omega, alpha, theta, v0):
-        """Recalculates dependent data after change of input parameters
-        Arguments
-        ---------
+        """Recalculate dependent data after change of input parameters.
+        
+        Parameters
+        ----------
+        
             omega: float
                 Surface angle [rad] reative to symmetric reflection position.
             alpha: float
@@ -248,46 +205,156 @@ class Sample(Comp):
             v0: float
                 Horizontal component of mean neutron velocity [m/ms]
         """
-        self.alpha1 = 0.5*alpha + omega
-        self.alpha2 = 0.5*alpha - omega
-        self.theta = theta
-        self.lam0 = 2*self.dhkl*sin(abs(theta))
-        self.v0 = v0
-        sin1 = sin(self.alpha1)
-        sin2 = sin(self.alpha2)
+        
+        alpha1 = 0.5*alpha + omega
+        alpha2 = 0.5*alpha - omega
+        sin1 = math.sin(alpha1)
+        sin2 = math.sin(alpha2)
         ag = 1/sin1+1/sin2
         cg = 0.5*(sign(sin2)/sin2 + sign(sin1)/sin1 - ag)
-        self.a = [ag, cg]           
-        super().initialize(None, v0)
-       
-    def getCin(self):     
-        """Returns transport matrix from the sample to the z=0 plane of this component
-        at the input. 
-        """
-        C = CU(0.0, self.alpha1, self.v0)
-        
-        return C
-        
-    def getCout(self):
-        """Returns transport matrix from the sample to the z=0 plane of this component
-        at the output. 
-        """
-        C = CD(0.0, self.alpha2, self.theta, self.v0)
-        return C
+        self.__a = [ag, cg]  
+        self.__Cin = CU(0.0, alpha1, v0)    
+        self.__Cout = CD(0.0, alpha2, theta, v0) 
+        # indicate that initialization has been called
+        self.__isvalid = True
 
+       
+    @property
+    def Cin(self):     
+        """Transport matrix from the sample to the z=0 plane of this component
+        at the input. 
+        """      
+        return self.__Cin 
+    
+    @property  
+    def Cout(self):
+        """Transport matrix from the sample to the z=0 plane of this 
+        component at the output. 
+        """
+        return self.__Cout 
+
+    @property  
+    def a(self):
+        """Coefficients [ag, cg] for calculation of beam attenuation. 
+        """
+        return self.__a 
+ 
+    @property  
+    def isvalid(self):
+        """True if dependences have been calculated (call initialize)."""
+        return self.__isvalid  
+
+
+class Comp():
+    """
+    Matrix model of an abstract component, ToF version.
+    
+    Phase space variables are indexed in following order:
+    x, z, incident angle, d_lambda/lambda, time.
+    This component represents just a transparent plane. 
+    Actual components like slits or collimators should be derived from Comp.
+    
+    Parameters
+    ----------
+    distance: float
+        distance from the sample [mm]
+    
+    Note
+    ----
+    Always call ``initialize`` after construction, before using any property. 
+    
+    """
+     
+    def __init__(self, distance=0.0):
+        self.__L = distance 
+        self.__isvalid = False
+        self.id = 'Comp'
+  
+    def initialize(self, C, v0): 
+        """
+        Recalculate dependent data after change of instrument setting
+        (but not distances).
+            
+        Parameters
+        ----------
+    
+            C: array
+                Transport matrix from the sample to the z=0 plane 
+                of the preceding component.
+            v0: float
+                Mean neutron velocity [mm/us].
+        
+        """  
+        
+        #self.__Cpre = C
+        self.__Cin = self.cal_Cin(C, v0)
+        self.__Cout = self.cal_Cout(C, v0)
+        # NOTE: T must be calculated after Cin, Cout !!
+        self.__T = self.cal_T()
+        self.__isvalid = True
+
+    def display(self):
+        """Print debug information."""        
+        prnMat(self.T, id=self.id+".T")        
+        
+    def cal_T(self):
+        """Calculate transmission matrix."""
+        return np.zeros((5,5))
+    
+    def cal_Cin(self, C, v0):
+        """Calculate input transport matrix."""
+        return CT(self.__L, v0).dot(C)
+        
+    def cal_Cout(self, C, v0):
+        """Calculate output transport matrix."""
+        return self.cal_Cin(C, v0)
+    
+    @property
+    def T(self):
+        """Transmission matrix."""      
+        return self.__T
+        
+    @property
+    def Cin(self):        
+        """Output transport matrix.
+        Transport from the sample to the z=0 plane of this component, entry.
+        
+        """       
+        return self.__Cin
+
+    @property    
+    def Cout(self):
+        """Input transport matrix.
+        Transport from the sample to the z=0 plane of this component, exit.
+        
+        """        
+        return self.__Cout
+
+    @property  
+    def isvalid(self):
+        """True if dependences have been calculated (call initialize)."""
+        return self.__isvalid
+        
 
 class Slit(Comp):
-    """Matrix model of a slit, ToF version. 
+    """
+    Matrix model of a slit, ToF version. 
     
-    Arguments
-    ---------
+    Parameters
+    ----------
+    
     distance: float
         distance from the sample to the slit [mm]. 
         Set a negative value if the component is from the sample up-stream.
     width: float
         slit width [mm]
     
-    """             
+    Note
+    ----
+    Always call ``initialize`` after construction, before using any property. 
+    
+    """
+    
     def __init__(self, distance=0, width=2.0):
         super().__init__(distance)
         if (distance == 0): 
@@ -295,27 +362,30 @@ class Slit(Comp):
         else:
             self.w = width*g_uni
         self.id = 'Slit'
-        
-    def getT(self):
+
+    def cal_T(self):
+        """Override Comp.cal_T for a Slit."""
         V = self.Cin[0,:]
-        self.TT = super().getT()
-        n = np.size(V)
+        n = np.size(V)    
         if (self.w > 0):
             TT = (self.w**-2)*np.kron(V,V).reshape(n,n)
-            self.T = self.T + TT
-        return self.T
+        else:
+            TT = super().cal_T()
+        return TT
 
 
 class Guide(Comp):
-    """Matrix model of a neutron guide, ToF version. 
-    Width represents the constraint o beam size at the guide exit,
+    """
+    Matrix model of a neutron guide, ToF version. 
+    Width represents the constraint on beam size at the guide exit,
     m-value defines the constraint on beam divergence, assuming uniform
     distribution with FWHM = 2*m*GammaNi*wavelength.
-    Set width = None to consider only the divergence constraint.
-    Set m = None to consider only the beam width constraint.
+    Set ``width = None`` to consider only the divergence constraint.
+    Set ``m = None`` to consider only the beam width constraint.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
+    
     distance: float
         Distance from the sample to the guide exit [mm]. 
         Set a negative value if the component is from the sample up-stream.
@@ -324,51 +394,40 @@ class Guide(Comp):
     m: float
         m-value of the coating
     
-    """        
+    """       
+    
     def __init__(self, distance=0, width=30, m=2):
         super().__init__(distance)
         self.w = width     # width [mm] 
-        self.m = m # m-value
+        self.m = m         # m-value
         self.id = 'Guide'      
 
     def initialize(self, C, v0): 
-        """Recalculates dependent data after change of instrument setting
-        (but not distances).
-        
-        Arguments
-        ---------
-            C: array
-                Transport matrix from the sample to the z=0 plane 
-                of the preceding component.
-            v0: float
-                Mean neutron velocity [mm/us].
-        """
+        """Override ``initialize`` for a Guide."""
         super().initialize(C,v0)
         self.lam0 = hovm/v0
         self.div = 2*self.m*GammaNi*self.lam0*g_uni
-        self.Cpre = C
-        self.v0 = v0
-        self.Cin = self.getCin()
-        self.Cout = self.getCout()
-        self.T = np.zeros((5,5))
         
-    def getT(self):
+    def cal_T(self):
+        """Override Comp.cal_T for a Guide."""
+        TT = super().cal_T()
         V = self.Cin[0,:]
-        self.T = super().getT()
         n = np.size(V)
         if (self.w):
-            self.T = self.T + ((self.w*g_uni)**-2)*np.kron(V,V).reshape(n,n)
+            TT = TT + ((self.w*g_uni)**-2)*np.kron(V,V).reshape(n,n)
         if (self.m):
             V = self.Cin[1,:]
-            self.T = self.T + (self.div**-2)*np.kron(V,V).reshape(n,n)
-        return self.T
+            TT = TT + (self.div**-2)*np.kron(V,V).reshape(n,n)
+        return TT
 
 
 class Pulse(Comp):
-    """Matrix model of a pulse source, ToF version.
+    """
+    Matrix model of a pulse source, ToF version.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
+    
     distance: float
         distance from the sample to the source [mm]. 
         Set a negative value if the component is from the sample up-stream.    
@@ -379,11 +438,12 @@ class Pulse(Comp):
         is the 2nd moment of the pulse distribution.
         If None, a Gaussian shape is assumed. For example:
         
-        Use shape=sqrt(2) if width = decay time of an exponential pulse.
+        Use ``shape=sqrt(2)`` if tau == decay time of an exponential pulse.
         
-        Use shape=1/sqrt(3) if width = FWHM of a triangular pulse.
+        Use ``shape=1/sqrt(3)`` if tau == FWHM of a triangular pulse.
     
-    """     
+    """
+     
     def __init__(self, distance=0, tau=None, shape=None):
         super().__init__(distance)
         if (tau is not None):
@@ -392,39 +452,49 @@ class Pulse(Comp):
             self.tau=tau*g_norm    # time width [us]
         self.id='Pulse'
    
-    def getT(self):
+    def cal_T(self):
+        """Override Comp.cal_T for a Pulse."""
+        TT = super.cal_T()
         V = self.Cin[3,:]
-        self.T = super().getT()
         n = np.size(V)
         if (self.tau > 0):
-            self.T = self.T + (self.tau**-2)*np.kron(V,V).reshape(n,n)
-        return self.T
+            TT = TT + (self.tau**-2)*np.kron(V,V).reshape(n,n)
+        return TT
+
 
 class TofDetector(Slit):
-    """Matrix model of a detector, ToF version. Defines spatial and time resolution.
-    amin, amax parameters define the detector unit angular range. This is used by MXmodel to 
-    average results over wavelengths corresponding to this range for given dhkl value.
+    """
+    Matrix model of a detector, ToF version. 
+    Defines spatial and time resolution.
+    The amin, amax parameters define the detector unit angular range. 
+    [amin, amax] is used by the matrix model to average results over 
+    wavelengths corresponding to this angular range for given dhkl value.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
+    
     distance: float
-        distance from the sample to the detector [mm].    
+        Distance from the sample to the detector [mm].    
     binwidth: float
-        bin width [mm]
+        Bin width [mm]
     binshape: float
-        Shape factor for the bin. Use g_norm if binwidth represents FWHM of a Gaussian resolution. 
-        Use g_uni for a uniform bin of this width. 
+        Shape factor for the bin. Use g_norm if binwidth represents FWHM of 
+        a Gaussian resolution. Use g_uni for a uniform bin of this width. 
     dtau: float
-        time resolution (Gaussian FWHM) [us]
+        Time resolution (Gaussian FWHM) [us]
     bins: list
-        A list of detector channels data. Use getDetBinsCyl or getDetBinsFlat to generate the list.
-    """                
-    def __init__(self, distance=0, binwidth=None, binshape=None, dtau=None, bins=None):
+        A list of detector channels data. Use getDetBinsCyl 
+        or getDetBinsFlat to generate the list.
+    
+    """  
+              
+    def __init__(self, distance=0, binwidth=None, binshape=None, dtau=None, 
+                 bins=None):
         super().__init__(distance, binwidth*binshape/g_uni)
         # detector channels
         if (not isinstance(bins, list) or len(bins)<1):
             raise Exception("TofDetector requires that 'bins' is a non-empty list.")
-        self.dist = self.L
+        self.dist = self.__L
         # time resolution (gaussian fwhm)
         self.dtau=dtau*g_norm
         self.id='TofDetector'
