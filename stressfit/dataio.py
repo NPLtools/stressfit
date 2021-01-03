@@ -3,6 +3,7 @@
 # @author: User
 """
 Input/output methods for data used by StressFit.
+
 - Based on the `pathlib` package.
 - Implements a simple Table class for 2D data arrays with headers and comments.
 - Handles default repository paths
@@ -11,19 +12,19 @@ Input/output methods for data used by StressFit.
 """
 import numpy as np
 import datetime
-from pathlib import Path
+from pathlib import Path as _Path
 
 
 def get_resource_path(name):
     """
     Return absolute resource path for given resource folder.
+    
     Allowed names are:
         - `data` for test input data 
         - `tables` for tabeled data supplied with the package
         - `instruments` for instrument configurations provided by the package
     """
-    
-    p = Path(__file__)
+    p = _Path(__file__)
     return p.parent.joinpath('resources',name)
 
 
@@ -32,12 +33,13 @@ def get_resource_path(name):
 __inpath = get_resource_path('data')
 __tables = get_resource_path('tables')
 __instruments = get_resource_path('instruments')
-__outpath = Path().cwd()
+__outpath = _Path().cwd()
 
 
 def set_path(inpath=None, tables=None, instruments=None, outpath=None):
     """
-    Set paths for data input and outpout folders. 
+    Set paths for data input and outpout folders.
+    
     By default, the input paths are the package resource directories, 
     the output path is the current directory. 
     Paths with `None` value remain unchanged.
@@ -45,25 +47,24 @@ def set_path(inpath=None, tables=None, instruments=None, outpath=None):
     Parameters
     ----------
     inpath: str
-        Input / experimental data.
+        Input of strain and intensity data.
     tables: str
         Other auxilliary input such as lookup tables or material data.
     instruments: str
-        Instrument configuration files
+        Instrument configuration files.
     outpath: str
-        Output folder
+        Output folder.
     
-    """    
-    
+    """
     global __inpath, __tables, __instruments, __outpath
     if (inpath):
-        __inpath = Path(inpath)
+        __inpath = _Path(inpath)
     if (tables):
-        __tables = Path(tables)
+        __tables = _Path(tables)
     if (instruments):
-        __instruments = Path(instruments)
+        __instruments = _Path(instruments)
     if (outpath):
-        __outpath = Path(outpath)
+        __outpath = _Path(outpath)
         
 
 ### Classes
@@ -149,33 +150,29 @@ class Table():
 ### Path names handling
 
 def derive_filename(file, ext='', sfx=''):
-    """Derive file name by changing extension and/or adding a suffix. 
+    """
+    Derive file name by changing extension and/or adding a suffix.
     
     - If `ext` is non-empty, remove any existing file extension and add
     the new one.   
     - If `sfx` is non-empty, add the give suffix to before the extension.
     
-    Example
+    Examples
     --------
-    
     ``derive_filename('/my/long/path/file.txt', ext='dat', sfx='old')``
     
     returns '/my/long/path/file_old.dat' 
        
     Parameters
     ----------
-    
      file: str
          Original file name (may be a full path)
      ext: str
          Extension to be added.
      sfx: str
          A suffix to be added at the end of filename (before extension).
-         
-    
     """
-    
-    f = Path(file)
+    f = _Path(file)
     e = f.suffix
     path = f.parent
     base = f.stem       
@@ -193,13 +190,14 @@ def derive_filename(file, ext='', sfx=''):
 
 
 def get_input_file(fname, kind='input'):
-    """ Convert fname to full path name. 
+    """
+    Convert fname to full path name.
+    
     If path is not included, prepend the default input path (see set_path).
     Otherwise only convert the file name to a Path object.
     
     Parameters
     ----------
-    
     fname: str
         File name (base or full path).
     kind: str
@@ -209,15 +207,12 @@ def get_input_file(fname, kind='input'):
             - `instrument` for a file with isntrument parameters
             - any other: current directory.
     
-    
     Returns
     -------
-    
     Path
         Full path specification as a pathlib.Path object.
     """
-    
-    f = Path(fname)
+    f = _Path(fname)
     if not f.is_absolute():
         if (kind == 'input'):
             p = __inpath
@@ -232,10 +227,12 @@ def get_input_file(fname, kind='input'):
 
 
 def get_output_file(fname):
-    """ Convert fname to full path name.
+    """
+    Convert fname to full path name.
+    
     If path is not included, prepends the default output path (see set_path).
     """
-    f = Path(fname)
+    f = _Path(fname)
     if not f.is_absolute():
         f = f.joinpath(__outpath,f)
     return f
@@ -244,10 +241,13 @@ def get_output_file(fname):
 
 
 def loadwrapper(func):
-    """ Decorator applied on functions loadig input data. On exception, it 
-    prints error message and re-raises the exception. 
     """
+    Decorate functions for loadig input data.
     
+    Create valid absolute path and print progress messages.
+    
+    On exception, it prints error message and re-raises the exception. 
+    """
     def func_wrapper(name, kind, **kwargs):
        try:
            fname = get_input_file(name, kind=kind)
@@ -266,9 +266,12 @@ def loadwrapper(func):
 
 
 def savewrapper(func):
-    """ Decorator applied on functions saving auxilliary data.
-    Calls func(name) and prints a message if successful.
-    On exception prints a warning message. 
+    """
+    Decorate functions for saving data.
+    
+    Create valid absolute path and print progress messages.
+    
+    On exception, it prints error message and re-raises the exception. 
     """
     
     def func_wrapper(data, name, **kwargs):
@@ -282,18 +285,17 @@ def savewrapper(func):
     return func_wrapper
 
 
-
 ### File read/write
 
 @loadwrapper
 def load_data(filename, kind='input', rmin=0, rmax=-1, **kwargs):
-    """Read a numeric table from given text file using numpy.loadtxt().
-    Return specified range of rows.
+    """
+    Read a numeric table from given text file using numpy.loadtxt().
     
+    Return specified range of rows.
     
     Parameters
     ----------
-    
     filename: str
         File name.
     rmin, rmax: int
@@ -306,13 +308,11 @@ def load_data(filename, kind='input', rmin=0, rmax=-1, **kwargs):
             - `table` for table and other files
             - `instrument` for a file with isntrument parameters
             - empty string: current directory.  
-    
     kwargs
         Keyword arguments passed to numpy.loadtxt
     
     Returns
     -------
-    
     ndarray
         Specified range of rows from the input file.
     
@@ -329,12 +329,13 @@ def load_data(filename, kind='input', rmin=0, rmax=-1, **kwargs):
 
 @loadwrapper
 def read_dict(filename, kind='input'):
-    """Reads a simple dictionary in the format `name=value`.
-    Skip comment lines (#). 
+    """
+    Read a simple dictionary in the format `name=value`.
+    
+    Skip comment lines (#).
                         
     Parameters
     ----------
-    
     filename: str
         File name.
     kind: str
@@ -353,7 +354,6 @@ def read_dict(filename, kind='input'):
         A hash map with keys and values found in the file.
     
     """
-    
     h = {}
     fname = get_input_file(filename, kind=kind)
     if (fname.exists()):
@@ -375,7 +375,9 @@ def read_dict(filename, kind='input'):
 
 @loadwrapper
 def read_table(filename, kind='table'):
-    """ Read a table with a single line header.
+    """
+    Read a table with a single line header.
+    
     The header signature is 'Header:' followed by the list of column labels.
     Except of the header, skip comment lines (#) and empty rows. 
                                               
@@ -386,7 +388,6 @@ def read_table(filename, kind='table'):
                                               
     Parameters
     ----------
-    
     filename: str
         File name.
     kind: str
@@ -524,11 +525,11 @@ def read_table(filename, kind='table'):
 
 @savewrapper
 def save_data(data, filename, header=[], comment="", source=""):
-    """Save an array as a text table.
+    """
+    Save an array as a text table.
     
     Parameters
     ----------
-    
     data: array or list
         Data to be saved
     filename: str
@@ -543,8 +544,6 @@ def save_data(data, filename, header=[], comment="", source=""):
         optional id of the calling script (use source=__file__)
         
     """
-    
-    
     now = datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p")
     comstr = 'Created: {}\n'.format(now)
     if (source):
@@ -562,11 +561,11 @@ def save_data(data, filename, header=[], comment="", source=""):
 
 
 def save_table(data, filename, source=""):
-    """Save Table object as a text file.
+    """
+    Save Table object as a text file.
     
     Parameters
     ----------
-    
     data: Table
         Data to be saved
     filename: str

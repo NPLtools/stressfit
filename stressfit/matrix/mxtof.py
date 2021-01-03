@@ -2,8 +2,8 @@
 # Written by: J. Saroun, Nuclear Physics Institute, Rez, saroun@ujf.cas.cz
 """
 Matrix model for a neutron ToF diffractometer.
-Provides gauge volume parameters needed for calculation of spurious strains.
 
+Provides gauge volume parameters needed for calculation of spurious strains.
 
 Usage
 -----
@@ -42,122 +42,30 @@ Notes
 """
 
 import numpy as np
-from numpy import sqrt
-from .components import matrix2str, prnMat
-from math import atan, asin, cos, sin
+import stressfit.matrix.components as com
 
 # uniform distribution                 
 g_uni = np.sqrt(1/6)
 # circular distribution                 
-g_circ = sqrt(1/8)
+g_circ = np.sqrt(1/8)
 # triangular distribution
-g_tri = sqrt(1/3)
+g_tri = np.sqrt(1/3)
 # gaussian distribution
-g_norm = 1/sqrt(4*np.log(2))
-r8ln2 = sqrt(8*np.log(2))
+g_norm = 1/np.sqrt(4*np.log(2))
+r8ln2 = np.sqrt(8*np.log(2))
 # degree
 deg = np.pi/180
 # h/m [Ang*m/ms]
 hovm = 3.95603402
 
 
-def getDetBinsCyl(radius=2000.0, angle=[90.0], phi=None):
-    """
-    Calculate detector bin data.
-    
-    Parameters
-    ----------
-    radius : float
-        detection radius [mm]
-    angle : list of float
-        horizontal take-off angles [deg]
-    phi : list of float (optional)
-        vertical take-off angles [deg] 
 
-        
-    Returns
-    --------
-    list
-        A list of bin data as [alpha, dL], where alpha [rad] is the take-off angle 
-        and L is the distance difference with respect to the detector centre [mm]. 
-    
-    """
-    bins = []
-    if (phi is None):
-        nv = 1
-        #cp = [1.]
-    else:
-        nv = len(phi)
-        #cp = np.cos(np.multiply(phi,deg))
-    alpha = np.multiply(angle,deg)
-    #ca = np.cos(alpha)
-    nh = len(alpha)
-    for iv in range(nv):
-        for ih in range(nh):               
-            #x = ca[ih]*cp[iv]
-            #tanth = (1.0 - x)/sqrt(1.0 - x**2)        
-            #theta = atan(tanth)
-            ch = [alpha[ih], 0.0]
-            bins.append(ch)
-    return bins
-
-
-def getDetBinsFlat(distance=2000.0, angle=90, bx=[0.0], by=None):
-    """
-    Calculate detector bin data. Flat surface.
-    
-    Parameters
-    ----------
-    distance: float
-        distance of the detector centre from teh sample  [mm]
-    angle: float
-        take-off angle [deg] of the detector centre
-    bx: list of float
-        bins horizontal positions relative to the centre [mm] 
-    by: list of float (optional)
-        bins vertical positions relative to the centre [mm] 
-               
-    Returns
-    -------
-    list
-    
-        A list of bin data as [alpha, dL], where alpha [rad] is the take-off angle 
-        and L is the distance difference with respect to the detector centre [mm].
-    
-    """
-    a0 = angle*deg
-    bins = []
-    if (by is None):
-        nv = 1.
-        by =[0.0]
-    else:
-        nv = len(by)
-    nh = len(bx)
-    for iv in range(nv):
-        for ih in range(nh):   
-            LH2 = distance**2 + bx[ih]**2
-            #L2 = LH2 + by[iv]          
-            #cp = sqrt(LH2/L2)
-            L = sqrt(LH2)
-            sa = bx[ih]/sqrt(LH2)
-            da = asin(sa)
-            alpha = a0 + da
-            #ca = cos(alpha)
-            #x = ca*cp            
-            # tanth = (1.0 - x)/sqrt(1.0 - x**2)        
-            #theta = atan(tanth)
-            ch = [alpha, L - distance]
-            bins.append(ch)
-    return bins
-
-
-class MXmodel_tof():
+class MXTOF():
     """
     Matrix model of a ToF diffractometer.
     
     Parameters
     ----------
-    
     flux: array
         Lookup tabl with neutron flux (2-columns with wavelength [A] and flux [rel. units])
     pulse: array
@@ -172,8 +80,7 @@ class MXmodel_tof():
         Instance of the Extinction model from stressfit
         
     Methods
-    --------
-    
+    -------   
     display:
         Dump matrices for all components and setup parameters.
     setParam:
@@ -182,6 +89,7 @@ class MXmodel_tof():
         Matrix model initialization.
         
     """
+    
     def __init__(self, flux=None, pulse=None, ext=None):
         self.m=3 # row index corresponding to the time-coordinate in the transport matrix (C)
         self.k=1 # row/column index corresponding to the z-coordinate in the transmision matrix (T)
@@ -189,25 +97,23 @@ class MXmodel_tof():
         self.fluxtab=flux
         self.ext=ext  
      
-    def setParam(self, inst, i_bin, i_sam, omega):       
-        """ Set new instrument sequence and construct the T and C matrices.
-        
+    def setParam(self, inst, i_bin, i_sam, omega):
+        """
+        Set new instrument sequence and construct the T and C matrices.
+
         Parameters
         ----------
-        
         inst: list
-            ordered list o instrument components (source to detector)
+            Ordered list o instrument components (source to detector).
         i_bin: int
-            selected detector bin index
+            Selected detector bin index.
         i_sam: int
-            index to the Sample component in the list
+            Index to the Sample component in the list.
         i_det: in
-            index to the Detector component in the list
+            Index to the Detector component in the list.
         omega: float
-            sample surface angle [rad], zero for symmetric reflection
-            
+            Sample surface angle [rad], zero for symmetric reflection.
         """
-        
         self.isam = i_sam
         self.idet = np.size(inst)-1   
         source = inst[0]
@@ -224,7 +130,7 @@ class MXmodel_tof():
         self.omega = omega
         self.alpha = alpha
         self.theta = theta
-        self.lam0 = 2*sample.dhkl*sin(abs(theta))
+        self.lam0 = 2*sample.dhkl*np.sin(abs(theta))
         self.v0 = hovm/self.lam0
         self.Ltof = 0.0
         self.T = np.zeros((5,5))
@@ -264,17 +170,23 @@ class MXmodel_tof():
         self.initialize()
 
     def initialize(self):
-        """ Check transmission and transport matrices. Return true if they are
-        valid (det|T|>0). 
+        """
+        Check transmission and transport matrices.
+        
         Calculate dependent arrays and width parameters
         it = index of time-coordinate
         iz = index of z-coordinate
         Calculate beta and the factor at <x_D>, eqs. (9) and (14)
-        """
         
+        Returns
+        -------
+        bool
+            True if generated matrices are valid (det|T|>0). 
+        
+        """
         DT =np.linalg.det(self.T)
         if (DT<1e-8):
-           msg = matrix2str(self.T)
+           msg = com.matrix2str(self.T)
            raise Exception(msg+"T-matrix not invertible, det(T)<=0\n")
         res=True
         # eq. (7), define W and V as submatrices of T
@@ -283,7 +195,7 @@ class MXmodel_tof():
         Winv = np.linalg.inv(W)
         WV = Winv.dot(V)  # = inv(W)*V
         beta2 = self.T[self.k,self.k] - V.T.dot(WV)
-        self.beta = sqrt(beta2)
+        self.beta = np.sqrt(beta2)
         Cm = np.delete(self.C[self.m,:],self.k)
         self.DeltaX = -1.0e6*(self.C[self.m,self.k] - Cm.dot(WV))/self.tof0
         self.mu = self.ext.getMu(self.lam0)
@@ -292,25 +204,26 @@ class MXmodel_tof():
 
 
     def gaugeWidth(self):
-        """ width (fwhm) of the sampled gauge volume [mm]"""
+        """Width (fwhm) of the sampled gauge volume [mm]."""
         return 1/self.beta/g_norm
     
     def peakWidth(self):
-        """peak width  delta_d/d in [1e-6] units"""
-        
+        """Peak width  delta_d/d in [1e-6] units."""
         Tinv = np.linalg.inv(self.T)
         TC = self.C.dot(Tinv.dot(self.C.T))
         # add detector resolution
-        res = 1.0e6*sqrt(TC[self.m,self.m] + self.dtau**2)/self.tof0/g_norm
+        res = 1.0e6*np.sqrt(TC[self.m,self.m] + self.dtau**2)/self.tof0/g_norm
         return res
 
     def gaugeParams(self):
-        """ Return gauge parameters as a hash map. no calculation is done, only 
+        """
+        Return gauge parameters as a hash map.
+        
+        No calculation is done, only 
         returns data calculated in setParams()
         
         Returns
-        --------
-        
+        -------
         DSE: float
             pseudo-strain coefficients
         beta: float
@@ -324,10 +237,8 @@ class MXmodel_tof():
         mu: float
             attenuation coefficient [1/mm]               
         p: float
-            weight factor derived from the flux table
-                
+            weight factor derived from the flux table   
         """
-        
         res = {}
         res['DSE'] = self.DeltaX
         res['beta'] = self.beta
@@ -339,17 +250,15 @@ class MXmodel_tof():
         return res   
 
 
-
     def display(self,inst):       
-        """ Dump matrices for all components and setup parameters.
+        """
+        Dump matrices for all components and setup parameters.
         
         Parameters
         ----------
-        
         inst: list
             ordered list o instrument components (source to detector)
         """
-        
         n = np.size(inst)
         # sample -> detector
         for i in range(self.isam+1,n):
@@ -357,8 +266,8 @@ class MXmodel_tof():
         # sample -> source
         for i in reversed(range(0, self.isam)):
             inst[i].display()
-        prnMat(self.T, "instrument.T")
-        prnMat(self.C, "instrument.C")
+        com.prnMat(self.T, "instrument.T")
+        com.prnMat(self.C, "instrument.C")
         print('alpha = {:g}'.format(self.alpha/deg))
         print('theta = {:g}'.format(self.theta/deg))
         print('omega = {:g}'.format(self.omega/deg))
