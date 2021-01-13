@@ -10,7 +10,7 @@ gd_m=3          # coating m-value
 # DIVERGENCE SLIT
 s0_width=14    # width [mm]
 s0_dist=4000   # distance [mm] from the sample
-s0_on=1        # = 1 to include this slit instead of the neutron guide
+s0_on=1        # set 1 to include this slit instead of the neutron guide
 # PRIMARY SLIT
 s1_width=2    # width [mm]
 s1_dist=60     # distance [mm] from the sample, set to zero for a radial collimator
@@ -24,3 +24,4 @@ d_binshape=1     # resolution shape factor (set 1 for uniform)
 d_amin=75        # minimum detector angle [deg] (integration range)
 d_amax=105       # maximum detector angle [deg] (integration range)
 d_resol=1        # time resolution [us]
+ 
