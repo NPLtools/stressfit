@@ -9,3 +9,4 @@ _tmp*
 *.egg-info/
 dist
 _build
+work

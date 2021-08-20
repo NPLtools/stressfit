@@ -191,12 +191,8 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
             incident and exit k-vector
         sdir: ndarray[3]
             scan direction - shows motoin of events in stationary sample
-        r: ndarray[:,3]
-            sampling points
-        p: ndarray[:]
-            weights to the sampling points
-        dhkl: ndarray[:]
-            dhkl values for the sampling points
+        sampling: :class:`Sampling
+            Instance of the Sampling object
         save: boolean
             if True, save plot as PNG figure
         file: string

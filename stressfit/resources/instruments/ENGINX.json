@@ -1,0 +1,90 @@
+{
+    "src": {
+        "twidth": {
+            "value": 100,
+            "descr": "pulse width [us]"
+        },
+        "tshape": {
+            "value": 1.0,
+            "descr": "pulse shape factor (set 1 for gaussian)"
+        },
+        "dist": {
+            "value": 49730.0,
+            "descr": "distance [mm] from the sample"
+        }
+    },
+    "guide": {
+        "width": {
+            "value": 25.0,
+            "descr": "exit width [mm]"
+        },
+        "dist": {
+            "value": 1500.0,
+            "descr": "distance [mm] of the guide exit from the sample"
+        },
+        "m": {
+            "value": 3.0,
+            "descr": "coating m-value"
+        }
+    },
+    "col_0": {
+        "width": {
+            "value": 14.0,
+            "descr": "width [mm]"
+        },
+        "dist": {
+            "value": 4000.0,
+            "descr": "distance [mm] from the sample"
+        },
+        "on": {
+            "value": 1.0,
+            "descr": ""
+        }
+    },
+    "col_1": {
+        "width": {
+            "value": 2.0,
+            "descr": "width [mm]"
+        },
+        "dist": {
+            "value": 60.0,
+            "descr": "distance [mm] from the sample, set to zero for a radial collimator"
+        }
+    },
+    "col_2": {
+        "width": {
+            "value": 2.0,
+            "descr": "width [mm]"
+        },
+        "dist": {
+            "value": 0.0,
+            "descr": "distance [mm] from the sample, set to zero for a radial collimator"
+        }
+    },
+    "det": {
+        "dist": {
+            "value": 1530.0,
+            "descr": "distance from the sample [mm]"
+        },
+        "binwidth": {
+            "value": 3.0,
+            "descr": "resolution fwhm [mm]"
+        },
+        "binshape": {
+            "value": 1.0,
+            "descr": "resolution shape factor (set 1 for uniform)"
+        },
+        "amin": {
+            "value": 75.0,
+            "descr": "minimum detector angle [deg] (integration range)"
+        },
+        "amax": {
+            "value": 105.0,
+            "descr": "maximum detector angle [deg] (integration range)"
+        },
+        "resol": {
+            "value": 1.0,
+            "descr": "time resolution [us]"
+        }
+    }
+}

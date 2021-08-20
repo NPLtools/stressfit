@@ -28,14 +28,15 @@ ext_mu = None
 _sampling = None
 
 class Sampling():
-    def __init__(self, events, columns, ctr = None):
-        """ Set array of sampling events
+    def __init__(self, events=None, columns=None, ctr = None):
+        """Set array of sampling events.
     
         The sampling events can be obtained by MC ray-tracing simulation
         of the instrument at given setup. Generation of such a file
         is implemented in SIMRES ver. 6.3.5 and above
     
-        Arguments:
+        Arguments
+        ---------
             events -- array[:,:]
             columns -- defines column indices for r, ki, kf, p, dhkl
                         r -- event position
@@ -45,11 +46,40 @@ class Sampling():
         """
         self.sdata = events
         self.idata = columns
+        self.src = None
         if (ctr is not None):
             self.sctr = np.array(ctr)
         else:
             self.sctr = np.array([0., 0., 0.])
-        self.setRange(self.sdata.shape[0], setd0=True)
+        if self.sdata is not None:
+            self.setRange(self.sdata.shape[0], setd0=True)
+
+    @classmethod
+    def fromdict(cls, source, ctr=None):
+        """Create class from dictionary.
+        
+        Requires at least following keys:
+            - data
+            - columns
+            - ctr (optional)
+        
+        Parameters
+        ----------
+        source: array[:,:]
+            scattering events coordinates
+        ctr: list(3)
+            gauge centre coordinates
+        
+        """
+        if 'data' in source and 'columns' in source:
+            if (ctr is None) and ('ctr' in source):
+                ctr = source['ctr']
+            s = cls(events=source['data'], columns=source['columns'])
+            s.src = source
+        else:
+            raise Exception('Required fields not found in source.')
+        return s
+    
     
     def setRange(self, nev, setd0=False):
         [jr, jki, jkf, jp, jd] = self.idata[0:5]
@@ -68,6 +98,12 @@ class Sampling():
 def getSampling(nev):
     _sampling.setRange(nev)
     return _sampling
+
+def setSampling(source, ctr=None):
+    """Define sampling from dict."""
+    global _sampling
+    _sampling = Sampling.fromdict(source, ctr=ctr)
+    
 
 def rotate(v, axis, angle):
     """Simple vector rotation function
