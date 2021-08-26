@@ -92,7 +92,7 @@ def load_sampling(filename, columns=[1, 4, 7, 10, 11], maxn=0, verbose=False):
     else:
         nrec = data.shape[0]
     # Calculate centre of mass of the distribution 
-    P = data[:nrec,columns[3]]/np.sum(data[:,columns[3]])
+    P = data[:nrec,columns[3]]/np.sum(data[:nrec,columns[3]])
     ctr = np.zeros(3)
     ki = np.zeros(3)
     kf = np.zeros(3)

@@ -345,7 +345,7 @@ def get_input_file(filename, kind='data', path=None, **kwargs):
     f = _Path(filename)
     if not f.is_absolute():
         if path:
-            p = path
+            p = _Path(path)
         elif (kind == 'data'):
             p = __inpath
         elif (kind == 'tables'):
@@ -354,7 +354,7 @@ def get_input_file(filename, kind='data', path=None, **kwargs):
             p = __instruments
         else:
             p = f.cwd()
-        f = f.joinpath(p,f)
+        f = p.joinpath(f)
     return f
 
 
@@ -378,9 +378,10 @@ def get_output_file(filename, path=None, **kwargs):
     f = _Path(filename)
     if not f.is_absolute():
         if path:
-            f = f.joinpath(path,f)
+            p = _Path(path)
         else:
-            f = f.joinpath(__outpath,f)
+            p = __outpath
+        f = p.joinpath(f)
     return f
 
 

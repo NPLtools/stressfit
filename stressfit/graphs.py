@@ -291,7 +291,7 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
         ax.arrow(rc[ix], rc[iy], xd[ix], xd[iy],
                  head_width=arrw, head_length=arrw, fc='r', ec='r')
     plt.title("Scattering geometry")
-
+    ax.invert_xaxis()
     if (save and file):
         plt.savefig(file, bbox_inches='tight')
     plt.show()

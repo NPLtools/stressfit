@@ -869,7 +869,7 @@ class MCCfit(ABC):
             ss = self.formatResultDepth()
             print('Depth scale saved in '+fn)
             with open(fn, 'w') as f:
-                f.write('# Fitted data: '+fname + "\n")
+                f.write('# Depth scale data: '+fname + "\n")
                 f.write(ss)
                 f.close
                 
