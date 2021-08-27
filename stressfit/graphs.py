@@ -54,8 +54,9 @@ def plotFit(mcfit, title = '', ylabel='', save = False, file = 'fit.png'):
         if (mcfit.guess is not None):
             plt.errorbar(mcfit.guess[:,0], mcfit.guess[:,1], fmt='b--', label='guess')
         plt.legend(loc='best', frameon=False)
-        if (save and file):
-            plt.savefig(file, bbox_inches='tight')
+        fn = str(file)
+        if (save and fn):
+            plt.savefig(fn, bbox_inches='tight')
         plt.show()
     
 def plotModel(mcfit, title = '', ylabel='', save = False, 
@@ -108,8 +109,9 @@ def plotModel(mcfit, title = '', ylabel='', save = False,
         plt.errorbar(intp[:,0], intp[:,1], yerr=ferr, 
                      fmt='r-', label='interpolation')
     plt.legend(loc='best', frameon=False)
-    if (save and file):
-        plt.savefig(file, bbox_inches='tight')
+    fn = str(file)
+    if (save and fn):
+        plt.savefig(fn, bbox_inches='tight')
     plt.show()    
   
     
@@ -117,27 +119,27 @@ def plotIntensityFit(mcfit, save = False, file = 'strainFit.png'):
     """  Descendand of plotFit, only sets title and ylabel ...
     """
     plotFit(mcfit,title='Measured vs. model intensity', 
-            ylabel='Intensity', save=save, file=file)
+            ylabel='Intensity', save=save, file=str(file))
 
     
 def plotIntensityModel(mcfit, save = False, file = 'strainModel.png'): 
     """  Calls ploModel with correct title and ylabel ...
     """
     plotModel(mcfit,title='Scattering probability distribution', 
-              ylabel='Scattering probability', save=save, file=file)
+              ylabel='Scattering probability', save=save, file=str(file))
     
 def plotStrainFit(mcfit, save = False, file = 'strainFit.png'):
     """  Descendand of plotFit, only sets title and ylabel ...
     """
     plotFit(mcfit,title='Measured vs. model strain', 
-            ylabel='Strain, $\mu\epsilon$', save=save, file=file)
+            ylabel='Strain, $\mu\epsilon$', save=save, file=str(file))
 
     
 def plotStrainModel(mcfit, save = False, file = 'strainModel.png'): 
     """  Calls ploModel with correct title and ylabel ...
     """
     plotModel(mcfit,title='Intrinsic strain distribution', 
-              ylabel='Strain, $\mu\epsilon$', save=save, file=file)
+              ylabel='Strain, $\mu\epsilon$', save=save, file=str(file))
 
     
 def plotInfoDepth(model, save = False, file = 'infodepth.png'):
@@ -167,8 +169,9 @@ def plotInfoDepth(model, save = False, file = 'infodepth.png'):
         lns = (ln1, ln2)
         labs = ('depth', 'width')
         ax1.legend(lns, labs, loc='lower right', frameon=False)
-        if (save and file):
-            plt.savefig(file, bbox_inches='tight')
+        fn = str(file)
+        if (save and fn):
+            plt.savefig(fn, bbox_inches='tight')
         plt.show()
         
 
@@ -292,7 +295,8 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
                  head_width=arrw, head_length=arrw, fc='r', ec='r')
     plt.title("Scattering geometry")
     ax.invert_xaxis()
-    if (save and file):
-        plt.savefig(file, bbox_inches='tight')
+    fn = str(file)
+    if (save and fn):
+        plt.savefig(fn, bbox_inches='tight')
     plt.show()
 

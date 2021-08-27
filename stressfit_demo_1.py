@@ -12,8 +12,8 @@ import stressfit.shapes as S
 import stressfit.sample as sam
 import stressfit.mccfit as mc
 import stressfit.graphs as gr
+import stressfit.commands as comm
 from stressfit.compliance import Compliance
-from stressfit import load_input, load_sampling
 import stressfit.dataio as dataio
 deg = np.pi/180.
 
@@ -34,7 +34,7 @@ gpath = mc.path2win(r'./input/')
 
 # load sampling points
 gpath = r'./input/'
-sampling = load_sampling(gpath + "events_S_1mm.dat", verbose=True)
+sampling = comm.load_sampling(gpath + "events_S_1mm.dat", verbose=True)
 
 #%% Define compliance matrix
 
@@ -85,7 +85,8 @@ shape = S.ShapeShellCyl(radius1, radius2, height)
 # them with corresponding metadata.
 
 scans = {}
-scans['hoop'] = load_input('eps_SS_hoop.dat', 'int_SS_hoop.dat', 
+scans['hoop'] = comm.load_input('eps_SS_hoop.dat', 
+                         intensity='int_SS_hoop.dat', 
                          path = inpath,
                          scandir=[0., 0., -1.],
                          scanorig=[0, 0, 0],
@@ -93,7 +94,8 @@ scans['hoop'] = load_input('eps_SS_hoop.dat', 'int_SS_hoop.dat',
                          angles=[225, 0, 0],
                          sampling=sampling)
 
-scans['axi'] = load_input('eps_SS_axi.dat', 'int_SS_axi.dat', 
+scans['axi'] = comm.load_input('eps_SS_axi.dat',
+                         intensity='int_SS_axi.dat', 
                          path = inpath,
                          scandir=[0., 0., -1.],
                          scanorig=[0, 0, 0],
@@ -101,7 +103,8 @@ scans['axi'] = load_input('eps_SS_axi.dat', 'int_SS_axi.dat',
                          angles=[135, 90, 90],
                          sampling=sampling)
 
-scans['rad'] = load_input('eps_SS_rad.dat', 'int_SS_rad.dat', 
+scans['rad'] = comm.load_input('eps_SS_rad.dat',
+                         intensity='int_SS_rad.dat', 
                          path = inpath,
                          scandir=[0., 0., -1.],
                          scanorig=[0, 0, 0],

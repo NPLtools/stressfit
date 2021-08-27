@@ -123,7 +123,7 @@ class ShapeAbstract:
         """Set position and orientation to zero"""
         self._R = np.eye(3, 3)
         self._isRot = False
-        self._pos = np.zeros(3, 1)
+        self._pos = np.zeros(3)
 
     def rotate(self, omega, chi, phi):
         """ Rotate shape using YXY Euler system """

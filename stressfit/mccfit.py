@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 # imports from stressfit
 import stressfit.sample as sam
 import stressfit.graphs as gr
+import stressfit.dataio as dataio
 
 _chi2 = np.inf
 _reg = np.inf
@@ -100,11 +101,13 @@ def params2dist(params):
     y = np.zeros(nm)
     dy = np.zeros(nm)
     for i in range(nm):
-        x[i] = params['x_'+str(i)].value
-        dx[i] = params['x_'+str(i)].stderr
+        p =  params['x_'+str(i)]
+        x[i] = p.value
+        if p.stderr: dx[i] = p.stderr
     for i in range(nm):
-        y[i] = params['y_'+str(i)].value 
-        dy[i] = params['y_'+str(i)].stderr
+        p = params['y_'+str(i)]
+        y[i] = p.value 
+        if p.stderr: dy[i] = p.stderr
     return np.array([x, y, dx, dy]).T
 
 def array2params(par, err, params):    
@@ -273,9 +276,13 @@ def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
     xdis = model.dist[:,0]
     model.fitInit()
     if (maxiter>0):
-        minner = Minimizer(costFnc, model.params, fcn_args=(model, areg, guess), iter_cb=fitcallb)
+        if guess:
+            iterf = None
+        else:
+            iterf = fitcallb
+        minner = Minimizer(costFnc, model.params, fcn_args=(model, areg, guess), iter_cb=iterf)
         model.result = minner.minimize(method='leastsq', 
-                        params=model.params, ftol=model.ftol, epsfcn=model.epsfcn, maxfev=maxiter)
+                        params=model.params, ftol=model.ftol, epsfcn=model.epsfcn, max_nfev=maxiter)
         model.params = model.result.params
     model.areg = areg
     # par =params as array (par, serr)
@@ -299,7 +306,7 @@ def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
     if (model.avgrange is not None):
         av = getAverage(xdis, ydis, rang = model.avgrange)  
         model.avg = [av, 0.]
-    if (not _quiet): print('runFit finished\n')
+    if (not _quiet) and (not guess): print('runFit finished\n')
     if (model.result is not None):
         res = model.result.success
     else:
@@ -363,7 +370,7 @@ def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
         model.data = model.addNoise(data0)
         minner = Minimizer(costFnc, model.params, fcn_args=(model, areg, guess), iter_cb=fitcallb)
         model.result = minner.minimize(method='leastsq', 
-                            params=model.params, ftol=model.ftol, epsfcn=model.epsfcn, maxfev=maxiter)
+                            params=model.params, ftol=model.ftol, epsfcn=model.epsfcn, max_nfev=maxiter)
         model.params = model.result.params
         # get derived results
         dist = model.getDistribution(xdis)
@@ -865,7 +872,9 @@ class MCCfit(ABC):
     def saveInfoDepth(self, outpath, fname):                        
         # Save info depth table 
         if ((self.infodepth is not None) and fname):
-            fn = deriveFilename(outpath+fname, ext='dat', sfx='depth')
+            f = dataio.derive_filename(fname, ext='dat', sfx='depth')
+            fn = str(dataio.get_output_file(f, path=outpath))
+            # fn = deriveFilename(outpath+fname, ext='dat', sfx='depth')
             ss = self.formatResultDepth()
             print('Depth scale saved in '+fn)
             with open(fn, 'w') as f:
@@ -877,8 +886,10 @@ class MCCfit(ABC):
     def saveResults(self, outpath, fname, reglog=None):
         hasData = (self.data is not None)
         hasFit = (self.fit is not None)
-        if (hasData and hasFit and fname):            
-            fn = deriveFilename(outpath+fname, ext='dat', sfx='model')
+        if (hasData and hasFit and fname):  
+            f = dataio.derive_filename(fname, ext='dat', sfx='model')
+            fn = str(dataio.get_output_file(f, path=outpath))
+            # fn = deriveFilename(outpath+fname, ext='dat', sfx='model')
             ss = self.formatResultModel()
             print('Model saved in '+fn)
             with open(fn, 'w') as f:
@@ -886,7 +897,9 @@ class MCCfit(ABC):
                 f.write(ss)
                 f.close
             # Save original data and fit 
-            fn = deriveFilename(outpath+fname, ext='dat', sfx='fit')
+            f = dataio.derive_filename(fname, ext='dat', sfx='fit')
+            fn = str(dataio.get_output_file(f, path=outpath))
+            #fn = deriveFilename(outpath+fname, ext='dat', sfx='fit')
             ss = self.formatResultFit()
             print('Fit saved in '+fn)
             with open(fn, 'w') as f:
@@ -895,7 +908,9 @@ class MCCfit(ABC):
                 f.close
                 
             # Save log with parameters 
-            fn = deriveFilename(outpath+fname, ext='log', sfx='')
+            f = dataio.derive_filename(fname, ext='log', sfx='')
+            fn = str(dataio.get_output_file(f, path=outpath))
+            # fn = deriveFilename(outpath+fname, ext='log', sfx='')
             ss = self.formatResultLog()
             
             if (reglog is not None):
@@ -1001,9 +1016,15 @@ class Ifit(MCCfit):
     def reportFit(self, outpath='', file='', plotSampling=False):
         if (file):
             saveit=True
-            outpng = deriveFilename(outpath+file, 'png', 'fit')
-            outpngmodel = deriveFilename(outpath+file, 'png', 'model')  
-            outpngdepth = deriveFilename(outpath+file, 'png', 'depth') 
+            f = dataio.derive_filename(file, ext='png', sfx='fit')
+            outpng = dataio.get_output_file(f, path=outpath)
+            # outpng = deriveFilename(outpath+file, 'png', 'fit')
+            f = dataio.derive_filename(file, ext='png', sfx='model')
+            outpngmodel = dataio.get_output_file(f, path=outpath)
+            #outpngmodel = deriveFilename(outpath+file, 'png', 'model')
+            f = dataio.derive_filename(file, ext='png', sfx='depth')
+            outpngdepth = dataio.get_output_file(f, path=outpath)
+            # outpngdepth = deriveFilename(outpath+file, 'png', 'depth') 
         else:
             saveit=False
             outpng=''
@@ -1058,9 +1079,12 @@ class Sfit(MCCfit):
         # Plot result, fit
         if (file):
             saveit=True
-            outpng = deriveFilename(outpath+file, 'png', 'fit')
-            
-            outpngmodel = deriveFilename(outpath+file, 'png', 'model')
+            f = dataio.derive_filename(file, ext='png', sfx='fit')
+            outpng = dataio.get_output_file(f, path=outpath)
+            # outpng = deriveFilename(outpath+file, 'png', 'fit')
+            f = dataio.derive_filename(file, ext='png', sfx='model')
+            outpngmodel = dataio.get_output_file(f, path=outpath)
+            # outpngmodel = deriveFilename(outpath+file, 'png', 'model')
         else:
             saveit=False
             outpng=''
