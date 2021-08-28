@@ -1,6 +1,8 @@
-"""Defines classes for various sample shapes.
+"""Implements classes for sample containers of various shapes. 
+The class methods permit to calculate neutron ray paths, flight times to 
+sample surfaces and depths under surface.
     
-All classes are dscendants of the abstract class shapeAbstract.
+All classes are descendants of the abstract class shapeAbstract.
 
 
 Examples
@@ -18,10 +20,13 @@ Sphere:
     `Sph(radius)`
 
 Hollow cylinder:
-    `ShapeShellCyl(radius1, radius2, height)`
+    `ShapeTube([Rin, Rout], height, ctr=[0,0], sref=0)`
     
-     - axis || y and outer/inner radii = radius1/radius2. 
-          
+     - axis || y
+     - ctr defines x,z position of the hole centre. 
+     - sref defines the reference surface (from which depth is calculated),
+       0 is for the inner surface
+     
 Hollow sphere:
     `ShapeShell(Rin, Rout)`      
     
@@ -40,8 +45,8 @@ from .shapeCyl import ShapeCyl
 from .shapePlate import ShapePlate
 from .shapePlateCurved import ShapePlateCurved
 from .shapeShell import ShapeShell
-from .shapeShellCyl import ShapeShellCyl
+from .shapeTube import ShapeTube
 from .shapeSph import ShapeSph
-
+from .shapeShellCyl import ShapeShellCyl
 
 

@@ -4,7 +4,10 @@ Base abstract class for sample shape definition
 Created on Tue Aug 15 13:44:06 2017
 
 @author: Jan Saroun, saroun@ujf.cas.cz
+
 """
+
+import abc
 import numpy as np
 from numpy.linalg import norm
 from . import tracing as tr
@@ -12,6 +15,10 @@ from . import tracing as tr
 
 
 class ShapeAbstract:
+    """
+    Base abstract class for sample shape definition.
+    """
+    
     shape_type = 'abstract'
 
     def __init__(self):
@@ -19,55 +26,115 @@ class ShapeAbstract:
         self._isRot = False
         self._pos = np.zeros(3)
 
-# Abstract methods to be overriden
+    ### Abstract methods to be overriden
 
-    def depthLocal(self, rloc):
+    @abc.abstractmethod
+    def depthLocal(self, r):
         """Return depths under the surfaces for given array of positions.
 
-        Arguments:
-            rloc -- array: positions in local coordinates
-        Returns:
-            [depth1, depth2, inside], where
-            depth1 -- array: depth under the front surface (shape dependent)
-            depth2 -- array: depth under the rear surface (shape dependent)
-            inside -- array: 0 or 1 if outside or inside
+        Parameters
+        ----------
+        
+        r: array
+            positions in local coordinates
+        
+        Returns
+        --------
+        [depth1, depth2, inside]
+            
+            - depth1 (array): depth under the front surface (shape dependent)
+            - depth2 (array): depth under the rear surface (shape dependent)
+            - inside (array): 0 or 1 if outside or inside
+        
         """
+        
         raise NotImplementedError("Subclass must implement abstract method")
 
+    @abc.abstractmethod
     def cross(self, r, k):
         """Calculate times to cross-sections with boundaries.
 
-        Arguments:
-            r -- position coordinates
-            k -- direction vector
-        Returns:
-            List of [[t11, t12], [t21, t22], ...] arrays, one item per position
-            [t11, t22] are entry and exit times, one row per layer encountered
-            The times must be sorted (t11 < t12 < t21 < t22 ...)
+        Parameters
+        ----------
+        
+        r: array
+            position coordinates
+        k: array
+            direction vector
+        
+        Returns
+        --------
+        [[t11, t12], [t21, t22], ...]
+            List of [t11, t12] arrays, one item per position.
+            [t11, t22] are entry and exit times, one row per layer encountered.
+            The times must be sorted (t11 < t12 < t21 < t22 ...).
         """
+        
         raise NotImplementedError("Subclass must implement abstract method")
 
+    @abc.abstractmethod    
     def rayPaths(self, r, ki, kf):
         """Calculate input and output paths for given array of points.
 
-        Arguments:
-            r -- position coordinates
-            ki -- input wave vector
-            kf -- output wave vector
-        Returns:
-            [path1, path2]
+        Parameters
+        ----------
+        
+        r: array
+            position coordinates
+        ki: array(3)
+            input wave vector
+        kf: array(3)
+            output wave vector
+            
+        Returns
+        --------
+        
+        [path1, path2]
+            Arrays with input and output paths for each position.
         """
+        
         raise NotImplementedError("Subclass must implement abstract method")
 
-# Class methods which should work for all descendants
+    ### Class methods which should work for all descendants
 
     def depth(self, r):
-        """Return depths under surface in lab coordinates"""
+        """Calculate depths under the surface in lab coordinates.
+        
+        Parameters
+        ----------
+        
+        r: array
+            position coordinates
+
+        Returns
+        --------
+        
+        array
+            Depths under the nearest surface for each position.
+        """
+        
         v = self.getLocalPos(r)
         return self.depthLocal(v)
 
     def scanDepth(self, x, xdir):
-        """Return depth values for given scan positions and direction"""
+        """Calculate depth values for given scan positions and direction.
+        
+        Parameters
+        ----------
+        
+        x: array
+            scan positions
+        xdir: array(3)
+            scan direction
+        
+        Returns
+        --------
+        
+        array
+            Depths under the nearest surface for each position.
+        
+        """
+        
         r = (x*np.array(xdir).reshape((3, 1))).T
         rloc = self.getLocalPos([0., 0., 0.])
         r1 = r + rloc
@@ -75,18 +142,29 @@ class ShapeAbstract:
         return d
 
     def pathInOut(self, r, ki, kf):
-        """Calculate in and out paths through the shape
+        """Calculate in and out paths through the shape.
 
-        Arguments:
-            r -- position coordinates
-            ki -- incident direction
-            kf -- final direction
-        Returns:
-            list [ic, pin, pout]
-            ic -- True if the position is inside the shape
-            pin -- total input path through the shape interior
-            pout -- total output path through the shape interior
+        Parameters
+        ----------
+        
+        r: array
+            position coordinates
+        ki: array(3)
+            incident direction
+        kf: array(3)
+            final direction
+        
+        Returns
+        -------
+        
+        list [ic, pin, pout]
+            Arrays containing for each position:
+            
+            - ic: True if the position is inside the shape
+            - pin: total input path through the shape interior
+            - pout: total output path through the shape interior
         """
+        
         # r1 = self.getLocalPos(r)
         # ki1 = self.getLocalDir(ki)/norm(ki)
         # kf1 = self.getLocalDir(kf)/norm(kf)
@@ -109,7 +187,8 @@ class ShapeAbstract:
         return res
 
     def getRotation(self, omega, chi, phi):
-        """ Generate YXY Euler matrix """
+        """ Generate YXY Euler matrix. """
+        
         s, c = np.sin(omega), np.cos(omega)
         R1 = np.array([[c, 0., -s], [0., 1., 0.], [s, 0., c]])
         s, c = np.sin(chi), np.cos(chi)
@@ -120,41 +199,52 @@ class ShapeAbstract:
         return R
 
     def reset(self):
-        """Set position and orientation to zero"""
+        """Set position and orientation to zero."""
+        
         self._R = np.eye(3, 3)
         self._isRot = False
         self._pos = np.zeros(3)
 
     def rotate(self, omega, chi, phi):
-        """ Rotate shape using YXY Euler system """
+        """ Rotate shape using YXY Euler system. """
+        
         R = self.getRotation(omega, chi, phi)
         self._R = R.dot(self._R)
         self._pos = self._R.dot(self._pos)
         self._isRot = self._R.trace() < 3.0
 
     def moveTo(self, r):
-        """Move shape by r """
+        """Move shape by r. """
+        
         self._pos += np.array(r)
         
     def moveToAbs(self, r):
-        """Move shape to r """
+        """Move shape to r. """
+        
         self._pos = np.array(r)
 
     def getLocalPos(self, v):
-        """ Transform position vector to local coordinates
+        """ Transform position vector to local coordinates.
 
-        Returns:
-            array(3, )
+        Returns
+        -------
+        
+        array(3, )
+            
         """
         a = self.getLocalDir(v) - self._pos
         return a
 
     def getLocalDir(self, v):
-        """ Transform direction vector to local coordinates
+        """ Transform direction vector to local coordinates.
 
-        Returns:
-            array(3,)
+        Returns
+        --------
+        
+        array(3,)
+        
         """
+        
         if (self._isRot):    # rotate only if necessary
             r = self._R.dot(np.array(v))
         else:

@@ -283,7 +283,7 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
         kf0 = arrow_len*shape.getLocalDir(kf)/norm(kf)
         p1 = rc-ki0  # ki origin
         # scan arrow shows motion of the events w.r.t. sample shape !!!
-        xd = -arrow_len*np.array(sdir)/norm(sdir)
+        xd = arrow_len*np.array(sdir)/norm(sdir)
         # ki
         ax.arrow(p1[ix], p1[iy], ki0[ix], ki0[iy],
                  head_width=0.01*arrw, head_length=0.01*arrw, fc='k', ec='k')

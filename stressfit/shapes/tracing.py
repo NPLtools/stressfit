@@ -11,43 +11,57 @@ _inf = 1.0e+12
 
 
 def crossLayer(w, r, k, ix):
-    """Calculate cross-times with plane parallel layer
+    """Calculate cross-times with plane parallel layer.
 
-    Arguments:
-        w -- layer thickness
-        r -- array[:,3] of position vectors
-        k -- direction vector
-        ix --  dimension index [0 .. 2]
-    Returns:
-        list [tin, tout]
-        where tin, tout are arrays of entry and exit times (tin <= tout)
+    Parameters
+    ----------
+    w: float
+        layer thickness
+    r: array(:,3)
+        position vectors
+    k: array(3)
+        velocity vectors
+    ix: int
+        index of axis normal to the layer [0 .. 2]
+
+    Returns
+    -------
+    list [tin, tout]
+        where tin, tout are arrays of entry and exit times (tin < tout)
     """
     if abs(k[ix]) > _eps:
         if (k[ix] > 0):
             tx1 = (-0.5*w - r[:, ix])/k[ix]
             tx2 = (0.5*w - r[:, ix])/k[ix]
         else:
-            tx2 = (-0.5*w - r[:, ix])/k[ix]
             tx1 = (0.5*w - r[:, ix])/k[ix]
+            tx2 = (-0.5*w - r[:, ix])/k[ix]
         res = [tx1, tx2]
     else:
-        n = r.shape[0]
-        uno = np.ones((n, 1))
+        uno = np.ones((r.shape[0], 1))
         res = [-_inf*uno, _inf*uno]
     return res
 
 
 def crossRadial(rad, rsq, ksq, rk):
-    """Calculate cross-times in radial coordinates
+    """Calculate cross-times with a circle or sphere.
 
-    Arguments:
-        rad -- radius
-        rsq -- array of r^2 values (r = position)
-        ksq -- k^2 (k = direction vector)
-        rk -- array of r.dot(k) values
-    Returns:
-        list [tin, tout]
-        where tin, tout are arrays of entry and exit times (tin <= tout)
+    Parameters
+    ----------
+    rad: float
+        radius
+    rsq: array(:)
+        r*r (sqrares of position coordinates)
+    ksq: array(:)
+        k*k (squares of velocity coordinates)
+    rk: array(:)
+        r.dot(k)
+    
+    Returns
+    -------
+    list [tin, tout]
+        tin, tout are entry and exit times (tin < tout). 
+        If tin>=tout, then there is no cross-section.
     """
     D2 = rk*rk - ksq*(rsq-rad**2)
     mask = np.array(D2 > 0, dtype=int)
@@ -58,15 +72,21 @@ def crossRadial(rad, rsq, ksq, rk):
 
 
 def crossCylinder(rad, r, k):
-    """Calculate cross-times with cyllindric surface (axis along r[:,1] )
+    """Calculate cross-times with cyllindric surface (axis along r[:,1]).
 
-    Arguments:
-        rad -- radius
-        r -- array[:,3] of position vectors
-        k -- direction vector
-    Returns:
+    Parameters
+    ----------
+    rad: float
+        radius
+    r: array(:,3)
+        position vectors
+    k: array(3)
+        velocity vectors
+    Returns
+    -------
         list [tin, tout]
-        where tin, tout are arrays of entry and exit times (tin <= tout)
+        where tin, tout are arrays of entry and exit times (tin = tout).
+        If tin>=tout, then there is no cross-section.
     """
     r1 = r[:, 0::2]
     k1 = k[0::2]
@@ -78,15 +98,22 @@ def crossCylinder(rad, r, k):
 
 
 def crossSphere(rad, r, k):
-    """Calculate cross-times with spherical surface
+    """Calculate cross-times with spherical.
 
-    Arguments:
-        rad -- radius
-        r -- array[:,3] of position vectors
-        k -- direction vector
-    Returns:
+    Parameters
+    ----------
+    rad: float
+        radius
+    r: array(:,3)
+        position vectors
+    k: array(:,3)
+        direction vectors
+        
+    Returns
+    -------
         list [tin, tout]
-        where tin, tout are arrays of entry and exit times (tin <= tout)
+        where tin, tout are arrays of entry and exit times (tin = tout).
+        If tin>=tout, then there is no cross-section.
     """
     rsq = np.sum(r**2, axis=1)
     ksq = k.dot(k)
@@ -96,12 +123,16 @@ def crossSphere(rad, r, k):
 
 
 def crossShell(R1, R2, r, k):
-    """Calculate cross-times with hollow sphere
+    """Calculate cross-times with hollow sphere.
 
-    Arguments:
-        R1, R2 -- radii, R1 < R2
-        r -- position vectors
-        k -- direction vector
+    Parameters
+    ----------
+    R1, R2: float
+        inner and outer radii, R1<R2
+    r: array(:,3)
+        position vectors
+    k: array(3)
+        velocity vector
     Returns:
         list of [tin, tout]
         where tin, tout are arrays of entry and exit times (tin <= tout)
@@ -120,20 +151,27 @@ def crossShell(R1, R2, r, k):
     return [tin, tout]
 
 
-def crossShellCyl(R1, R2, r, k):
-    """Calculate cross-times with hollow cylinder
+def crossHollowCyl(R, ctr, r, k):
+    """Calculate cross-times with hollow cylinder.
 
-    Arguments:
-        R1, R2 -- radii, R1 < R2
-        r -- position vectors
-        k -- direction vector
-    Returns:
-        list of [tin, tout]
-        where tin, tout are arrays of entry and exit times (tin <= tout)
-        tin, tout are sorted on axis=1
+    Parameters
+    ----------
+    R: array_like(2)
+        Inner and outer radii 
+    ctr: array(2,3)
+        coordinates of the centers of the inner and outer cylinder.
+    r: array(:,3)
+        position vectors
+    k: array(3)
+        velocity vector
+    Return
+    ------
+    list of [tin, tout]
+        tin, tout are arrays of entry and exit times (tin <= tout).
+        tin, tout are sorted on axis=1.
     """
-    [ti1, tf1] = crossCylinder(R1, r, k)
-    [ti2, tf2] = crossCylinder(R2, r, k)
+    [ti1, tf1] = crossCylinder(R[0], r-ctr[0,:], k)
+    [ti2, tf2] = crossCylinder(R[1], r-ctr[1,:], k)
     in1 = np.array(tf1 > ti1, dtype=int)
     in2 = np.array(tf2 > ti2, dtype=int)
     inf1 = (1-in1)*_inf
@@ -144,9 +182,16 @@ def crossShellCyl(R1, R2, r, k):
     tout.sort(axis=1)
     return [tin, tout]
 
+def crossShellCyl(R1, R2, r, k):
+    """Calculate cross-times with hollow cylinder.
+    
+    Deprecated. For backward compatibility only.
+    """
+    return crossHollowCyl([R1, R2], np.zeros((2,3)), r, k)
+
 
 def quad2D(surf, z0, rho, size, r, k):
-    """ Calculate cross-section with 2D curved surface
+    """ Calculate cross-section with 2D curved surface.
 
     The surface eq. is z = z0 + 0.5*(rho[0]*x**2 + rho[1]*y**2)
     Written in vector notation to speed up
