@@ -147,6 +147,9 @@ comm.set_attenuation(att)
 # Set sample shape
 comm.set_shape(shape)
 
+# Set experiment geometry 
+comm.set_geometry(scan)   
+
 # Plot experiment geometry
 comm.plot_scene(nev_plot, scan['epsfile'], rang=scene_range, proj=scene_projection)
 

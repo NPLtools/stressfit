@@ -149,8 +149,6 @@ def plotInfoDepth(model, save = False, file = 'infodepth.png'):
     ---------
         model: MCCfit
             fit model, must be initialized before
-        xpos: ndarray
-            encoder positions
         save: boolean
             if True, save plot as PNG figure
         file: string
@@ -174,6 +172,33 @@ def plotInfoDepth(model, save = False, file = 'infodepth.png'):
             plt.savefig(fn, bbox_inches='tight')
         plt.show()
         
+def plotPseudoStrain(model, save = False, file = 'infodepth.png'):
+    """Plot information depth and width as a function of scan position.
+    
+    Arguments
+    ---------
+        model: MCCfit
+            fit model, must be initialized before
+        save: boolean
+            if True, save plot as PNG figure
+        file: string
+            file name for the PNG output
+    """
+    data = model.infodepth
+    if (data is not None):
+        fig, ax1 = plt.subplots()
+        fig.suptitle('Pseudo strain')  
+        ax1.set_xlabel('Scan position, mm')
+        ax1.set_ylabel('Strain,  1e-6', color='k')
+        ax1.errorbar(data[:,0], data[:,4], fmt='bo-')
+        ax1.grid()
+        #lns = (ln1, ln2)
+        #labs = ('depth', 'width')
+        #ax1.legend(ln1, labs, loc='lower right', frameon=False)
+        fn = str(file)
+        if (save and fn):
+            plt.savefig(fn, bbox_inches='tight')
+        plt.show()
 
 
 def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False, 

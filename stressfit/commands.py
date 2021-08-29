@@ -139,8 +139,11 @@ def report_pseudo_strains(scan_range, file, nev=3000):
     
     f = dataio.derive_filename(file, ext='png', sfx='depth')
     filepng = dataio.get_output_file(f)
+    f = dataio.derive_filename(file, ext='png', sfx='deps')
+    filepng2 = dataio.get_output_file(f)
     model.calInfoDepth(x)
     gr.plotInfoDepth(model, save=True, file=filepng)
+    gr.plotPseudoStrain(model, save=True, file=filepng2)
     model.saveInfoDepth('', file)
 
 
@@ -309,7 +312,8 @@ def load_input(strain, intensity=None,
         Optional search path for the input file. If non, the setting
         from set_environment command is used. 
     scandir : list or array, optional
-        Scan direction in sample coordinates
+        Scan direction in sample coordinates. It defines motion of the sample
+        across stationary gauge. 
     scanorig : list or array, optional
         Sscan origin (encoder = 0) in sample coordinates
     rotctr : list or array, optional
@@ -342,7 +346,7 @@ def load_input(strain, intensity=None,
 
     keys =  ['scandir','scanorig','angles','rotctr']
     scan_geometry = {key: scan[key] for key in keys}
-    set_geometry(scan_geometry)
+    set_geometry(scan)
     return scan
   
 
@@ -387,7 +391,8 @@ def define_ifit(scan, nodes, nev, **kwargs):
 
     """
     [x,y,fx,fy] = nodes
-    ifit = mc.Ifit(nev=nev, xdir=scan['scandir'], **kwargs)
+    set_geometry(scan)
+    ifit = mc.Ifit(nev=nev, xdir=_geom.scandir, **kwargs)
     ifit.data = scan['int']
     # define the intensity distribution, dim=number of points for interpolation 
     ifit.defDistribution([x, y], [fx, fy], ndim=200)
@@ -426,8 +431,9 @@ def estimate_eps0(scan, z0, nev, nmin, nmax):
 
     """
     epsdata = scan['eps']
+    set_geometry(scan)
     # calculate pseudo-strain
-    tmp = sam.convGauge(epsdata[:,0]-z0, scan['scandir'], 0, nev)[:,4]
+    tmp = sam.convGauge(epsdata[:,0]-z0,_geom.scandir, 0, nev)[:,4]
     # subtract pseudo-strain from measured data
     dif = epsdata[nmin:nmax+1,1] - 1e6*tmp[nmin:nmax+1]
     # calculate average from the difference
@@ -471,6 +477,7 @@ def define_sfit(scan, nodes, nev, z0=0.0, constFnc=None, eps0=False,
         Instance of :class:`~stressfit.mccfit.Sfit`
     """
     epsdata = scan['eps']
+    set_geometry(scan)
     [x,y,fx,fy] = nodes
     
     e0 = 0.0
@@ -482,7 +489,7 @@ def define_sfit(scan, nodes, nev, z0=0.0, constFnc=None, eps0=False,
                 e0 = estimate_eps0(scan, z0, nev, nmin=nmin, nmax=nmax)
         elif isinstance(eps0, float):
             e0 = eps0
-    sfit = mc.Sfit(nev=nev, xdir=scan['scandir'], **kwargs)
+    sfit = mc.Sfit(nev=nev, xdir=_geom.scandir, **kwargs)
     sfit.data = epsdata
     sfit.constraint = constFnc
     if avgrange is not None:

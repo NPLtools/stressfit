@@ -463,7 +463,7 @@ class MCCfit(ABC):
         # init parameters
         self.nev = nev
         xd = np.array(xdir)
-        nm = np.sum(xd*xd)
+        nm = np.sqrt(np.sum(xd*xd))
         self.xdir = xd/nm
         self.ftol = ftol
         self.epsfcn = epsfcn
@@ -1066,7 +1066,7 @@ class Sfit(MCCfit):
         [A, B, xc] = self.getScaling()
         self.updateDistribution()
         if (guess):
-            res = 1e6*(self.strainFnc(self.infodepth[:,1]) + self.infodepth[:,4])
+            res = 1e6*self.strainFnc(self.infodepth[:,1]) + self.infodepth[:,4]
             err = np.zeros(res.shape)
             pos = self.infodepth[:,0]
         else:

@@ -298,7 +298,7 @@ def convGauge(x, xdir, iext, nev):
     pos = sg*yd/sumw
     epos = sg*yd2/sumw
     width = 2.3548*sg*np.sqrt(np.absolute(epos - pos**2))
-    return np.array([x, pos, width, cnts, eps]).T
+    return np.array([x, pos, width, cnts, 1e6*eps]).T
 
 def convIntensity(x, model, iext=0):
     """Convolution of the scattering intensity distribution

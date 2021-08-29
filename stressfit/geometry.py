@@ -26,9 +26,13 @@ class Geometry:
     Attributes
     ----------
         scandir : array(3), optional
-            Scan direction in sample coordinates
+            Scan direction in sample coordinates. Internally, it defines
+            moving of gauge across stationary sample.
+            
+            **NOTE** This is inverted with respect to the equivalent argument 
+            of :func:`define`!
         scanorig : array(3), optional
-            Sscan origin (encoder = 0) in sample coordinates, in [mm]
+            Scan origin (encoder = 0) in sample coordinates, in [mm]
         rotctr : array(3), optional
             Sample rotation centre (sample coordinates), in [mm]
         angles : array(3), optional
@@ -45,21 +49,24 @@ class Geometry:
         self.define()
     
     def define(self, scandir=[0, 0, 1], scanorig=[0, 0, 0], angles=[0, 0, 0],
-            rotctr=[0, 0, 0]):
+            rotctr=[0, 0, 0], **kwargs):
         """Define geometry properties.
         
         Parameters
         ----------
         scandir : array(3), optional
-            Scan direction in sample coordinates
+            Scan direction in sample coordinates (moving of sample 
+            across stationary gauge)
         scanorig : array(3), optional
-            Sscan origin (encoder = 0) in sample coordinates, in [mm]
+            Scan origin (encoder = 0) in sample coordinates, in [mm]
         angles : array(3), optional
             Sample orientation (Euler angles YXY), in [deg]
         rotctr : array(3), optional
             Sample rotation centre (sample coordinates), in [mm]
         """
-        self.scandir = np.array(scandir)
+        # NOTE: we must invert scandir, because it should define move of events
+        # in stationary sample. 
+        self.scandir = -np.array(scandir)
         self.scanorig = np.array(scanorig)
         self.rotctr = np.array(rotctr)
         self.angles = np.array(angles)*_deg
