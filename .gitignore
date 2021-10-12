@@ -1,5 +1,6 @@
 __pycache__
 .ipynb*
+*.ipynb
 output/*
 *.png
 */output/*
@@ -11,3 +12,4 @@ dist
 _build
 work
 build
+.pylint*

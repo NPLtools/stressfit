@@ -13,9 +13,19 @@ from .shapeAbstract import ShapeAbstract
 
 
 class ShapeShell(ShapeAbstract):
+    """Define concentric hollow sphere.
+    
+    Parameters
+    ----------
+    Rin: float
+        Inner (hole) radius [mm].
+        
+    Rout: float
+        Outer radius [mm].
+    """
     shape_type = 'shell'
 
-    def __init__(self, Rin, Rout):
+    def __init__(self, Rin=4.0, Rout=8.0):
         super().__init__()
         self.R1 = Rin
         self.R2 = Rout

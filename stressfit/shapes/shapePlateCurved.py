@@ -13,19 +13,24 @@ from .shapeAbstract import ShapeAbstract
 
 
 class ShapePlateCurved(ShapeAbstract):
-    """Bent plate
+    """Define a bent plate.
 
     Plate with two independent, parabolic surfaces.
     Surface equation is z = 0.5*(rho[0]*x**2 + rho[1]*y**2) +- 0.5*thickness
 
-    Arguments:
-        thickness -- thckness at (x,y) = 0
-        rho1 -- curvatures of the front surface, [hor, ver] array
-        rho2 -- curvatures of the rear surface, [hor, ver] array
+    Parameters
+    ----------
+    thickness: float
+         Thickness at (x,y) = 0
+    rho1: array_like(2)
+        Curvatures of the front surface, [hor, ver]
+    rho: array_like(2)
+        Curvatures of the rear surface, [hor, ver]
     """
     shape_type = 'plate_curved'
 
-    def __init__(self, thickness, length, height, rho1, rho2):
+    def __init__(self, thickness=5.0, length=50.0, height=15.0, 
+                 rho1=[0.02, 0.0], rho2=[0.02, 0.0]):
         super().__init__()
         self.t = thickness
         self.rho1 = np.array(rho1)
@@ -183,7 +188,7 @@ class ShapePlateCurved(ShapeAbstract):
         y[:,1]=self.getSurface(r, 1)
         return [x, y]    
 
-    def plotContours(self, plt, color, linestyle):
+    def plotContours2(self, plt, proj, color, linestyle):
         ax = plt.axes()
         xlim=ax.get_xlim()
         n = 200
@@ -196,5 +201,55 @@ class ShapePlateCurved(ShapeAbstract):
         for i in range(2):
             plt.plot(x, y[:,i],color=color, linestyle=linestyle, marker='none')   
 
+    def plotContours(self, ax, proj, color, linestyle):
+        gray = (0.2, 0.2, 0.2, 0.15)
+        n = 100
+        # z,y
+        if (proj == 0):
+            y = np.linspace(-0.5*self.size[1], 0.5*self.size[1], num=n, endpoint=True)
+            xx = np.zeros(n)
+            r = np.array([xx, y]).T
+            z = np.zeros((n,2))
+            z[:,0] =  self.getSurface(r, -1)
+            z[:,1] =  self.getSurface(r, 1)
+            # fill gray
+            ax.fill_betweenx(y, z[:,0], x2=z[:,1], facecolor=gray) 
+            ax.plot(z[:,0], y,
+                    color=color, linestyle=linestyle, marker=None, label='c')
+            ax.plot(z[:,1], y,
+                    color=color, linestyle=linestyle, marker=None, label='d')
+            ax.plot([z[0,0],z[0,1]], [-0.5*self.size[1],-0.5*self.size[1]],
+                    color=color, linestyle=linestyle, marker=None, label='a')
+            ax.plot([z[-1,0],z[-1,1]], [0.5*self.size[1],0.5*self.size[1]],
+                    color=color, linestyle=linestyle, marker=None, label='b')       
+        # x,z
+        elif (proj == 1):
+            x = np.linspace(-0.5*self.size[0], 0.5*self.size[0], num=n, endpoint=True)
+            yy = np.zeros(n)
+            r = np.array([x, yy]).T
+            z = np.zeros((n,2))
+            z[:,0] =  self.getSurface(r, -1)
+            z[:,1] =  self.getSurface(r, 1)
+            # fill gray
+            ax.fill_between(x, z[:,0], y2=z[:,1], facecolor=gray) 
+            ax.plot(x, z[:,0],
+                    color=color, linestyle=linestyle, marker=None, label='c')
+            ax.plot(x, z[:,1],
+                    color=color, linestyle=linestyle, marker=None, label='d')
+            ax.plot([-0.5*self.size[0], -0.5*self.size[0]], [z[0,0],z[0,1]], 
+                    color=color, linestyle=linestyle, marker=None, label='a')
+            ax.plot([0.5*self.size[0], 0.5*self.size[0]], [z[-1,0],z[-1,1]],
+                    color=color, linestyle=linestyle, marker=None, label='b')
 
-            
+        # x,y
+        elif (proj == 2):
+            x1 = np.array([0.5*self.size[0], 0.5*self.size[0]])
+            x = np.array([-0.5*self.size[0], 0.5*self.size[0]])
+            y1 = np.array([-0.5*self.size[1], -0.5*self.size[1]])
+            y2 = np.array([0.5*self.size[1], 0.5*self.size[1]])
+            # fill gray
+            ax.fill_between(x, y1, y2=y2, facecolor=gray) 
+            ax.plot(x, y1, color=color, linestyle=linestyle, marker=None, label='c')
+            ax.plot(x, y2, color=color, linestyle=linestyle, marker=None, label='d')
+            ax.plot(-x1, y1, color=color, linestyle=linestyle, marker=None, label='a')
+            ax.plot(x1, y2, color=color, linestyle=linestyle, marker=None, label='b')

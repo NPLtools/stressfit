@@ -8,101 +8,92 @@ import stressfit.mccfit as mc
 import stressfit.graphs as gr
 from stressfit.geometry import Geometry
 import stressfit.dataio as dataio
+from stressfit.compliance import Compliance 
 _deg = np.pi/180.
 _geom = Geometry()
+_compl = None
 
 
-def load_sampling(filename, columns=[1, 4, 7, 10, 11], maxn=0, verbose=False):
+
+def load_sampling(file='', path=None, nev=None, columns=[1, 4, 7, 10, 11], 
+                  **kwargs):
     """Load Monte Carlo events representing the sampling distribution.
     
-    The event table contains neutron coordinates, weights and dhkl values.  
-    You need to specify column numbers for position, ki and kf vectors, 
-    weights and dhkl.
-    
-    Imported MC events are defined in the laboratory frame, with the origin 
-    at the centre of the instrumental gauge volume. Sample and orientation 
-    thus defines zero scan position and scan direction in the sample.
-    
+    Sampling points are a list of events simulated by Monte Carlo ray-tracing
+    and saved as a table in a text file. Each row contains neutron coordinates, 
+    weights and associated dhkl values.
+    You may need to specify column positions for position, ki and kf vectors, 
+    weights and dhk (the default matches the format exported by SIMRES ver. 6).
+     
+    Imported MC events are defined in the laboratory frame, with the origin at 
+    the centre of the instrumental gauge volume. Sample and orientation thus 
+    defines zero scan position and scan direction in the sample.  
 
     Parameters
     ----------
-    filename : str
+    file : str
         Input file name.
+    path: str
+        Input directory
     columns : list, optional
-        Column indices of r[0], ki[0], kf[0], weight and dhkl (starts from 0)
-    maxn : int, optional
+        Column positions of r[0], ki[0], kf[0], weight and dhkl
+        (indexing from 0)
+    nev : int, optional
         Maximum number or records. If zero, take all records in the file.
-    verbose: boolean
-        If true, print calculated gauge parameters.
 
     Returns
     -------
-    dict
-        - data: event data
-        - columns: given input parameter
-        - nrec: number of records
-        - ctr: sampling centre
-        - dmean: mean dhkl
+    :obj:`stressfit.sample.Sampling`
     """
-    out = {}
-    data = np.loadtxt(filename)
-    if maxn:
-        nrec = min(maxn, data.shape[0])
+    src = {}
+    fs = dataio.get_input_file(file, path=path)
+    data = np.loadtxt(fs)
+    # backwars compatibility, maxn = nev
+    if 'maxn' in kwargs:
+        nev = kwargs['maxn']
+    if nev:
+        nrec = min(nev, data.shape[0])
     else:
         nrec = data.shape[0]
-    # Calculate centre of mass of the distribution 
-    P = data[:nrec,columns[3]]/np.sum(data[:nrec,columns[3]])
-    ctr = np.zeros(3)
-    ki = np.zeros(3)
-    kf = np.zeros(3)
-    for i in range(3):
-        ctr[i] = data[:nrec, columns[0] + i].dot(P)
-        ki[i] = data[:nrec, columns[1] + i].dot(P)
-        kf[i] = data[:nrec, columns[2] + i].dot(P)
-    
-    wav = 2*np.pi/np.sqrt(ki.dot(ki))
-    dmean = data[:nrec, columns[4]].dot(P)
-    tth = np.arcsin(wav/2/dmean)*360/np.pi
-    if verbose:
-        print('Loaded event list with {:d} records'.format(nrec))    
-        print('Gauge centre: [{:g}, {:g}, {:g}] '.format(*ctr))
-        print('Mean wavelength: {:g}'.format(wav))
-        print('2 theta: {:g}'.format(tth))
-        print('d0: {:g}\n'.format(dmean))    
-    out['data'] = data[:nrec,:]
-    out['columns'] = columns
-    out['nrec'] = nrec
-    out['ctr'] = ctr
-    out['dmean'] = dmean
-    out['wav'] = wav
-    out['tth'] = tth
-    out['ki'] = ki
-    out['kf'] = kf
-    return out
+    src['file'] = fs.name
+    src['path'] = fs.parent.as_posix()
+    src['data'] = data[:nrec,:]
+    src['columns'] = columns
+    sampling = sam.Sampling(src)
+    return sampling
 
 
 
-def plot_scene(nev, filename, rang=[30, 30], proj=1):
+def plot_scene(nev, scan=None, filename='', rang=[30, 30], proj=1):
     """Plot 2D scene with experiment geometry.
 
     Parameters
     ----------
     nev : int
         Number of sampling points to plot.
+    scan: dict
+        Meta-data for the scan
     filename : str
         Output file name (*_scene.png will be added)
+        If not defined, tries to derive irt from scan['epsfile']
     rang : array(2)
         with, height of plotted scene in [mm]
     proj : int
-        projection plane: 0: (z, y); 1: (x, y); 2: (x, z)
+        projection plane: 0: (z, y); 1: (x, z); 2: (x, y)
 
     """
     # retrieve sampling for given number of events
     nevp = min(nev,10000)
     sampling = sam.getSampling(nevp)
     # format output filename
-    f = dataio.derive_filename(filename, ext='png', sfx='scene')
-    outpng = str(dataio.get_output_file(f))
+    if filename:
+        f = dataio.derive_filename(filename, ext='png', sfx='scene')
+        outpng = str(dataio.get_output_file(f))
+    elif scan is not None and 'epsfile' in scan:
+        f = dataio.derive_filename(scan['epsfile'], ext='png', sfx='scene')
+        outpng = str(dataio.get_output_file(f))
+    else:
+        outpng = ''
     # define ki and kf vectors in laboratory frame
     take_off = sampling.src['tth']*_deg # Scattering angle
     ki = np.array([0., 0., 1.])  # default for SIMRES simulations
@@ -147,21 +138,15 @@ def report_pseudo_strains(scan_range, file, nev=3000):
     model.saveInfoDepth('', file)
 
 
-def set_sampling(filename, path=None, nev=3000):
-    """Load sampling points and assign them for use in the current script.
+def set_sampling(sampling):
+    """Assign sampling events for use by convolution models.
     
-    Sampling points are a list of events simulated by Monte Carlo ray-tracing
-    and saved as a table in a text file. Each row contains neutron coordinates, 
-    weights and associated dhkl values.
-    You may need to specify column positions for position, ki and kf vectors, 
-    weights and dhk (the default matches the format exported by SIMRES ver. 6).
-     
-    Imported MC events are defined in the laboratory frame, with the origin at 
-    the centre of the instrumental gauge volume. Sample and orientation thus 
-    defines zero scan position and scan direction in the sample.
+    Parameters
+    ----------
+    sampling: :obj:`stressfit.sample.Sampling`
+        Object returend by :func:`load_sampling`
+    
     """
-    fs = dataio.get_input_file(filename, path=path)
-    sampling = load_sampling(fs, maxn=nev, verbose=True)
     sam.setSampling(sampling)
     
 def set_geometry(geometry):
@@ -184,12 +169,44 @@ def set_geometry(geometry):
         Experiment geometry data.
 
     """
+    global _geom, _compl
     _geom.define(**geometry)
-    if sam.shape is not None:
-        sam.shape.reset()
-        sam.shape.rotate(*list(_geom.angles))
-        sam.shape.moveTo(_geom.scanorig)
+    if sam.shape is None:
+        raise Exception('Sample shape not defined. Use set_shape().')
+    sam.shape.reset()
+    sam.shape.rotate(*list(_geom.angles))
+    sam.shape.moveTo(_geom.scanorig)
 
+def set_scan(scan):
+    global _compl
+    if sam.shape is None:
+        raise Exception('Sample shape not defined. Use set_shape().')
+    
+    keys =  ['scandir','scanorig','angles','rotctr']
+    scan_geometry = {key: scan[key] for key in keys}
+    set_geometry(scan_geometry)
+    
+    # Make sure the scan has sampling points defined.
+    # Sampling assigned to the scan data has preference.
+    if scan['sampling'] is not None:
+        sam.setSampling(scan['sampling'])
+    sampling = sam.getSampling()
+    if sampling is None:    
+        raise Exception('Sampling points are not defined. Use set_sampling().')    
+    
+    # Assign sampling to the scan if not yet done.
+    if (scan['sampling'] is None):
+        scan['sampling'] = sampling
+    
+    # Set mean Q direction to the compliance object
+    if _compl is not None:
+        ki = sampling.src['ki']
+        kf = sampling.src['kf']
+        ki0 = sam.shape.getLocalDir(ki)
+        kf0 = sam.shape.getLocalDir(kf)
+        Q = kf0-ki0
+        _compl.set_q(Q)
+    
 
 def set_attenuation(att, path=None):
     """Set beam attenuation parameter.
@@ -292,7 +309,50 @@ def set_environment(data=None, tables=None, output=None, instruments=None):
     
     """
     dataio.set_path(data=data, output=output, tables=tables, instruments=instruments)
+ 
     
+def set_compliance(**kwargs):
+    """Set material compliance as stressfit.compliance.Compliance object.
+    
+    The keyward arguments should define either of
+        - [E, nu, hkl] to define isotropic material
+        - [resource, phase, hkl] to define compliance from resource file
+    
+    Parameters
+    ----------
+    E: 
+        Young modulus in MPa
+    nu: 
+        Poisson ratio
+    hkl:
+        hkl indices for relfecting plane
+    resource: str
+        resource name (file in JSON format)
+        See resources/compliance in the package data for examples.
+    phase: str
+        phase name as defined in the resource file
+    
+    Return
+    ------
+    Compliance
+        Instance of the :class:`~stressfit.compliance.Compliance` class.
+        
+    """
+    global _compl
+    # create isotropic Compliance 
+    if all (k in kwargs for k in ("E", "nu", "hkl")):
+        S = Compliance.create_isotropic(kwargs['E'],
+                                             kwargs['nu'],
+                                             kwargs['hkl'])
+    # or create Compliance from resources    
+    elif all (k in kwargs for k in ("resource", "phase", "hkl")):
+        S = Compliance.from_resource(kwargs['resource'])
+        S.set_hkl(kwargs['phase'], kwargs['hkl'])
+    else:
+        raise Exception('Missing or undefined arguments.')
+    _compl = S
+    return S
+
 def load_input(strain, intensity=None,
               path=None,
               scandir=[0, 0, 1], 
@@ -321,7 +381,7 @@ def load_input(strain, intensity=None,
     angles : list or array, optional
         Sample orientation (Euler angles YXY)
     sampling: dict
-        Sampling events loaded by the function load_gauge.
+        Sampling events loaded by the function :func:`load_sampling`.
 
     Returns
     -------
@@ -343,10 +403,6 @@ def load_input(strain, intensity=None,
     scan['rotctr'] = np.array(rotctr)
     scan['angles'] = np.array(angles)
     scan['sampling'] = sampling
-
-    keys =  ['scandir','scanorig','angles','rotctr']
-    scan_geometry = {key: scan[key] for key in keys}
-    set_geometry(scan)
     return scan
   
 

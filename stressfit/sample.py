@@ -27,61 +27,130 @@ ext_mu = None
 
 _sampling = None
 
+def _verify_keys(keys, data):
+    res = all (k in data for k in keys)
+    return res
+
 class Sampling():
-    def __init__(self, events=None, columns=None, ctr = None):
-        """Set array of sampling events.
+    """Set array of sampling events.
+
+    The sampling events can be obtained by MC ray-tracing simulation
+    of the instrument at given setup. Generation of such a file
+    is implemented in SIMRES ver. 6.3.5 and above
+
+    Parameters
+    ----------
+        src: dict
+            Source data given as dictionary:
+                - data: replaces events parameter
+                - columns: replaces columns parameter
+                - ctr: replaces ctr parameter
+                - ki: mean incident k-vector
+                - kf: mean final k-vector
+        events: array[:,:]
+            list of sampling points coordinates and weights
+        columns: array of int
+            column indices for r, ki, kf, p, dhkl
+                - r : event position
+                - ki, k : initial and final wave vector
+                - p : probability
+                - dhkl : dhkl sampled by this event
+        ctr: array(3)
+            Gauge centre (default is calculated from sampling positions)
+       
+    """
     
-        The sampling events can be obtained by MC ray-tracing simulation
-        of the instrument at given setup. Generation of such a file
-        is implemented in SIMRES ver. 6.3.5 and above
-    
-        Arguments
-        ---------
-            events -- array[:,:]
-            columns -- defines column indices for r, ki, kf, p, dhkl
-                        r -- event position
-                        ki, kf -- initial and final wave vector
-                        p -- probability
-                        dhkl -- dhkl sampled by this event
-        """
+    def __init__(self, src=None, events=None, columns=None, ctr=None):       
         self.sdata = events
         self.idata = columns
-        self.src = None
+        self.file = ''
+        if src is not None:
+            if not _verify_keys(('data','columns'), src):
+                raise Exception('Required fields not found in src.')
+            self.src = src
+            self.sdata = src['data']
+            self.idata = src['columns']
+            if 'file' in src:
+                self.file = src['file']
+        else:
+            self.src = {}
+        self.src.update(self.calc_properties())
         if (ctr is not None):
             self.sctr = np.array(ctr)
         else:
-            self.sctr = np.array([0., 0., 0.])
+            self.sctr = self.src['ctr'] 
+        self.ki =self.src['ki']
+        self.kf =self.src['kf']
         if self.sdata is not None:
-            self.setRange(self.sdata.shape[0], setd0=True)
+            self.setRange(self.sdata.shape[0])
 
     @classmethod
     def fromdict(cls, source, ctr=None):
-        """Create class from dictionary.
+        """Create from dictionary.
         
-        Requires at least following keys:
-            - data
-            - columns
-            - ctr (optional)
+        Requires at least following keys in source:
+            - data: coordinates of the sampling events
+            - columns: column positions for r, ki, kf, p, dhkl
         
         Parameters
         ----------
-        source: array[:,:]
-            scattering events coordinates
+        source: dict
+            Dictionary with sampling data.
         ctr: list(3)
-            gauge centre coordinates
+            gauge centre coordinates (optional)
         
         """
         if 'data' in source and 'columns' in source:
-            if (ctr is None) and ('ctr' in source):
-                ctr = source['ctr']
-            s = cls(events=source['data'], columns=source['columns'])
-            s.src = source
+            s = cls(src=source, ctr=ctr)
         else:
             raise Exception('Required fields not found in source.')
         return s
     
     
-    def setRange(self, nev, setd0=False):
+    def calc_properties(self):
+        out = {}
+        nrec = self.sdata.shape[0]
+        data = self.sdata
+        columns = self.idata
+        # Calculate centre of mass of the distribution 
+        P = data[:nrec,columns[3]]/np.sum(data[:nrec,columns[3]])
+        ctr = np.zeros(3)
+        w = np.zeros(3)
+        ki = np.zeros(3)
+        kf = np.zeros(3)
+        for i in range(3):
+            c =  data[:nrec, columns[0] + i]
+            c2 = c*c
+            ctr[i] = c.dot(P)
+            w[i] = np.sqrt(c2.dot(P)-ctr[i]**2)*np.sqrt(8*np.log(2))
+            ki[i] = data[:nrec, columns[1] + i].dot(P)
+            kf[i] = data[:nrec, columns[2] + i].dot(P)
+        
+        wav = 2*np.pi/np.sqrt(ki.dot(ki))
+        dmean = data[:nrec, columns[4]].dot(P)
+        tth = np.arcsin(wav/2/dmean)*360/np.pi   
+        out['data'] = data[:nrec,:]
+        out['columns'] = columns
+        out['nrec'] = nrec
+        out['ctr'] = ctr
+        out['width'] = w
+        out['dmean'] = dmean
+        out['wav'] = wav
+        out['tth'] = tth
+        out['ki'] = ki
+        out['kf'] = kf    
+        return out
+    
+    def print_properties(self):
+        nrec = self.sdata.shape[0]
+        print('Number of loaded sampling points: {:d}'.format(nrec)) 
+        print('Gauge centre: [{:g}, {:g}, {:g}] '.format(*self.src['ctr']))
+        print('Mean wavelength: {:g}'.format(self.src['wav']))
+        print('2 theta: {:g}'.format(self.src['tth']))
+        print('d0: {:g}\n'.format(self.src['dmean'])) 
+    
+    def setRange(self, nev):
+        """Define subset of events and calclate mean dhkl."""
         [jr, jki, jkf, jp, jd] = self.idata[0:5]
         self.nev = nev
         sumd = 0
@@ -91,18 +160,33 @@ class Sampling():
             dhkl = self.sdata[ir, jd]
             sump += p
             sumd += p*dhkl
-        if (setd0):
-            self.d0 = sumd/sump  
+        self.d0 = sumd/sump  
         self.sump = sump
 
-def getSampling(nev):
-    _sampling.setRange(nev)
+def getSampling(nev=0):
+    """Return Sampling object.
+    
+    Parameters
+    ----------
+    nev: int
+        Number if sampling points to use (optional).
+    """
+    if nev>0:
+        _sampling.setRange(nev)
     return _sampling
 
-def setSampling(source, ctr=None):
-    """Define sampling from dict."""
+
+def setSampling(sampling):
+    """Assign sampling for use by convolution methods. 
+    
+    Parameters
+    ----------
+    sampling: :obj:`stressfit.sample.Sampling`
+        Object with sampling points.
+
+    """
     global _sampling
-    _sampling = Sampling.fromdict(source, ctr=ctr)
+    _sampling = sampling
     
 
 def rotate(v, axis, angle):
@@ -130,6 +214,12 @@ def rotate(v, axis, angle):
 
 
 def setExtinction(mu = None, table=None):
+    """Set beam attenuation.
+    
+    Set either as scalar (mu) in 1/cm, or as a lookup table
+    with mu [1/cm] as a function of wavelength [AA].
+    
+    """
     global ext_coeff, ext_lambda, ext_mu
     if (mu is None) & (table is None):
         raise RuntimeError('Define one of the arguments: mu or table.')
@@ -220,6 +310,10 @@ def shuffleEvents():
     np.random.shuffle(idx)
     sel = _sampling.sdata[idx,:]
     _sampling.sdata = sel
+    if _sampling.nev:
+        _sampling.setRange(_sampling.nev)
+    else:
+        _sampling.setRange(_sampling.sdata.shape[0])
 
 def convGauge(x, xdir, iext, nev):
     """Calculate sampling volume center and pseudo strains
@@ -263,12 +357,14 @@ def convGauge(x, xdir, iext, nev):
 
     # loop through sampling events to make convolution
     sumw = 0.
+    sump = 0.
     for ir in rnd:
         rn = _sampling.sdata[ir, jr:jr+3] - _sampling.sctr
         r0 = shape.getLocalPos(rn)
         ki = shape.getLocalDir(_sampling.sdata[ir, jki:jki+3])
         kf = shape.getLocalDir(_sampling.sdata[ir, jkf:jkf+3])
         p = _sampling.sdata[ir, jp]
+        sump += p
         # pseudo-strain at the samplig point
         deps = (_sampling.sdata[ir, jd] - d0)/d0
         r = r0 + dr
@@ -293,7 +389,7 @@ def convGauge(x, xdir, iext, nev):
     sg = np.array( (sumw > 0) , dtype=int)
     yc += (1-sg)*1.
     sumw += (1-sg)*1
-    cnts = sg*yi/_sampling.sump
+    cnts = sg*yi/sump
     eps = sg*yc/sumw
     pos = sg*yd/sumw
     epos = sg*yd2/sumw
@@ -323,10 +419,10 @@ def convIntensity(x, model, iext=0):
     yd2 = np.zeros(nx)
     xs = np.matrix(x)
     ex = np.zeros(nx)
-    # where to find r, ki, kf, p, dhkl
     if (_sampling.nev != nev):
         _sampling.setRange(nev)
-    rnd = range(0, nev)
+    rnd = range(0, _sampling.nev)
+    # where to find r, ki, kf, p, dhkl
     [jr, jki, jkf, jp, jd] = _sampling.idata[0:5]
     # scan positions relative to r
     dr = np.array(xs.T*xdir)
@@ -389,7 +485,6 @@ def convStrain(x, model, iext=0):
     xdir = model.xdir
     nev = model.nev
     # initialize local variables
-    rnd = range(0, nev)
     nx = x.shape[0]
     yc = np.zeros(nx)
     yc2 = np.zeros(nx)
@@ -397,10 +492,10 @@ def convStrain(x, model, iext=0):
     yd2 = np.zeros(nx)
     xs = np.matrix(x)
     ex = np.zeros(nx)
-    # where to find r, ki, kf, p, dhkl
     if (_sampling.nev != nev):
         _sampling.setRange(nev)
-    rnd = range(0, nev)
+    rnd = range(0, _sampling.nev)
+    # where to find r, ki, kf, p, dhkl
     [jr, jki, jkf, jp, jd] = _sampling.idata[0:5]
     d0 = _sampling.d0
     # scan positions relative to r

@@ -60,12 +60,14 @@ be represented by:
 """
 import numpy as np
 import datetime
+import json
 from pathlib import Path as _Path
 from functools import wraps
 
+__path_keys = ['data', 'tables', 'instruments', 'output']
+__paths = {}
 
 ### Classes
-
 
 class Param(dict):
     """
@@ -218,7 +220,6 @@ class Table():
 
 ### Path names handling
 
-
 def get_resource_path(name):
     """
     Return absolute resource path for given resource folder.
@@ -233,13 +234,13 @@ def get_resource_path(name):
     :class:`pathlib.Path`
     """
     p = _Path(__file__)
-    if name in ['data','tables','instruments']:
+    if name in ['data','tables','instruments','conf']:
         return p.parent.joinpath('resources',name)
     else:
         raise Exception('Unknown resource name: {}.'.format(name))
 
 
-def set_path(data=None, tables=None, instruments=None, output=None):
+def set_path(**kwargs):
     """
     Set paths for data input and outpout folders.
     
@@ -259,15 +260,11 @@ def set_path(data=None, tables=None, instruments=None, output=None):
         Output folder.
     
     """
-    global __inpath, __tables, __instruments, __outpath
-    if (data):
-        __inpath = _Path(data)
-    if (tables):
-        __tables = _Path(tables)
-    if (instruments):
-        __instruments = _Path(instruments)
-    if (output):
-        __outpath = _Path(output)
+
+    keys = ['data', 'tables', 'instruments', 'output']
+    for key in keys:
+        if key in kwargs and kwargs[key] is not None:
+            __paths[key] =  _Path(kwargs[key])
 
 
 def derive_filename(file, ext='', sfx=''):
@@ -346,12 +343,8 @@ def get_input_file(filename, kind='data', path=None, **kwargs):
     if not f.is_absolute():
         if path:
             p = _Path(path)
-        elif (kind == 'data'):
-            p = __inpath
-        elif (kind == 'tables'):
-            p = __tables
-        elif (kind == 'instruments'):
-            p = __instruments
+        elif kind in __path_keys:
+            p = __paths[kind]
         else:
             p = f.cwd()
         f = p.joinpath(f)
@@ -380,7 +373,7 @@ def get_output_file(filename, path=None, **kwargs):
         if path:
             p = _Path(path)
         else:
-            p = __outpath
+            p = __paths['output']
         f = p.joinpath(f)
     return f
 
@@ -467,6 +460,49 @@ def __std_header(comment="", source=None, labels=None):
         out.append(hdr)
     return out
 
+
+
+def load_resource(filename, folder):
+    """Read content of a resource file as a list of text lines.
+    
+    Parameters
+    ----------
+    filename: str
+        base file name 
+    folder: str
+        resource sub-folder name
+    """
+    path = get_resource_path(folder)
+    fn = path.joinpath(_Path(filename))
+    f = open(fn, 'r')
+    lines = f.readlines() 
+    f.close()
+    return lines
+
+
+def load_config(filename, folder='conf', ext='json'):
+    """Read a JSON configuration file file from resources.
+    
+    Parameters
+    ----------
+    filename: str
+        base file name 
+    folder: str
+        resource sub-folder name
+    
+    Returns
+    -------
+    dict
+        The file content converted to a dictionary.
+    """
+    if not filename.endswith('.'+ext):
+        filename += '.{}'.format(ext)
+    conf = load_resource(filename, folder)
+    try:
+        res = json.loads('\n'.join(conf))
+    except Exception as e:
+        print(e)
+    return res
 
 @loadwrapper
 def load_text(filename, **kwargs):
@@ -857,11 +893,33 @@ def save_params(data, filename, comment="", source="", **kwargs):
     save_text(out, filename, **kwargs)
 
 
-# Define default paths for resource data and output folder.
-# These values can be overriden by set_path().
-__inpath = get_resource_path('data')
-__tables = get_resource_path('tables')
-__instruments = get_resource_path('instruments')
-__outpath = _Path().cwd()
+def get_paths():
+    """Return current posix path names as dict."""
+    env = {}
+    for key in __path_keys:
+        env[key] = __paths[key].as_posix()
+    return env
 
+def validate_paths():
+    """Check that the workspace paths exist."""
+    fmt = 'Path not found: {}'
+    for key in __path_keys:
+        if not __paths[key].exists():
+            raise Exception(fmt.format(__paths[key]))
+
+def reset_paths():
+    """Reset paths to package defaults.
+    
+    Define default paths for resource data and output folder.
+    These values can be overriden by set_path().
+    """
+    __paths['data'] = get_resource_path('data')
+    __paths['tables'] = get_resource_path('tables')
+    __paths['instruments'] = get_resource_path('instruments')
+    __paths['output']  = _Path.home().joinpath('Documents')
+    if not __paths['output'].exists():
+        __paths['output'] = _Path().cwd()
+
+
+reset_paths()
 

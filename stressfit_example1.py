@@ -55,7 +55,7 @@ $( document ).ready(code_toggle);
 #%% USER INPUT
 
 # Define environment: input/output folders (can be absolute or relative)
-# Set to non for searching in package resources
+# Set to None for searching in package resources
 input_path = None # input data
 output_path = './output' # output data
 tables_path = None # lookup tables etc.
@@ -97,21 +97,22 @@ sampling_path = None # directory with simulated sampling points
 radius1 = 4.
 radius2 = 8
 height = 50.0
-shape = S.ShapeShellCyl(radius1, radius2, height)
+shape = S.ShapeTube(Rin=4.0, Rout=8.0, height=50.0)
 
 # Define input data with info about experimental geometry:
 # give filename with strain data as the first argument
 # intensity = filename with intensity scan
-# scandir = scan direction in sample coordinates
+# scandir = scan direction in sample coordinates (where the sample moves)
 # scanorig = scan origin (encoder = 0) in sample coordinates
 # rotctr = sample rotation centre (sample coordinates)
 # angles = sample orientation (Euler angles YXY) in deg
-scan = comm.load_input('eps_SS_hoop.dat', 
-                       intensity='int_SS_hoop.dat', 
-                       scandir=[0., 0., -1.],
+scan = comm.load_input('eps_SS_rad.dat', 
+                       intensity='int_SS_rad.dat', 
+                       scandir=[0., 0., 1.],
                        scanorig=[0, 0, 0],
-                       rotctr=[0,0,0], 
-                       angles=[180+45, 0, 0])
+                       rotctr=[0, 0, 0], 
+                       angles=[135, 0, 0])
+
 
 # Material attenuation, provide either of
 # File name: A table with 2 columns: wavelength [A], attenuation [1/cm]
@@ -138,8 +139,10 @@ scene_projection = 1
 # Set environment
 comm.set_environment(data=input_path, output=output_path, tables=tables_path)
 
-# Set sampling distribution
-comm.set_sampling(sampling_file, path=sampling_path, nev=nev_load)
+# Load and set sampling distribution
+sampling = comm.load_sampling(sampling_file, path=sampling_path, maxn=nev_load)
+sampling.print_properties()
+comm.set_sampling(sampling)
 
 # Set beam attenuation
 comm.set_attenuation(att)    
@@ -148,7 +151,7 @@ comm.set_attenuation(att)
 comm.set_shape(shape)
 
 # Set experiment geometry 
-comm.set_geometry(scan)   
+comm.set_scan(scan)   
 
 # Plot experiment geometry
 comm.plot_scene(nev_plot, scan['epsfile'], rang=scene_range, proj=scene_projection)
@@ -189,7 +192,7 @@ fA = 1
 fB = 0
 
 # zero encoder position = position of the front surface in encoder scale
-# = where is the surcae position in the data table ...
+# = where is the surface position in the data table ...
 zc = 0.05
 # fixed (0) or free (1):
 fzc = 1
@@ -273,7 +276,6 @@ bootstrap = True
 loops = 5
 # Define a list of regularization factors:
 aregs = [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4]
-aregs = [1e-7, 1e-6, ]
 # maximum iterations for guess fit
 maxguess = 100
 # maximum iterations for fit

@@ -13,9 +13,17 @@ from .shapeAbstract import ShapeAbstract
 
 
 class ShapeSph(ShapeAbstract):
+    """Define filled sphere.
+    
+    Parameters
+    ----------
+    radius: float
+        Sphere radius in [mm].
+    
+    """
     shape_type = 'sphere'
 
-    def __init__(self, radius):
+    def __init__(self, radius=8.0):
         super().__init__()
         self.rad = radius
 

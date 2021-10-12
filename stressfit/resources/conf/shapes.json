@@ -1,0 +1,54 @@
+{
+    "Plate": {
+		"name":"Flat plate",
+		"hint":"An infinite flat plate",
+		"param":{
+			"thickness": {"label":"thickness","value":10.0,"unit":"mm","hint":"Dimension along z-axis"}
+		}
+	},
+    "Cylinder": {
+		"name":"Cylinder",
+		"hint": "A rod with axis = y.",
+		"param": {
+			"radius": {"label":"radius","value":4.0,"unit":"mm","hint":""},
+			"height": {"label":"height","value":50.0,"unit":"mm","hint":""}
+		}
+	},
+    "Sphere": {
+		"name":"Sphere",
+		"hint": "",
+		"param": {
+			"radius": {"label":"radius","value":4.0,"unit":"mm","hint":""}
+		}
+	},
+    "Tube": {
+		"name":"Tube",
+		"hint":"A tube with axis = y.",
+		"param": {
+			"Rin": {"label":"R_inner","value":4.0,"unit":"mm","hint":"Radius of the hole"},
+			"Rout": {"label":"R_outer","value":8.0,"unit":"mm","hint":"Outer radius"},
+			"height": {"label":"height","value":50.0,"unit":"mm","hint":""},
+			"ctr": {"label":"hole centre","value":[0.0,0.0],"unit":"mm","hint":"x,z coordinates of the hole centre"},
+			"sref": {"label":"reference surface","value":["inner", "outer"],"unit":"","hint":"Select reference surface for depth calculation"}
+		}
+	},
+    "Shell": {
+		"name":"Hollow sphere", 
+		"hint":"Give inner and outer radii in mm.",
+		"param": {
+			"Rin": {"label":"R_inner","value":4.0,"unit":"mm","hint":"Radius of the hole"},
+			"Rout": {"label":"R_outer","value":8.0,"unit":"mm","hint":"Outer radius"}
+		}
+	},
+    "PlateCurved": {
+		"name":"Curved plate",
+		"hint":"Give plate dimensions and curvatures (x, y)",
+		"param": {
+			"thickness": {"label":"thickness","value":6.0,"unit":"mm","hint":"Dimension along z-axis"},
+			"length": {"label":"length","value":50.0,"unit":"mm","hint":"Dimension along x-axis"},
+			"height": {"label":"height","value":15.0,"unit":"mm","hint":"Dimension along y-axis"},
+			"rho1": {"label":"rho 1","value":[0.02,0.0],"unit":"1/mm","hint":"Curvatures of the front surface (x,y)"},
+			"rho2": {"label":"rho 2","value":[0.02,0.0],"unit":"1/mm","hint":"Curvatures of the rear surface (x,y)"}
+		}
+	}
+}

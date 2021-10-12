@@ -212,7 +212,7 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
         rang: touple[2]
             plot area in mm
         proj: int
-            projection plane: 0: (z, y); 1: (x, y); 2: (x, z)
+            projection plane: 0: (z, y); 1: (x, z); 2: (x, y)
         shape: Shape
             Shape object with sample geometry etc.
         ki, kf: ndarray[3]

@@ -1,73 +1,120 @@
 # -*- coding: utf-8 -*-
 # Created on Thu Apr 15 16:35:29 2021
 # @author: Jan Saroun, saroun@ujf.cas.cz
-"""Demonstration: strain data from macroscopic stress model.
+"""Demonstration: strain data fit to macroscopic stress model.
 
-Requires external data for stress-lattice strain conversion, e.g. from
-EPSC simulations or in-situ loading test.
+Compliance tensor elements can be loaded from exteralexternal file.
+For isotropic materials, compliance can be calculated from given 
+Young modulus and Poisson constant.
 """
 import numpy as np
-from scipy.interpolate import interp1d
+import stressfit.commands as comm
 import stressfit.shapes as S
 import stressfit.sample as sam
 import stressfit.mccfit as mc
-import stressfit.graphs as gr
-import stressfit.commands as comm
-from stressfit.compliance import Compliance
-import stressfit.dataio as dataio
 deg = np.pi/180.
 
-# Define environment
-# input data folder
-inpath = mc.path2win(r'.\input')
-# output data folder
-outpath = mc.path2win(r'.\output')
-# path to sampling points data
-gpath = mc.path2win(r'./input/')
 
-#%% Sampling distribution
+#%% USER INPUT - ENVIRONMENT
 
-# Load Monte Carlo events representing the sampling distribution from a text file.
-# The event table contains neutron coordinates, weights and dhkl values.  You need to specify column numbers for position, ki and kf vectors, weights and dhkl.
+# Define environment: input/output folders (can be absolute or relative)
+# Set to None for searching in package resources
+input_path = None # input data
+output_path = './output' # output data
+tables_path = None # lookup tables: e.g. material data
+sampling_path = None # directory with simulated sampling points 
+
+# Set environment
+comm.set_environment(data=input_path, output=output_path, tables=tables_path)
+
+#%% USER INPUT - SAMPLING
+
+# file with the sampling points  
+sampling_file = 'events_S_1mm.dat' 
+# number of sampling points to load from the file
+nev_load = 3000
+# number of sampling points to plot
+nev_plot = 3000
+# number of sampling points to use in concolution
+nev_use = 3000
+
+# load sampling
+sampling = comm.load_sampling(sampling_file, path=sampling_path, maxn=nev_load)
+sampling.print_properties()
+
+#%% USER INPUT - MATERIAL
+
+# Material attenuation, provide either of
+# File name: A table with 2 columns: wavelength [A], attenuation [1/cm]
+# Float number: attenuation [1/cm]:
+att = 'Fe_mu.dat'
+
+
+## Compliance tensor
+# For isotropic material: provide Yound modulus and Poisson ratio
+# Othervise: load from database (JSON format)
+# See resources/compliance in the package data for examples and file format.)
+#
+# Compliance tensor is provided as 6 elements, corresponding
+# to the 3rd row of the Compliance matrix in Voigt notation in the measurement 
+# reference frame, where Q is parallel to z. 
+#
+# Parameters:
+#   resource: resource file (JSON format)
+#   phase: phase name as defined in the resource file
+#   hkl: indices of corresponding diffraction plane
+#   Q_angles: 2 angles which define the Q-vector orientation with respect  
+#       to the sample reference frame (ZY Euler angles)
+
+compliance = {'resource':'compliance/Fe_iso', 
+              'phase': 'ferrite',
+              'hkl': [2,1,1]
+              }
+
+# alternatively, define isotropic material as e.g.
+# compliance = {'E':220, 'nu': 0.28,'hkl': [2,1,1]}
+
+
+
+#%% USER INPUT - SAMPLE SHAPE
+
+# ## Sample definition
+# Following block defines the <b>sample shape, position and orientation.</b>
+# ### Coordinates
+# The laboratory frame is defined by y-axis vertical and z-axis pointing along the incident beam.
+# The positioning includes rotation by YXY Euler angles ($\omega$, $\chi$, $\phi$) and a linear shift (multiple commands <code>rotate</code> and <code>moveTo</code> are possible to achieve required position).
 # 
-# Imported MC events are defined in the laboratory frame, with the origin at the centre of the instrumental gauge volume. Sample and orientation thus defines zero scan position and scan direction in the sample.
+# Imported MC events are defined in the laboratory frame, with the origin at the centre of the instrumental gauge volume. Sample position and orientation thus define zero scan position and scan direction in the sample.
+# 
+# ### Sample shape
+# Sample dimensions depend on the selected shape. Choose one of the classes defined in the Shapes folder of the package:
+# 
+# <code> S.ShapePlate(thickness) </code> <br />
+# An infinitely large flat plate of given thickness.
+# 
+# <code> S.ShapePlateCurved(thickness, length, height, [r1x, r1y],  [r2x, r2y]) </code><br />
+# A curved plate of given thickness (z), length (x) and height (y). <code>[r1x, r1y]</code> are curvature radii along x and y of the front surcae (z>0). <code>[r2x, r2y]</code> are the radii for the rear surface.
+# 
+# <code> S.ShapeCyl(radius, height) </code><br />
+# A cylindrical shape with axis along y-axis.
+# 
+# <code> S.ShapeShellCyl(Rin, Rout, height) </code><br /> 
+# A hollow cylinder with axis along y-axis. Rin, Rout are the inner and outer radii.
+# 
+# <code> S.ShapeSph(radius) </code> <br />
+# A spherical sample.
+# 
+# The next block in this template defines a tube: a hollow cylinder with inner radius 4 mm, outer radius 8 mm and height 50 mm. Zero scan position corresponds to the instrumental gauge volume centered at the surface. Measured strain direction is defined by the angle <code>omega</code>.
+# 
 
-# load sampling points
-gpath = r'./input/'
-sampling = comm.load_sampling(gpath + "events_S_1mm.dat", verbose=True)
-
-#%% Define compliance matrix
-
-# create Compliance from resources
-Smat = Compliance.from_resource('compliance/Fe_iso', phase='ferrite')
-# define phase and hkl 
-phase = 'ferrite'
-hkl = [2,1,1]
-
-
-#%% Define beam attenuation
-
-# There are two options, uncomment one of them: 
-
-# Option 1: Load attenuation as a table (wavelength, mu), [1/cm]. 
-exttab = dataio.load_data('Fe_mu.dat', kind='tables')
-sam.setExtinction(table=exttab)
-
-# Option 2: Set attenuation as a single coefficient [1/cm]:
-# sam.setExtinction(mu=1.96) 
-
-
-#%% Input data
-
-# Define sample shape
-#---------------------
-
-# Set sample shape
+# Set sample shape (see comment above).
 # Dimensions [mm]
 radius1 = 4.
 radius2 = 8
 height = 50.0
-shape = S.ShapeShellCyl(radius1, radius2, height)
+shape = S.ShapeTube(radius1, radius2, height)
+
+#%% USER INPUT - Input data
 
 
 # Define experimental data
@@ -87,8 +134,7 @@ shape = S.ShapeShellCyl(radius1, radius2, height)
 scans = {}
 scans['hoop'] = comm.load_input('eps_SS_hoop.dat', 
                          intensity='int_SS_hoop.dat', 
-                         path = inpath,
-                         scandir=[0., 0., -1.],
+                         scandir=[0., 0., 1.],
                          scanorig=[0, 0, 0],
                          rotctr=[0,0,0], 
                          angles=[225, 0, 0],
@@ -96,8 +142,7 @@ scans['hoop'] = comm.load_input('eps_SS_hoop.dat',
 
 scans['axi'] = comm.load_input('eps_SS_axi.dat',
                          intensity='int_SS_axi.dat', 
-                         path = inpath,
-                         scandir=[0., 0., -1.],
+                         scandir=[0., 0., 1.],
                          scanorig=[0, 0, 0],
                          rotctr=[0, 0, 0], 
                          angles=[135, 90, 90],
@@ -105,66 +150,44 @@ scans['axi'] = comm.load_input('eps_SS_axi.dat',
 
 scans['rad'] = comm.load_input('eps_SS_rad.dat',
                          intensity='int_SS_rad.dat', 
-                         path = inpath,
-                         scandir=[0., 0., -1.],
+                         scandir=[0., 0., 1.],
                          scanorig=[0, 0, 0],
                          rotctr=[0, 0, 0], 
                          angles=[135, 0, 0],
                          sampling=sampling)
 
+# select one data set for plotting 
+scan = scans['axi']
 
-# Select which data to process
-data = scans['hoop']
-
-
-#%% Initiate dependent parameters
-
-# Sample rotation. 
-# At zero angles, the z-axis is parallel to the beam, y-axis is vertical.
-# omega, chi, phi are Euler angles (rotation around Y, X, Y).
-# Example for a plate symmetric reflection with incidence angle = theta:
-#   set chi=0, phi=0, omega=90 + theta
-
-# Scattering angle
-take_off = sampling['tth']*deg 
-
-# Set sample position
-angles = data['angles']*deg
-shape.rotate(*angles)
-shape.moveTo(data['scanorig'])
-
-# Assign shape
-sam.shape = shape
+#%% Initialization commands
 
 
 
-# define ki and kf vectors in laboratory frame
-ki = np.array([0., 0., 1.])  # default for SIMRES simulations
-kf = sam.rotate(ki, 1, take_off) # rotation of ki by the take-off angle
+# Set beam attenuation
+comm.set_attenuation(att)    
 
-# Set the events to the sample component
-sam.setSampling(data['sampling'])
+# Set sample shape
+comm.set_shape(shape)
 
-# set orientation of Q to Smat
-ki0 = shape.getLocalDir(ki)
-kf0 = shape.getLocalDir(kf)
-Q = ki0-kf0
-Smat.set_hkl(phase, hkl, Q=Q)
+# Define compliance
+S = comm.set_compliance(**compliance)
+
+# Set scan with associated experiment geometry 
+comm.set_scan(scan)   
 
 
-#%% Plot sampling scene
+#%% Plote scene with sampling distribution
 
-# number of sampling events to show
-nev = 2000
-# plot range in [mm]
-rang = [13, 13]  
+# 2D plot of experiment geometry:
+# scene width,height in [mm]
+scene_range = [16, 16]  
 # projection plane (zy=0, xz=1, xy=2)
-proj = 1  
-outpng = outpath + 'scene.png'
-gr.plotScene(rang, proj, shape, ki, kf, data['scandir'], sam.getSampling(nev), 
-             save = True, file = outpng)
+scene_projection = 1  
 
-   
+# Plot experiment geometry 
+# (red arrow shows motion of sampling points in stationary ample)
+comm.plot_scene(nev_plot, scan=scan, rang=scene_range, proj=scene_projection)
+  
 
 #%% Define stress model
 # Give initial values, followed by flags (0|1), fx=1 means a free variable, 0 for fixed.  

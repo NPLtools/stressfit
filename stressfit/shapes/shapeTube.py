@@ -37,7 +37,7 @@ class ShapeTube(ShapeAbstract):
     
     shape_type = 'cylinder_hollow'
 
-    def __init__(self, Rin, Rout, height, ctr=[0,0], sref=1):
+    def __init__(self, Rin=4.0, Rout=8.0, height=30.0, ctr=[0,0], sref=1):
         """Define hollow cylinder with axis || y."""
         super().__init__()
         self.R1 = min(Rin,Rout)

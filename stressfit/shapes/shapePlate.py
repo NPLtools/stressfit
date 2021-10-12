@@ -15,9 +15,17 @@ _eps = 1.0e-12
 
 
 class ShapePlate(ShapeAbstract):
+    """Define infinite plate normal to z.
+    
+    Parameters
+    ----------
+    thickness: float
+        Plate thickness in [mm].
+    
+    """
     shape_type = 'plate'
 
-    def __init__(self, thickness):
+    def __init__(self, thickness=10.0):
         super().__init__()
         self.t = thickness
 

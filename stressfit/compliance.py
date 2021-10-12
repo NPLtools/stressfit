@@ -337,8 +337,9 @@ class Compliance():
         rs = self.dbase
         if not phase in rs['phases']:
             p = list(rs['phases'].keys())[0]
-            msg = 'WARNING: phase {} not defined. Using {}.'
-            print(msg.format(phase,p))
+            if phase:
+                msg = 'WARNING: phase {} not defined. Using {}.'
+                print(msg.format(phase,p))
             phase = p
         p = rs['phases'][phase]
         item = p['data'][0]

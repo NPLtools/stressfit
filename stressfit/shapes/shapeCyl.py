@@ -13,9 +13,19 @@ from .shapeAbstract import ShapeAbstract
 
 
 class ShapeCyl(ShapeAbstract):
+    """Define filled cylinder with axis = y.
+    
+    Parameters
+    ----------
+    radius: float
+        Cylinder radius in [mm].
+    height: float
+        Cylinder height in [mm].
+    
+    """
     shape_type = 'cylinder'
 
-    def __init__(self, radius, height):
+    def __init__(self, radius=4.0, height=30.0):
         super().__init__()
         self.rad = radius
         self.height = height
