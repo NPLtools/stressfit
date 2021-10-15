@@ -308,7 +308,8 @@ def set_environment(data=None, tables=None, output=None, instruments=None):
         Output folder.
     
     """
-    dataio.set_path(data=data, output=output, tables=tables, instruments=instruments)
+    dataio.set_path(data=data, output=output, tables=tables, 
+                    instruments=instruments)
  
     
 def set_compliance(**kwargs):

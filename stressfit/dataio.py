@@ -64,10 +64,267 @@ import json
 from pathlib import Path as _Path
 from functools import wraps
 
-__path_keys = ['data', 'tables', 'instruments', 'output']
-__paths = {}
+__work = None
+
+
 
 ### Classes
+
+class Workspace():
+    """
+    Class for managing user workspaces.
+    
+    A workspace is defined by the working root directory - `work`, and several
+    other directories which help to structure input and output data:
+    
+    data:
+        Input data (e.g. experimental data)
+    tables:
+        Lookup tables, material tables, etc.
+    instruments:
+        Instrument files (e.g. instrument configurations)
+    output:
+        Output data. All output files will be saved in this directory.
+        
+    If the other directories are given as relative paths, they are interpreted
+    relative to the main `work` directory.
+    
+    The paths are internally saved as pathlib.Path objects.
+    
+    The workspace paths can be saved in the work directory in 
+    the file `.stressfit` and loaded from it. The file is searched for when
+    switching to a new work directory and loaded if found. 
+    
+    By default, `data`, `tables` and `instruments` point to the package 
+    resources, `work` and `output` point to the user's Documents folder. 
+    
+    
+    """
+    cfg_name = '.stressfit'
+    types = ['work', 'data', 'tables', 'instruments', 'output']
+    def __init__(self):
+        self._path_keys = Workspace.types
+        self._paths = {} 
+        self.reset_paths()
+
+    def reset_paths(self):
+        """Reset paths to package defaults.
+        
+        Define default paths for resource data and output folder.
+        These values can be overriden by set_path().
+        """
+        self._paths['data'] = get_resource_path('data')
+        self._paths['tables'] = get_resource_path('tables')
+        self._paths['instruments'] = get_resource_path('instruments')
+        self._paths['output']  = _Path.home().joinpath('Documents')
+        self._paths['work'] = self._paths['output']
+        if not self._paths['output'].exists():
+            self._paths['output'] = _Path().cwd()
+            self._paths['work'] = self._paths['output']
+  
+    def keys(self):
+        return self._path_keys
+  
+    def full_path(self, key, as_posix=False):
+        """Return full path for given directory key.
+        
+        Parameters
+        ----------
+        key: str
+            Directory key. One of the keys defined by `self._path_keys`.
+            
+        as_posix: bool
+            If True, return as string, otherwise return as a pathlib.Path.
+        """
+        if key in self._path_keys:
+            if key=='work':
+                res = self._paths['work']
+            elif self._paths[key].is_absolute():
+                res = self._paths[key]
+            else:
+                res = self._paths['work'].joinpath(self._paths[key])
+        else:
+            msg = 'Unknown directory key ({}). Use one of {}.'
+            raise Exception(msg,format(key, self._path_keys))
+        if as_posix:
+            return res.as_posix()
+        else:
+            return res
+    
+
+    def change_workspace(self, work_path):
+        """
+        Change workspace root directory.
+        
+        Process dependences:
+            
+            - Try to load the local .stressfit configuration file
+            - If not loded/not found, then make sure that relative paths
+              exist in the new workspace. 
+            - If not, convert them to absoluet paths.
+
+        Parameters
+        ----------
+        work_path : str
+            Must be a full path. If not, :meth:`pathlib.Path.absolute` is 
+            tried to derive absolute path.
+        
+        Return
+        ------
+        bool
+            True if new workspace configuration was loaded. 
+        """
+        out = False
+        old_work = self._paths['work']
+        p = _Path(work_path)
+        if p.is_absolute():
+            self._paths['work'] = p
+        else:
+            try:
+                pp = p.absolute()
+                self._paths['work'] = pp                
+            except Exception:
+                msg = 'Cannot set relative work path: {}'
+                print(msg.format(work_path))
+        # try to load configuration
+        out = self.load()
+        # if not loaded, check relative paths:
+        # - keep it relative if it exists in the new wrokspace
+        # - otherwise convert to absolute
+        if not out:
+            for key in self._paths.keys():
+                if key == 'work':
+                    pass
+                else:
+                    p = self._paths[key]
+                    if not p.is_absolute():
+                        pp = self._paths['work'].joinpath(p)
+                        if not pp.exists():
+                            self._paths[key] = old_work.joinpath(p)
+            self.set_paths()
+        return out
+        
+        
+    def set_paths(self, **kwargs):
+        """
+        Set paths for data input and output folders.
+        
+        Paths with `None` value remain unchanged.
+        
+        Parameters
+        ----------
+        data: str
+            Input data (measured strain, intensity, etc.).
+        tables: str
+            Other auxilliary input such as lookup tables or material data.
+        instruments: str
+            Instrument configuration files.
+        output: str
+            Output folder.
+            
+        If the given path is a subdirectory of the work path, then it is saved
+        as relative. 
+        
+        """
+        
+        for key in kwargs:
+            if key == 'work':
+                pass
+            elif key in self._path_keys and kwargs[key] is not None:
+                p = _Path(kwargs[key])
+                # make absolute paths relative to work if possible
+                if p.is_absolute():
+                    try:
+                        p = p.relative_to(self._paths['work'])
+                    except:
+                        pass    
+                self._paths[key] = p
+    
+    def get_paths(self, absolute=False, keys=None):
+        """Return current posix path names as dict.
+        
+        Parameters
+        ----------
+        absolute: bool
+            Return as absolute paths.
+        keys: list
+            If defined, return only listed directories. Otherwise
+            return all workspace directories.
+        
+        Return
+        ------
+        dict
+            Keys are the directory types defined for the workspace.
+            The values are path names returned by :func:`pahlib.Path.as_posix`.
+        """
+        env = {}
+        if keys is None:
+            keys = self._path_keys
+        for key in keys:
+            p = self._paths[key]
+            if absolute:
+                p = self.full_path(key, as_posix=True)
+            else:
+                p = self._paths[key].as_posix()
+            env[key] = p
+        return env
+    
+    def validate_paths(self):
+        """Check that the workspace paths exist."""
+        fmt = 'Path not found: {}'
+        for key in self._path_keys:
+            f = self.full_path(key, as_posix=False)
+            if not f.exists():
+                raise Exception(fmt.format(f.as_posix()))
+
+    def load(self):
+        """Load workspace path names from local workspace configuration file.
+        
+        If successful, update workspace setting.
+        
+        Return
+        ------
+        bool
+            True if successfully loaded and workspace updated.
+        """
+        out = False
+        file = self._paths['work'].joinpath(Workspace.cfg_name)
+        if file.exists():
+            try:
+                f = open(file, 'r')
+                lines = f.readlines() 
+                f.close()
+                res = json.loads('\n'.join(lines))
+                if 'workspace' in res:
+                    w = res['workspace']
+                    self.set_paths(**w)
+                    out = True
+            except Exception as e:
+                print(e)
+        return out
+
+    def save(self):
+        """Save workspace path names in local workspace configuration file."""
+        if self._paths['work'].exists():
+            file = self._paths['work'].joinpath(Workspace.cfg_name)
+            keys = self._path_keys.copy()
+            try:
+                keys.remove('work')
+                lst = self.get_paths(absolute=False, keys=keys)
+                out = {'workspace':lst}
+                txt = json.dumps(out,indent=4)
+                f = open(file, 'w')
+                f.write(txt)
+                f.close()
+            except Exception as e:
+                print(e)
+
+    def print_info(self, absolute=False):
+        """Print ifnormation on workspace paths."""
+        fmt = '{}: {}'
+        lst = self.get_paths(absolute=absolute)
+        for key in lst:
+            print(fmt.format(key,lst[key]))
 
 class Param(dict):
     """
@@ -225,9 +482,14 @@ def get_resource_path(name):
     Return absolute resource path for given resource folder.
     
     Allowed names are:
-        - `data` for test input data 
-        - `tables` for tabeled data supplied with the package
-        - `instruments` for instrument configurations provided by the package
+    data :
+        for test input data 
+    tables :
+        for tabeled data supplied with the package
+    instruments :
+        for instrument configurations provided by the package
+    conf :
+        stressfit configuration files
     
     Return
     ------
@@ -240,31 +502,6 @@ def get_resource_path(name):
         raise Exception('Unknown resource name: {}.'.format(name))
 
 
-def set_path(**kwargs):
-    """
-    Set paths for data input and outpout folders.
-    
-    By default, the input paths are the package resource directories, 
-    the output path is the current directory. 
-    Paths with `None` value remain unchanged.
-    
-    Parameters
-    ----------
-    data: str
-        Input of strain and intensity data.
-    tables: str
-        Other auxilliary input such as lookup tables or material data.
-    instruments: str
-        Instrument configuration files.
-    output: str
-        Output folder.
-    
-    """
-
-    keys = ['data', 'tables', 'instruments', 'output']
-    for key in keys:
-        if key in kwargs and kwargs[key] is not None:
-            __paths[key] =  _Path(kwargs[key])
 
 
 def derive_filename(file, ext='', sfx=''):
@@ -313,9 +550,9 @@ def derive_filename(file, ext='', sfx=''):
 
 def get_input_file(filename, kind='data', path=None, **kwargs):
     """
-    Convert fname to full path name.
+    Convert filename to full path name.
     
-    If path is not included, prepend the default input path (see set_path).
+    If path is not defined, use workspace path for given directory kind.
     Otherwise only convert the file name to a Path object.
     
     Parameters
@@ -323,28 +560,25 @@ def get_input_file(filename, kind='data', path=None, **kwargs):
     filename: str
         File name (base name or full path).
     kind: str
-        Search path specification:
+        Which kind of directory to use:
             - `data` for input data
             - `tables` for table and other files
             - `instruments` for a file with instrument parameters
             - any other: current directory.
     path: str
         Optional search path for the input file. 
-        If defined and if ``filename`` is
-        a relative path, it overrides the default search path (see 
-        the parameter ``kind`` and function :func:`.set_path`).
     
     Returns
     -------
-    :class:`pathlib.Path`
-        Full path specification as a :class:`pathlib.Path` object.
+    :obj:`pathlib.Path`
+        Full path specification.
     """
     f = _Path(filename)
     if not f.is_absolute():
         if path:
             p = _Path(path)
-        elif kind in __path_keys:
-            p = __paths[kind]
+        elif kind in __work.keys():
+            p = __work.full_path(kind, as_posix=False)
         else:
             p = f.cwd()
         f = p.joinpath(f)
@@ -353,14 +587,17 @@ def get_input_file(filename, kind='data', path=None, **kwargs):
 
 def get_output_file(filename, path=None, **kwargs):
     """
-    Convert fname to full path name.
+    Convert filename to full output path name.
+    
+    If path is not defined, use workspace path for output directory.
+    Otherwise only convert the file name to a Path object.
     
     Parameters
     ----------
-    fname: str
+    filename: str
         File name (base name or full path).
     path: str
-        Output path. If not defined and ``filename`` is relative, 
+        Output path. If not defined and `filename` is relative, 
         then the default output path is used (see function :func:`.set_path`).
         
     Returns
@@ -373,7 +610,7 @@ def get_output_file(filename, path=None, **kwargs):
         if path:
             p = _Path(path)
         else:
-            p = __paths['output']
+            p = __work.full_path('output', as_posix=False)
         f = p.joinpath(f)
     return f
 
@@ -402,6 +639,7 @@ def loadwrapper(func):
                raise Exception('File {} does not exist.'.format(fname))
        except Exception as e:
            print('ERROR: could not load file {}.'.format(fname))
+           print('Arguments: {}.'.format(kwargs))
            print('Check input path.')
            raise e
        return res
@@ -893,33 +1131,26 @@ def save_params(data, filename, comment="", source="", **kwargs):
     save_text(out, filename, **kwargs)
 
 
-def get_paths():
-    """Return current posix path names as dict."""
-    env = {}
-    for key in __path_keys:
-        env[key] = __paths[key].as_posix()
-    return env
-
-def validate_paths():
-    """Check that the workspace paths exist."""
-    fmt = 'Path not found: {}'
-    for key in __path_keys:
-        if not __paths[key].exists():
-            raise Exception(fmt.format(__paths[key]))
-
-def reset_paths():
-    """Reset paths to package defaults.
+def workspace():
+    """Access Workspace object.
     
-    Define default paths for resource data and output folder.
-    These values can be overriden by set_path().
+    Return
+    ------
+    instance of :class:`dataio.Workspace`
+        Workspace object which defines and maintains user 
+        workspace directories.
     """
-    __paths['data'] = get_resource_path('data')
-    __paths['tables'] = get_resource_path('tables')
-    __paths['instruments'] = get_resource_path('instruments')
-    __paths['output']  = _Path.home().joinpath('Documents')
-    if not __paths['output'].exists():
-        __paths['output'] = _Path().cwd()
+    global __work
+    if __work is None:
+        __work = Workspace()
+    return __work
 
 
-reset_paths()
+def test():
+    w = workspace()
+   #  w.print_info(absolute=True)
+    d = load_data('eps_B_axi.dat', kind='data')
+    assert len(d)>10
 
+    
+    
