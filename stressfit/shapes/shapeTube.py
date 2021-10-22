@@ -36,7 +36,7 @@ class ShapeTube(ShapeAbstract):
     """ 
     
     shape_type = 'cylinder_hollow'
-
+    _srefs = ['inner', 'outer']
     def __init__(self, Rin=4.0, Rout=8.0, height=30.0, ctr=[0,0], sref=1):
         """Define hollow cylinder with axis || y."""
         super().__init__()
@@ -44,10 +44,61 @@ class ShapeTube(ShapeAbstract):
         self.R2 = max(Rin,Rout)
         self.R = [self.R1,self.R2] # for quick reference
         self.height = height
-        i = max(0,np.sign(sref))
+        i2 = [1, 0] # i2[self.sref] = index of the non-reference surface
+        self.sref = sref
+        self.uref = i2[self.sref]
+        self._set_ctr(ctr)
+
+    def _set_sref(self, sref):
+        i2 = [1, 0] # i2[self.sref] = index of the non-reference surface
+        old_sref = self.sref
+        old_uref = self.uref
+        if isinstance(sref, int):
+            iref = sref
+        else:
+            iref = min(1,ShapeTube._srefs.index(sref))
+        self.sref = max(0,min(1,iref))    
+        self.uref = i2[self.sref]
+        if old_sref != self.sref:
+            sg = [-1, 1] # move relative to the reference circle
+            ctr = sg[old_sref]*self.ctr[old_uref,:]
+            self._set_ctr(ctr)
+
+    def _set_ctr(self, ctr):
+        """Set centre of the non-reference surface.
+        
+        The reference surface is considered centered in the local frame.
+        """
         self.ctr = np.zeros((2,3))
-        self.ctr[i,:] = np.array([ctr[0], 0, ctr[1]], dtype=float)  
-        self.sref=i
+        sg = [-1, 1] # move relative to the reference circle
+        i2 = [1, 0] # i2[self.sref] = index of the non-reference surface
+        j = i2[self.sref]
+        self.ctr[j,:] = sg[self.sref]*np.array([ctr[0], 0, ctr[1]], 
+                                               dtype=float) 
+
+    def update(self, **kwargs):
+        """Update parameters."""        
+        if 'thickness' in kwargs:
+            self.thickness = kwargs['thickness']
+        if 'Rin' in kwargs:
+            Rin = kwargs['Rin']
+            Rout = self.R2
+            self.R1 = min(Rin,Rout)
+            self.R2 = max(Rin,Rout)
+            self.R = [self.R1,self.R2] 
+        if 'Rout' in kwargs:
+            Rin = self.R1
+            Rout = kwargs['Rout']
+            self.R1 = min(Rin,Rout)
+            self.R2 = max(Rin,Rout)
+            self.R = [self.R1,self.R2] 
+        if 'height' in kwargs:
+            self.height = kwargs['height']
+        if 'ctr' in kwargs:
+            self._set_ctr(kwargs['ctr'])
+        if 'sref' in kwargs:
+            self._set_sref(kwargs['sref'])
+
 
     def depthLocal(self, r):
         """Calculate depths under the both cylindric surfaces.
@@ -166,7 +217,7 @@ class ShapeTube(ShapeAbstract):
                 dx2 = self.ctr[1,0]
             w1 = self.R1
             w2 = self.R2
-            h = self.height*0.5           
+            h = self.height*0.5
             # fill gray outer
             ax.fill_between([-w2+dx2, w2+dx2], [-h, -h], [h, h], facecolor=gray) 
             # fill white inner

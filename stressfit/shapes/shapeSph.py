@@ -27,6 +27,11 @@ class ShapeSph(ShapeAbstract):
         super().__init__()
         self.rad = radius
 
+    def update(self, **kwargs):
+        """Update parameters."""
+        if 'radius' in kwargs:
+            self.rad = kwargs['radius']
+            
     def depthLocal(self, r):
         rn = norm(r, axis=1)
         res = self.rad - rn

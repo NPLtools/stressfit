@@ -297,7 +297,7 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
     # plot events                       
     cm = plt.cm.get_cmap('RdYlBu')
     sc = ax.scatter(r0[:, ix], r0[:, iy], s=w, cmap=cm, c=dd)
-    plt.colorbar(sc)
+    plt.colorbar(sc, label='pseudo-strain, 1e-6')
     # plot ki, kf arrows and scan direction
     if (arrows):
         arrow_len = 0.25*rang[0]

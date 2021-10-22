@@ -29,6 +29,11 @@ class ShapeAbstract:
     ### Abstract methods to be overriden
 
     @abc.abstractmethod
+    def update(self, **kwargs):
+        """Update parameters."""
+        raise NotImplementedError("Subclass must implement abstract method")
+
+    @abc.abstractmethod
     def depthLocal(self, r):
         """Return depths under the surfaces for given array of positions.
 

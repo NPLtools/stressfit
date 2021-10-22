@@ -19,8 +19,8 @@ class ShapeShellCyl(ShapeTube):
 
     shape_type = 'cylinder_hollow'
 
-    def __init__(self, Rin, Rout, height):
+    def __init__(self, Rin=4.0, Rout=8.0, height=30.0):
         """Define hollow cylinder with axis || y."""
-        super().__init__(Rin, Rout, height)
+        super().__init__(Rin=Rin, Rout=Rout, height=height)
         warnings.warn("ShapeShellCyl is deprecated, use ShapeTube instead.", 
                       DeprecationWarning)

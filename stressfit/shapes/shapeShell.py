@@ -30,6 +30,13 @@ class ShapeShell(ShapeAbstract):
         self.R1 = Rin
         self.R2 = Rout
 
+    def update(self, **kwargs):
+        """Update parameters."""
+        if 'Rin' in kwargs:
+            self.R1 = kwargs['Rin']
+        if 'Rout' in kwargs:
+            self.R2 = kwargs['Rout']
+            
     def depthLocal(self, r):
         rn = norm(r, axis=1)
         r1 = self.R1 - rn

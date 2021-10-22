@@ -241,7 +241,7 @@ def set_attenuation(att, path=None):
         sam.setExtinction(table=dataio.load_data(att, kind='tables', 
                                                  path=path))
 
-def set_shape(shape):
+def set_shape(shape, **kwargs):
     """Set sample shape properties.
     
     Parameters
@@ -281,11 +281,13 @@ def set_shape(shape):
         - rho2 = [hor, ver] are curvatures on the rear surface
    
     """
-    sam.shape = shape
-    sam.shape.reset()
-    sam.shape.rotate(*list(_geom.angles))
-    sam.shape.moveTo(_geom.scanorig)
-
+    if shape==None:
+        sam.shape.update(**kwargs)
+    else:
+        sam.shape = shape
+        sam.shape.reset()
+        sam.shape.rotate(*list(_geom.angles))
+        sam.shape.moveTo(_geom.scanorig)
 
 def set_environment(data=None, tables=None, output=None, instruments=None):
     """Set paths for data input and outpout folders.

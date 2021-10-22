@@ -152,7 +152,7 @@ class Sampling():
     def setRange(self, nev):
         """Define subset of events and calclate mean dhkl."""
         [jr, jki, jkf, jp, jd] = self.idata[0:5]
-        self.nev = nev
+        self.nev = min(nev, self.src['nrec'])
         sumd = 0
         sump = 0
         for ir in range(self.nev):

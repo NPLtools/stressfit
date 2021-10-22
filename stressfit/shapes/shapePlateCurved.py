@@ -21,10 +21,14 @@ class ShapePlateCurved(ShapeAbstract):
     Parameters
     ----------
     thickness: float
-         Thickness at (x,y) = 0
+        Plate z-thickness at (x,y) = 0
+    length: float
+        Plate x-length [mm]
+    height: float
+        Plate y-height [mm]
     rho1: array_like(2)
         Curvatures of the front surface, [hor, ver]
-    rho: array_like(2)
+    rho2: array_like(2)
         Curvatures of the rear surface, [hor, ver]
     """
     shape_type = 'plate_curved'
@@ -39,6 +43,19 @@ class ShapePlateCurved(ShapeAbstract):
 
 # overriden abstract methods:
 
+    def update(self, **kwargs):
+        """Update parameters."""
+        if 'thickness' in kwargs:
+            self.thickness = kwargs['thickness']
+        if 'length' in kwargs:
+            self.size = np.array([kwargs['length'],self.height])
+        if 'height' in kwargs:
+            self.size = np.array([self.length, kwargs['height']])
+        if 'rho1' in kwargs:
+            self.rho1 = np.array(kwargs['rho1'])
+        if 'rho2' in kwargs:
+            self.rho2 = np.array(kwargs['rho2'])
+            
     def depthLocal(self, r):
         s1 = self.getSurface(r, 1)
         s2 = self.getSurface(r, -1)

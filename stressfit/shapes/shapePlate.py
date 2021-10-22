@@ -29,6 +29,11 @@ class ShapePlate(ShapeAbstract):
         super().__init__()
         self.t = thickness
 
+    def update(self, **kwargs):
+        """Update parameters."""
+        if 'thickness' in kwargs:
+            self.thickness = kwargs['thickness']
+            
     def depthLocal(self, r):
         d1 = 0.5*self.t-r[:, 2]
         d2 = -0.5*self.t-r[:, 2]

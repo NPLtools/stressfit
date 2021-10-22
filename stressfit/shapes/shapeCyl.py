@@ -30,6 +30,13 @@ class ShapeCyl(ShapeAbstract):
         self.rad = radius
         self.height = height
 
+    def update(self, **kwargs):
+        """Update parameters."""
+        if 'radius' in kwargs:
+            self.rad = kwargs['radius']
+        if 'height' in kwargs:
+            self.height = kwargs['height']
+        
     def depthLocal(self, r):
         r1 = r[:, 0::2]
         rn = norm(r1, axis=1)
