@@ -3,9 +3,6 @@
 Created on Tue Oct  5 11:38:15 2021
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
-# TODO
-# resolve problem with Tube hole off-centre ...
-
 
 import abc
 import numpy as np
@@ -13,7 +10,9 @@ import ipywidgets as ipy
 import json
 from IPython.display import display
 from .widgets import DirInput, FileInput, ArrayInput, SelectInput
-from .widgets import create_header, create_select, create_input_int, SButton
+from .widgets import create_header, create_select, create_input_int 
+from .widgets import create_input_float
+from .widgets import SButton, SRadioButtons, SCheckbox
 
 import stressfit.commands as comm
 import stressfit.shapes as shapes
@@ -41,6 +40,7 @@ class UI_base:
         self._widgets = {} # dict of input widgets
         self._values = {} # dict of widget values
         self._on_change = None
+        self._on_init = None
     
     def _check_keys(self,data):
         """Verify that data contains all required keys."""
@@ -96,8 +96,10 @@ class UI_base:
         if self._err:
             if clear:
                 self._err.clear_output()
-            with self._errg:
-                print(txt)
+            with self._err:
+                s = "<font color='red'>{}</font>".format(txt)
+                t = ipy.HTML(value=s)
+                display(t)
                 
     def get_values(self):
         """Return actual input values as dict."""
@@ -112,6 +114,15 @@ class UI_base:
         """Call when the UI changes state."""
         if self._on_change:
             self._on_change(self, **kwargs)
+    
+    def set_on_init(self, _on_init):
+        """Set callback to be executed when the UI needs to initialize."""
+        self._on_init = _on_init
+        
+    def _call_init(self, **kwargs):
+        """Call when the UI changes state."""
+        if self._on_init:
+            self._on_init(self, **kwargs)
 
 class UI_workspace(UI_base):
     """Input for handling workspace directories.
@@ -234,8 +245,6 @@ class UI_workspace(UI_base):
         for key in data:
             if key in self._widgets:
                 self._widgets[key].value = data[key]
-        self.update_values()
-        self.update_workspace()
 
     def update_values(self):
         """Update input data from widgets.
@@ -332,14 +341,12 @@ class UI_shape(UI_base):
     
     """
     
-    style_lbl = {'description_width': '150px'}
     def __init__(self, select=shapes.Plate):
         super().__init__('shape', ['shape', 'param']) 
         self.select = select
         self.shapes = dataio.load_config('shapes')
-        self._value = {}
-        self._value['shape'] = self.select
-        self._value['param'] = self.shapes[self.select]['param']
+        self._values['shape'] = self.select
+        self._values['param'] = self.shapes[self.select]['param']
         self.options = []
         for key in self.shapes:
             self.options.append((self.shapes[key]['name'],key))
@@ -427,8 +434,7 @@ class UI_shape(UI_base):
             if isinstance(item, SelectInput):
                 items[key].set_index(param[key].index)
             else:
-                items[key].value=param[key].value
-        self.update_values()            
+                items[key].value=param[key].value           
         
     def update_values(self):
         """Update input data from widgets.
@@ -525,9 +531,9 @@ class UI_geometry(UI_base):
         txt = self._name_inp.value
 #print(txt)
         if not txt:
-            print('Define a unique name')
+            self.message('Define a unique name')
         elif not txt or txt in self._values['list']:
-            print('The geometry name "{}" is already defined'.format(txt))
+            self.message('The geometry name "{}" is already defined'.format(txt))
         else:
             self.add_geometry(txt, update_table=True)
 
@@ -543,6 +549,8 @@ class UI_geometry(UI_base):
         if b.value in self._values['list']:
             del self._values['list'][b.value]
             self._update_table()
+            arg = {'list':self._values['list']}
+            self._call_change(**arg)
     
     def _create_list(self):
         """Create a grid of widgets with info for all defined orientations."""
@@ -651,6 +659,7 @@ class UI_geometry(UI_base):
         arg = {'list':self._values['list']}
         self._call_change(**arg)
         self.error('')
+        self.message('')
         
     def get_list(self):
         """Return the named list of added orientations.
@@ -709,19 +718,26 @@ class UI_sampling(UI_base):
                                                  border='1px solid')) 
 
         # file input
-        fi = FileInput(self._values['input']['file'], 
+        fi = FileInput(name='file', 
+                       file=self._values['input']['file'], 
                        path=self._values['input']['path'], 
                        label='File name',
-                       tooltip='File with simulated sampling points.')
+                       tooltip='File with simulated sampling points.',
+                       width_label=130)
         self._widgets['file'] = fi
         # num. of events
-        inp = create_input_int(name='file',label='Maximum events',
-                               value=self._values['input']['nev'],
-                               lmin=1000, lmax=100000, step=1000)
+        #inp = create_input_int(name='file',label='Maximum events',
+        #                       value=self._values['input']['nev'],
+        #                       lmin=1000, lmax=100000, step=1000)   
+        inp = ArrayInput(name='file',
+                         label='Maximum events',
+                         value=self._values['input']['nev'],
+                         isInt=True, step=1000, lmin=3000,
+                         width_label=130)
         self._widgets['nev'] = inp
         # ID string
         ninp = ipy.Text(description='Name',value='', 
-                                 layout=ipy.Layout(width='150px'),
+                                 layout=ipy.Layout(width='200px'),
                                  tooltip = 'Provide unique name')
         self._widgets['name']  = ninp
     
@@ -742,6 +758,9 @@ class UI_sampling(UI_base):
         if b.value in self._sampling:
             del self._sampling[b.value]
         self._update_table()
+        self.error('')
+        arg = {'list':self._values['list']}
+        self._call_change(**arg)
     
     def _on_load_click(self, b):
         """Select file and load sampling."""
@@ -808,7 +827,6 @@ class UI_sampling(UI_base):
         if 'input' in data:
             self._widgets['file'].value = data['input']
             self._widgets['nev'].value = data['input']['nev']
-            self.update_values()
      
         if 'list' in data:
             lst = data['list']
@@ -839,9 +857,12 @@ class UI_sampling(UI_base):
         btn.on_click(self._on_load_click)
         
         # collect boxes and display
-        box_add = ipy.HBox([self._widgets['nev'], self._widgets['name'], btn ])
+        box_add = ipy.HBox([self._widgets['nev'].ui(), 
+                            self._widgets['name'], 
+                            btn ])
         box = ipy.VBox([lbl, self._widgets['file'].ui(), box_add])
         lst.append(box)
+        lst.append(create_header('Loaded sampling data',size='-1'))  
         lst.append(self._out)
         super().show(widgets=lst, err=err, msg=msg)
         # display updated table 
@@ -867,24 +888,28 @@ class UI_sampling(UI_base):
         """   
         if not name or name in self._values['list']:
             self.error('Provide a unique name for new sampling.')
+            return
         
         self.error('')
-        self._check_keys(data)
-        sampling = comm.load_sampling(**data)
-        if sampling is not None:
-            data['file'] = sampling.src['file']
-            data['path'] = sampling.src['path']
-            data['nev'] = sampling.src['nrec']
-            #inp = {k: data[k] for k in data.keys() & {'file', 'path'}}
-            self._widgets['file'].value = data
-            self._values['input'].update(data)
-            self._values['list'][name]=data.copy()
-            self._sampling[name]=sampling
-            if update_table:
-                self._update_table()  
-            arg = {'list':self._values['list']}
-            self._call_change(**arg)
-
+        try:
+            self._check_keys(data)
+            sampling = comm.load_sampling(**data)
+            if sampling is not None:
+                data['file'] = sampling.src['file']
+                data['path'] = sampling.src['path']
+                data['nev'] = sampling.src['nrec']
+                #inp = {k: data[k] for k in data.keys() & {'file', 'path'}}
+                self._widgets['file'].value = data
+                self._values['input'].update(data)
+                self._values['list'][name]=data.copy()
+                self._sampling[name]=sampling
+                if update_table:
+                    self._update_table()  
+                arg = {'list':self._values['list']}
+                self._call_change(**arg)
+        except Exception as e:
+            self.error(e)
+            
     def get_sampling(self, key):
         """
         Get selected sampling data set.
@@ -918,7 +943,127 @@ class UI_sampling(UI_base):
         dict
         """
         return self._sampling
+
+
+class UI_attenuation(UI_base):
+    """Dialog for beam attenuation.
+
+    Parameters
+    ----------
+    workspace: stressfit.dataio.Workspace
+        Reference to the workspace object.
+    data: dict
+        Initial input values (optional)
+    
+    """
+    
+    _att_types = ['value', 'table']
+    def __init__(self, workspace, data=None):
+        super().__init__('attenuation', ['type','value','table']) 
+        self.wk = workspace
+        self._values['table'] = 'Fe_mu.dat'
+        self._values['value'] = 1.1
+        self._values['type'] = UI_attenuation._att_types[1]
+
+        radio = SRadioButtons(name='type', 
+                             options=UI_attenuation._att_types,
+                             value=self._values['type'],
+                             description='')
+                
+        #val = create_input_float(name='value', 
+        #                         label='att. coefficient [1/cm]',
+        #                         value=self._values['value'], 
+        #                         lmin=0.0)        
         
+        val = ArrayInput(name='value', 
+                   label='Value',
+                   value=self._values['value'], 
+                   hint='attenuation coefficient [1/cm]',
+                   width_label=80)
+        
+        fi = FileInput(name='table',
+                       file=self._values['table'], 
+                       path=self.wk.full_path('tables', as_posix=True), 
+                       label='Table',
+                       tooltip='Lookup table for attenuation coefficient [1/cm] vs. wavelength [AA].',
+                       width_label=80)
+        
+        radio.observe(self._type_change)
+        self._widgets[radio.name] = radio
+        self._widgets[val.name] = val
+        self._widgets[fi.name] = fi
+        if data is not None:
+            self.update_widgets(data)
+            self.update_values()
+
+    def _type_change(self, change):
+        if (change['name']=='value'):
+            t = change['new']
+            is_value = (t=='value')
+            self._widgets['table'].disabled = is_value
+            self._widgets['value'].disabled = not is_value
+     
+            
+    def update_widgets(self, data):
+        """Update widgets from data.
+        
+        Expected input keys are:
+        
+        value : float
+            Attenuation coefficient [1/cm]
+        table : str
+            File with a table of att. coefficients:
+                (wavelength [AA], value [1/cm])
+        type : str
+            'value' to use the scalar value, 'table' to use the lookup table.
+
+        Parameters
+        ----------
+        data : dict
+            Input data.
+        """
+        for key in data:
+            if key in self._widgets:
+                self._widgets[key].value = data[key]
+        
+    def update_values(self):
+        """Update input data from widgets.
+        
+        Does not change the list of defined sampling sets.
+
+        """ 
+        for key in self._widgets:
+            self._values[key] = self._widgets[key].value
+        
+        
+    def show(self, err=None, msg=None, **kwargs): 
+        """Display the input collection."""
+        lbl1 = create_header('Attenuation')
+        box = [lbl1] 
+        box.append(self._widgets['type'])
+        box.append(self._widgets['value'].ui())
+        box.append(self._widgets['table'].ui(width='80%'))
+        super().show(widgets=box, err=err, msg=msg)
+        self._type_change({'name':'value', 'new':self._values['type']})
+        
+    def get_attenuation(self):
+        """Return attenuation input.
+        
+        Returns
+        -------
+        float or str
+            Either single value [1/cm] or the file name.
+        """
+        self.update_values()
+        
+        if self._values['type'] == 'value':
+            att = self._values['value']
+        else:
+            val = self._widgets['table'].value
+            file = val['file']
+            path = val['path']
+            att = dataio.load_data(file, kind='tables', path=path)
+        return att
 
 class UI_plot_scene(UI_base):
     """Plot scene with sample geometry and sampling events.
@@ -958,27 +1103,28 @@ class UI_plot_scene(UI_base):
         super().__init__('scene', ['sampling','ori','nrec','proj','range'])    
         self.header = create_header('Plot scene')
         # sampling selection
-        wdg = create_select(name='sampling', label='Select sampling', 
+        wdg = create_select(name='sampling', label='Sampling', 
                             options=[], 
-                            width_label=100, width_drop=80)
+                            width_label=100, width_drop=100)
         self._widgets['sampling'] = wdg
         # oreiantation selection
-        wdg =  create_select(name='ori', label='Select orientation', 
+        wdg =  create_select(name='ori', label='Orientation', 
                              options=[], 
-                             width_label=130, width_drop=100)
+                             width_label=100, width_drop=100)
         self._widgets['ori'] = wdg
         # number of events to plot
         wdg = create_input_int(name='nrec', label='Events',
-                               value=nev, lmin=1000, lmax=100000, step=1000)
+                               value=nev, lmin=1000, lmax=100000, step=1000,
+                               width_label=100, width_num=100)
         self._widgets['nrec'] = wdg 
         # projection plane
         wdg = create_select(label='Projection: ', 
                             options=[('z,y',0),('x,z',1),('x,y',2)],
                             value = proj,
-                            width_label=100, width_drop=80)
+                            width_label=100, width_drop=100)
         self._widgets['proj'] = wdg 
         # plot range
-        wdg = ipy.IntSlider(value=rang, min=3, max=100, step=1, 
+        wdg = ipy.IntSlider(value=rang, min=3, max=50, step=1, 
                             description='Range: ')
         self._widgets['range'] = wdg 
         # output area
@@ -1015,8 +1161,8 @@ class UI_plot_scene(UI_base):
         # read selected geometry
         geometry = self.geometries[self._widgets['ori'].value]
         sampling = self.samplings[self._widgets['sampling'].value]
-        comm.set_sampling(sampling)
-        comm.set_geometry(geometry)
+        self._call_init(sampling=sampling, geometry=geometry)
+
 
        #  set_input(geometry, sampling)
         self._out.clear_output()
@@ -1046,17 +1192,16 @@ class UI_plot_scene(UI_base):
     def show(self, err=None, msg=None, **kwargs):
         """Display the input collection."""
         lbl = create_header('Plot scene')
-        box1 = ipy.HBox([self._widgets['sampling'], 
-                         self._widgets['ori'], 
-                         self._widgets['nrec']])
         btn_replot = ipy.Button(description='Replot',
                                 layout=ipy.Layout(width='80px'))
         btn_replot.on_click(self._on_replot)
-        box2 = ipy.HBox([self._widgets['proj'], 
-                         self._widgets['range'], 
-                         btn_replot])
-        box = ipy.VBox([box1, box2])
-        lst = [lbl, box, self._out]
+        box1 = ipy.VBox([self._widgets['sampling'], 
+                         self._widgets['ori'], 
+                         self._widgets['proj'],
+                         self._widgets['nrec']])
+        box_plot = ipy.HBox([self._widgets['range'], btn_replot])
+        box2 = ipy.VBox([box_plot, self._out])
+        lst = [lbl, ipy.HBox([box1, box2])]
         super().show(widgets=lst, err=err, msg=msg)
  
  
@@ -1069,17 +1214,20 @@ class UI():
                       'shape',
                       'geometry',
                       'sampling',
+                      'attenuation',
                       'scene']
     def __init__(self):
         self.setup = {}
         self.ui = {}
         self.wk = dataio.workspace()
-        self._out = ipy.Output(layout=ipy.Layout(width='100%'))
+        self._msg = ipy.Output(layout=ipy.Layout(width='100%'))
+        self._err = ipy.Output(layout=ipy.Layout(width='100%'))
         # setup dialog
         self._add_input_ui(UI_workspace())
         self._add_input_ui(UI_shape(select=shapes.Tube))
         self._add_input_ui(UI_geometry())
         self._add_input_ui(UI_sampling())
+        self._add_input_ui(UI_attenuation(self.wk))
         
         # initialize
         self.ui['geometry'].add_geometry('radial', update_table=False)
@@ -1098,6 +1246,8 @@ class UI():
         self.ui['shape'].set_on_change(self._change)
         self.ui['geometry'].set_on_change(self._change)
         self.ui['sampling'].set_on_change(self._change)
+        
+        self.ui['scene'].set_on_init(self._init)
     
     def _add_input_ui(self, ui):
         if ui.name in UI._registered_ui:
@@ -1120,6 +1270,8 @@ class UI():
         tabs_data['sampling'] = {'title':'Sampling',
                                   'ui':[self.ui['sampling'],
                                         self.ui['scene']]}
+        tabs_data['material'] = {'title':'Material',
+                                  'ui':[self.ui['attenuation']]}
         # create tab container
         tab = ipy.Tab() 
         
@@ -1142,8 +1294,9 @@ class UI():
         for key in keys:
             for ui in tabs_data[key]['ui']:
                 with tabs[key]:
-                    ui.show(msg=self._out)
-        display(self._out)    
+                    ui.show(msg=self._msg, err=self._err)
+        display(self._err)
+        display(self._msg) 
     
     def _change(self, obj, **kwargs):
         data = self.setup[obj.name]
@@ -1169,6 +1322,18 @@ class UI():
                 new_options = self.ui['sampling'].get_list()
                 self.ui['scene'].update_sampling_options(new_options)
 
+    def _init(self, obj, **kwargs):
+        """Initialize stressfit.
+        
+        Callback used by IU groups to initialize stressfit.
+        """        
+        if obj.name == 'scene':
+            if 'sampling' in kwargs:
+                comm.set_sampling(kwargs['sampling'])
+            if 'geometry' in kwargs:
+                comm.set_geometry(kwargs['geometry'])
+            
+
     def save(self, filename=''):
         """Save input data in JSON format."""
         out = {'ui': self.setup} 
@@ -1180,7 +1345,7 @@ class UI():
             f.write(txt)
             f.close()
         else:
-            with self._out:
+            with self._msg:
                 print(txt)
 
         

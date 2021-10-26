@@ -215,18 +215,22 @@ def set_attenuation(att, path=None):
     by a single number, or as a lookup table as a function of wavelength.
     
     Material attenuation: provide either of
-    # File name: A table with 2 columns: wavelength [A], attenuation [1/cm]
-    # Float number: attenuation [1/cm]:
     
-    **NOTE**: the lookup table is searched for in the package resources,
+    array_like : 
+        A table with 2 columns: wavelength [A], attenuation [1/cm]
+    str : 
+        A name of file with the lookup table.
+    float: 
+        Attenuation coefficient [1/cm]:
+    
+    **NOTE**: the lookup table file is searched for in the package resources,
     or in the directory provided as the optional parameter.
 
     Parameters
     ----------
-    att : str or float
-        Attenuation coefficients. Float number is interpretted as a 
-        wavelength independent value. String is interpreted as a file name
-        with lookup table.
+    att : str, float or array_like
+        Lookup table, file name for a lookup table, or value for the 
+        attenuation coefficient.
     path: str, optional
         Search directory for the lookup table file. 
 
@@ -237,9 +241,11 @@ def set_attenuation(att, path=None):
     """
     if isinstance(att, float):
         sam.setExtinction(mu=att)
-    else:
+    elif isinstance(att, str):
         sam.setExtinction(table=dataio.load_data(att, kind='tables', 
                                                  path=path))
+    else:
+        sam.setExtinction(table=att)
 
 def set_shape(shape, **kwargs):
     """Set sample shape properties.

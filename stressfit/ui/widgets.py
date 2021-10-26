@@ -82,17 +82,31 @@ class SButton(ipy.Button):
         super(SButton, self).__init__(*args, **kwargs)
         self.add_traits(value=traitlets.Any(value))
 
+class SCheckbox(ipy.Checkbox):
+    """Check box with name atribute."""
+    
+    def __init__(self, name='', *args, **kwargs):
+        super(SCheckbox, self).__init__(*args, **kwargs)
+        self.name = name
+
+class SRadioButtons(ipy.RadioButtons):
+    """RadioButton box with name atribute."""
+    
+    def __init__(self, name='', *args, **kwargs):
+        super(SRadioButtons, self).__init__(*args, **kwargs)
+        self.name = name
+
 
 #%% Constructors of input elements
 # Coponents for single value input with extended formatting features.
 
 def create_input_float(name='', label='Float number',value=0.0, 
-                       lmin=None, lmax=None, step=0.1,
+                       lmin=-1e30, lmax=1e30, step=0.1,
                        width_label=100, width_num=100, unit='px'):
     """Create named float input."""
     width = '{}{}'.format(width_label+width_num, unit)
     label_style = {'description_width': '{}{}'.format(width_label,unit)} 
-    inp = ipy.SBoundedFloatText(name=name, description=label, value=value,
+    inp = SBoundedFloatText(name=name, description=label, value=value,
                                 min=lmin, max=lmax, step=step, 
                                 style=label_style,
                                 layout=ipy.Layout(width=width))
@@ -322,6 +336,18 @@ class FileInput(BasicInput):
         self.btn.on_click(self._on_button)
         self.txt.observe(self._on_text,'value', type='change')
 
+
+    @property
+    def disabled(self):
+        """Return disabled status."""
+        return self.txt.disabled
+
+    @disabled.setter
+    def disabled(self, value):
+        """Set disable status."""
+        self.txt.disabled=value
+        self.btn.disabled=value
+
     @property
     def value(self):
         """Return file name as dict with file and path items."""
@@ -417,7 +443,8 @@ class ArrayInput(BasicInput):
     
     def __init__(self, name='', value=[0.0,0.0,0.0], label='array', 
                  hint='define an array', step=0.1, isInt=False,
-                 width_label=150, width_num=80, unit='px'):
+                 width_label=150, width_num=80, unit='px',
+                 lmin=None, lmax=None):
         super().__init__(name, value)
         if isinstance(value, (float,int)):
             self._value = [value]
@@ -429,21 +456,39 @@ class ArrayInput(BasicInput):
         self.hint = hint
         self.isInt = isInt
         self.inputs = []
+        if lmin is None:
+            lmin=-1e30
+        if lmax is None:
+            lmax=1e30    
         x = [width_label,unit,len(self._value), width_num, unit]
         self._tpl = '{}{} repeat({},{}{}) auto'.format(*x)
         for j in range(len(self._value)):
             w = '{}{}'.format(width_num,unit)
             layout=ipy.Layout(width=w)
             if self.isInt:
-                b = SIntText(name=j,description='',value=int(self._value[j]),
-                                    step=1, layout=layout,
+                step = max(1,int(step))
+                b = SBoundedIntText(name=j,description='',value=int(self._value[j]),
+                                    step=step, layout=layout,
+                                    min=lmin,max=lmax,
                                     continuous_update=False)
             else:
-                b = SFloatText(name=j,description='',value=float(self._value[j]),
+                b = SBoundedFloatText(name=j,description='',value=float(self._value[j]),
                                       step=step, layout=layout,
+                                      min=lmin,max=lmax,
                                       continuous_update=False)
             self.inputs.append(b)
             b.observe(self._on_change,'value', type='change')
+
+    @property
+    def disabled(self):
+        """Return disable status."""
+        return self.inputs[0].disabled
+
+    @disabled.setter
+    def disabled(self, value):
+        """Set disable status."""
+        for b in self.inputs:
+            b.disabled=value
 
     @property
     def value(self):
@@ -483,7 +528,7 @@ class ArrayInput(BasicInput):
         if change['name']=='value':
             s = change['new']
             if s:
-                idx = change['owner'].name
+                idx = change['owner'].name 
                 self._value[idx] = s
                 self._call_observe()
     
