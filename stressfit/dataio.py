@@ -7,6 +7,8 @@ File input functions
 --------------------
 Use the `load_...` functions to load data in various formats.
 
+
+
 By default, input data are searched for in package resources. There are three
 types of such resource paths:
     
@@ -98,8 +100,8 @@ class Workspace():
     By default, `data`, `tables` and `instruments` point to the package 
     resources, `work` and `output` point to the user's Documents folder. 
     
-    
     """
+    
     cfg_name = '.stressfit'
     types = ['work', 'data', 'tables', 'instruments', 'output']
     def __init__(self):
@@ -123,6 +125,7 @@ class Workspace():
             self._paths['work'] = self._paths['output']
   
     def keys(self):
+        """Return path eys as list."""
         return self._path_keys
   
     def full_path(self, key, as_posix=False):
@@ -204,7 +207,13 @@ class Workspace():
             self.set_paths()
         return out
         
-        
+    def path(self, key):
+        """Return path name for given key."""
+        if key in self._paths:
+            return self._paths[key]
+        else:
+            return self._path['work']
+            
     def set_paths(self, **kwargs):
         """
         Set paths for data input and output folders.
@@ -226,7 +235,6 @@ class Workspace():
         as relative. 
         
         """
-        
         for key in kwargs:
             if key == 'work':
                 pass
@@ -476,6 +484,14 @@ class Table():
        
 
 ### Path names handling
+
+def set_path(**kwargs):
+    """Shortcut for setting workspace directories.
+    
+    Calls `workspace().set_paths(**kwargs)`.
+    """
+    wks = workspace()
+    wks.set_paths(**kwargs)
 
 def get_resource_path(name):
     """
@@ -1147,7 +1163,8 @@ def workspace():
 
 
 def test():
-    w = workspace()
+    """Test unit."""
+   #  w = workspace()
    #  w.print_info(absolute=True)
     d = load_data('eps_B_axi.dat', kind='data')
     assert len(d)>10

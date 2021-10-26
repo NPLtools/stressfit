@@ -5,7 +5,6 @@ Created on Tue Oct  5 11:38:15 2021
 """
 
 import abc
-import numpy as np
 import ipywidgets as ipy
 import json
 from IPython.display import display
@@ -13,6 +12,8 @@ from .widgets import DirInput, FileInput, ArrayInput, SelectInput
 from .widgets import create_header, create_select, create_input_int 
 from .widgets import create_input_float
 from .widgets import SButton, SRadioButtons, SCheckbox
+from .widgets import choose_file, choose_file_save
+from pathlib import Path as _Path
 
 import stressfit.commands as comm
 import stressfit.shapes as shapes
@@ -247,13 +248,7 @@ class UI_workspace(UI_base):
                 self._widgets[key].value = data[key]
 
     def update_values(self):
-        """Update input data from widgets.
-        
-        NOTE: The widgets automatically update _values so this method is
-        not in fact needed. It is provided only for consistency with the other 
-        UI widtget collections.
-        
-        """ 
+        """Update input data from widgets.""" 
         for key in self._widgets.keys():
             self._values[key] = self._widgets[key].value
     
@@ -432,9 +427,9 @@ class UI_shape(UI_base):
         for key in param:
             item = items[key]
             if isinstance(item, SelectInput):
-                items[key].set_index(param[key].index)
+                items[key].set_index(param[key])
             else:
-                items[key].value=param[key].value           
+                items[key].value=param[key]          
         
     def update_values(self):
         """Update input data from widgets.
@@ -575,9 +570,8 @@ class UI_geometry(UI_base):
             b.on_click(self._on_del_click)
             wrec = [b]
             for j in range(len(rec)):
-                if isinstance(rec[j],np.ndarray):
-                    v = list(rec[j])
-                    L = ipy.HTML(fmt[j].format(*v,layout=cell_layout))
+                if isinstance(rec[j],list):
+                    L = ipy.HTML(fmt[j].format(*rec[j],layout=cell_layout))
                 else:
                     L = ipy.HTML(fmt[j].format(rec[j]),layout=cell_layout)
                 wrec.append(L)
@@ -613,7 +607,7 @@ class UI_geometry(UI_base):
             self._values['list'].clear()
             for key in lst:
                 self._check_keys(lst[key])
-                self.add_geometry(lst[key])
+                self.add_geometry(key, values=lst[key])
             self._update_table()
     
     def update_values(self):
@@ -645,14 +639,17 @@ class UI_geometry(UI_base):
         super().show(widgets=lst, err=err, msg=msg)
         self._update_table()
 
-    def add_geometry(self, name, update_table=False):
+    def add_geometry(self, name, update_table=False, values=None):
         """Add geometry using current input values."""
         if not name or name in self._values['list']:
             self.error('Provide a unique name for new orientation.')
             return
-        vals = {}
-        for key in self._widgets:
-            vals[key] = self._widgets[key].value
+        if values is None:
+            vals = {}
+            for key in self._widgets:
+                vals[key] = self._widgets[key].value
+        else:
+            vals = values
         self._values['list'][name] =vals
         if update_table:
             self._update_table()
@@ -1143,7 +1140,8 @@ class UI_plot_scene(UI_base):
         for key in self.samplings:
             self.options_sampling.append((key,key))
         self._widgets['sampling'].options = self.options_sampling
-        self._widgets['sampling'].index = 0
+        if len(self.options_sampling)>0:
+            self._widgets['sampling'].index = 0
             
     def update_geometry_options(self, geometries):
         """Update the selection list of geometries."""
@@ -1217,6 +1215,7 @@ class UI():
                       'attenuation',
                       'scene']
     def __init__(self):
+        self._last_input_file = 'input.json'
         self.setup = {}
         self.ui = {}
         self.wk = dataio.workspace()
@@ -1295,9 +1294,35 @@ class UI():
             for ui in tabs_data[key]['ui']:
                 with tabs[key]:
                     ui.show(msg=self._msg, err=self._err)
+        
+        # button bar
+        btn_save = ipy.Button(description='Save input')
+        btn_save.on_click(self._on_save_input)
+        btn_load = ipy.Button(description='Load input')
+        btn_load.on_click(self._on_load_input)
+        
+        display(ipy.HBox([btn_save,btn_load]))
         display(self._err)
         display(self._msg) 
     
+    def _on_save_input(self,b):
+        s = choose_file_save(initialdir=self.wk.path('work').as_posix(), 
+                        initialfile=self._last_input_file,
+                        filetypes=(('Setup files','*.json')))
+        if s:
+            self.save(filename=s)
+            p = _Path(s)
+            self._last_input_file = p.name
+            
+    def _on_load_input(self,b):
+        s = choose_file(initialdir=self.wk.path('work').as_posix(), 
+                        initialfile=self._last_input_file,
+                        filetypes=(('Setup files','*.json')))
+        if s:
+            self.load(filename=s)
+            p = _Path(s)
+            self._last_input_file = p.name
+            
     def _change(self, obj, **kwargs):
         data = self.setup[obj.name]
         if obj.name == 'shape':
@@ -1336,16 +1361,40 @@ class UI():
 
     def save(self, filename=''):
         """Save input data in JSON format."""
-        out = {'ui': self.setup} 
-        txt = json.dumps(out,indent=4)
-        if filename:
-            wkp = self.wk.get_paths(keys=['work'])
-            file = wkp['work'].joinpath(filename)
-            f = open(file, 'w')
-            f.write(txt)
-            f.close()
-        else:
-            with self._msg:
-                print(txt)
-
+        try:
+            out = {'ui': self.setup} 
+            txt = json.dumps(out,indent=4)
+            if filename:
+                #wkp = self.wk.get_paths(keys=['work'])
+                #file = wkp['work'].joinpath(filename)
+                f = open(filename, 'w')
+                f.write(txt)
+                f.close()
+            else:
+                with self._msg:
+                    print(txt)
+        except Exception as e:
+            with self._err:
+                print(e)
+            raise e
         
+    def load(self, filename=''):
+        """Load input data in JSON format."""
+        try:
+            f = open(filename, 'r')
+            lines=f.readlines()
+            f.close()
+            inp = json.loads('\n'.join(lines))
+            if not 'ui' in inp:
+                with self._err:
+                    print('Wrong setup data format.')
+                return
+            for key in self.ui:
+                if key in inp['ui']:
+                    self.ui[key].update_widgets(inp['ui'][key]) 
+                    self.ui[key].update_values()
+        except Exception as e:
+            with self._err:
+                print(e)
+            raise e
+

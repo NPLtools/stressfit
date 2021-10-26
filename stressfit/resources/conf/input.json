@@ -1,0 +1,94 @@
+{
+    "ui": {
+        "workspace": {
+            "work": "C:/Users/saroun/Documents",
+            "data": "d:/saroun/git/stressfit/stressfit/resources/data",
+            "tables": "d:/saroun/git/stressfit/stressfit/resources/tables",
+            "instruments": "d:/saroun/git/stressfit/stressfit/resources/instruments",
+            "output": "C:/Users/saroun/Documents"
+        },
+        "shape": {
+            "shape": "Tube",
+            "param": {
+                "Rin": 5.0,
+                "Rout": 9.0,
+                "height": 50.0,
+                "ctr": [
+                    0.0,
+                    0.0
+                ],
+                "sref": 0
+            }
+        },
+        "geometry": {
+            "input": {
+                "angles": [
+                    135,
+                    0,
+                    0
+                ],
+                "scandir": [
+                    0,
+                    0,
+                    1
+                ],
+                "rotctr": [
+                    0,
+                    0,
+                    0
+                ],
+                "scanorig": [
+                    0,
+                    0,
+                    0
+                ]
+            },
+            "list": {
+                "radial": {
+                    "angles": [
+                        135,
+                        0,
+                        0
+                    ],
+                    "scandir": [
+                        0,
+                        0,
+                        1
+                    ],
+                    "rotctr": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "scanorig": [
+                        0,
+                        0,
+                        0
+                    ]
+                }
+            }
+        },
+        "sampling": {
+            "input": {
+                "file": "events_S_1mm.dat",
+                "path": "d:/saroun/git/stressfit/stressfit/resources/data",
+                "nev": 3000
+            },
+            "list": {
+                "1x1x5mm": {
+                    "path": "d:/saroun/git/stressfit/stressfit/resources/data",
+                    "file": "events_S_1mm.dat",
+                    "nev": 3000
+                }
+            }
+        },
+        "attenuation": {
+            "table": {
+                "path": "d:/saroun/git/stressfit/stressfit/resources/tables",
+                "file": "Fe_mu.dat"
+            },
+            "value": 1.1,
+            "type": "table"
+        }
+    }
+}

@@ -12,8 +12,21 @@ from stressfit.compliance import Compliance
 _deg = np.pi/180.
 _geom = Geometry()
 _compl = None
+_setup = {}
 
 
+def set_user_input(setup):
+    """Set user input data.
+    
+    Parameters
+    ----------
+    setup: dict
+        User input data as dict.
+    """
+    global _setup
+    _setup.clear()
+    _setup.update(setup) 
+    
 
 def load_sampling(file='', path=None, nev=None, columns=[1, 4, 7, 10, 11], 
                   **kwargs):
@@ -178,6 +191,7 @@ def set_geometry(geometry):
     sam.shape.moveTo(_geom.scanorig)
 
 def set_scan(scan):
+    """Set scan parameters."""
     global _compl
     if sam.shape is None:
         raise Exception('Sample shape not defined. Use set_shape().')
@@ -298,7 +312,7 @@ def set_shape(shape, **kwargs):
 def set_environment(data=None, tables=None, output=None, instruments=None):
     """Set paths for data input and outpout folders.
     
-    Calls dataio.set_path() with the same arguments.
+    Calls dataio..workspace().set_path() with the same arguments.
     
     By default, the input paths are the package resource directories, 
     the output path is the current directory. 
@@ -316,9 +330,9 @@ def set_environment(data=None, tables=None, output=None, instruments=None):
         Output folder.
     
     """
-    dataio.set_path(data=data, output=output, tables=tables, 
+    wks = dataio.workspace()
+    wks.set_paths(data=data, output=output, tables=tables, 
                     instruments=instruments)
- 
     
 def set_compliance(**kwargs):
     """Set material compliance as stressfit.compliance.Compliance object.

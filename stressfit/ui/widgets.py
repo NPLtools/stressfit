@@ -8,7 +8,6 @@ Created on Tue Aug 15 13:44:06 2017
 import ipywidgets as ipy
 from traitlets import traitlets
 from pathlib import Path as _Path
-import numpy as np
 
 def choose_path(initialdir=None):
     """Choose directory dialog using tkinter."""
@@ -19,15 +18,41 @@ def choose_path(initialdir=None):
     open_file = filedialog.askdirectory(initialdir=initialdir)
     return open_file
 
-def choose_file(initialdir=None, initialfile=None):
+def choose_file(initialdir=None, initialfile=None, filetypes=None, **kwargs):
     """Open file dialog using tkinter."""
     from tkinter import Tk, filedialog
     root = Tk()
     root.withdraw() # Hides small tkinter window.
     root.attributes('-topmost', True)
+    ftall = ("All files","*.*")
+    ftypes = []
+    if filetypes is not None:
+        ftypes.append(list(filetypes))
+    ftypes.append(ftall)
     open_file = filedialog.askopenfilename(initialdir=initialdir, 
-                                           initialfile=initialfile)
+                                           initialfile=initialfile,
+                                           filetypes=list(ftypes),
+                                           **kwargs)
     return open_file
+
+
+def choose_file_save(initialdir=None, initialfile=None, filetypes=None, **kwargs):
+    """Open save_as file dialog using tkinter."""
+    from tkinter import Tk, filedialog
+    root = Tk()
+    root.withdraw() # Hides small tkinter window.
+    root.attributes('-topmost', True)
+    ftall = ("All files","*.*")
+    ftypes = []
+    if filetypes is not None:
+        ftypes.append(list(filetypes))
+    ftypes.append(ftall)
+    open_file = filedialog.asksaveasfilename(initialdir=initialdir, 
+                                           initialfile=initialfile,
+                                           filetypes=list(ftypes),
+                                           **kwargs)
+    return open_file
+
 
     
 #%% Adapted widgets
@@ -257,7 +282,7 @@ class DirInput(BasicInput):
     @property
     def value(self):
         """Value getter."""
-        return _Path(self._value)
+        return self._value
     
     @value.setter
     def value(self, value):
@@ -496,7 +521,7 @@ class ArrayInput(BasicInput):
         if self._is_scalar:
             arr = self._value[0]
         else:
-            arr = np.array(self._value)
+            arr = self._value
         return arr 
     
     @value.setter
