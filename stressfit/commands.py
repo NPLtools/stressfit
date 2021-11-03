@@ -150,7 +150,41 @@ def report_pseudo_strains(scan_range, file, nev=3000):
     gr.plotPseudoStrain(model, save=True, file=filepng2)
     model.saveInfoDepth('', file)
 
-
+def report_resolution(scan_range, file, nev=3000):
+    """Calculate, plot and save spatial resolution data.
+    
+    Parameters
+    ----------
+    scan_range : [min, max, n]
+        Scan range [mm] given as min, max and number of positions. 
+        Positions are relative to the scan centre provided in sample geometry.
+    file : str
+         Output file name (_gauge.dat will be added).
+    nev: int, optional
+        Number of events to be used for convolution.
+    """
+    # Initialize model
+    model = mc.Sfit(nev=nev, xdir=_geom.scandir)
+    
+    # choose randomly a subset of sampling events
+    sam.shuffleEvents()
+    
+    # define strain distribution model
+    x = np.linspace(scan_range[0],  scan_range[1], num=scan_range[2])
+    y = np.zeros(len(x))
+    fx = len(x)*[1]
+    fy = len(x)*[1]
+    model.defDistribution(par=[x, y], vary=[fx, fy], ndim=100, scaled=True)
+    
+    #f = dataio.derive_filename(file, ext='png', sfx='resol')
+    #filepng = dataio.get_output_file(f)
+    #f = dataio.derive_filename(file, ext='png', sfx='deps')
+    #filepng2 = dataio.get_output_file(f)
+    model.calResolution(x)
+    #gr.plotInfoDepth(model, save=True, file=filepng)
+    #gr.plotPseudoStrain(model, save=True, file=filepng2)
+    model.saveResolution('', file)
+    
 def set_sampling(sampling):
     """Assign sampling events for use by convolution models.
     

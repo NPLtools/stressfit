@@ -552,7 +552,7 @@ class ArrayInput(BasicInput):
         """Value change - update value."""
         if change['name']=='value':
             s = change['new']
-            if s:
+            if s is not None:
                 idx = change['owner'].name 
                 self._value[idx] = s
                 self._call_observe()

@@ -4,6 +4,18 @@ Created on Tue Oct  5 11:38:15 2021
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
 
+# TODO workspace input: prefix, auto save options
+# TODO pseudo strain calculation
+# TODO exp. data input
+# TODO model definition - intensity
+# TODO model definition - strain
+# TODO fit intensity
+# TODO fit strain
+# TODO input - compliance
+# TODO model definition - stress
+# TODO fit stress
+# 
+
 import abc
 import ipywidgets as ipy
 import json

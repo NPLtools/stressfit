@@ -482,6 +482,7 @@ class MCCfit(ABC):
         self.tck = None # interpolation polynomial for dist
         self.pos = None # array(x, y, yerr), with nominal and information depths
         self.infodepth = None # array(x, y, width, int, eps) 
+        self.resolution = None # dict with spatial resolution parameters
         self.avg = [0., 0.] # [avg, err_avg], distribution average over given interval calculated by RunFit or RunFitEx
         self.avgrange = None # interval for averaging
         self.chi = 0.
@@ -792,11 +793,7 @@ class MCCfit(ABC):
         return ss
 
     def formatResultDepth(self):
-        """Format a table with depth scale
-        
-        Appends fitted curve to the table of original data.
-        The resulting table has 3 columns: x, info depth, info width
-        Adds header with time and header info.
+        """Format a table with depth scale.
         
         Returns
         -------
@@ -816,14 +813,40 @@ class MCCfit(ABC):
                 ss += sm + '\n'
         return ss
 
+
+    def formatResultResol(self):
+        """Format a table with spatial resolution parameters.
+                
+        Returns
+        -------
+            String
+                tab-delimited table with self.resolution values 
+        """
+        ss = "# Date: " + str(datetime.datetime.now()) + "\n"
+        hdr = ['position', 'depth', 'width']
+        hdr.extend(['x0','y0','z0'])
+        hdr.extend(['cxx','cyy','czz','cyz','cxz','cxy'])
+        
+        ss += '# Header: ' + '\t'.join(f for f in hdr) + '\n'   
+        
+        # shortcut 
+        r = self.resolution
+        # convert to array
+        arr = np.concatenate((r['x'],r['pos'],r['width'],r['ctr'],r['cov']),
+                            axis=1)
+        hasData = (self.resolution is not None)
+        if (hasData):
+            nm = self.resolution['x'].shape[0]
+            fmt = '{:g}'+11*'\t{:g}'
+            for i in range(nm):
+                row = arr[i,:]
+                sm = fmt.format(*row) 
+                ss += sm + '\n'
+        return ss
+
     def formatResultLog(self):
         """Format a table with fitted parameters and chi2
-        
-        Arguments
-        ---------
-            result : MinimizerResult
-                Result of the fit procedure, assumes intensity scan model.
-        
+               
         Returns
         -------
             String
@@ -870,7 +893,7 @@ class MCCfit(ABC):
         return res
 
     def saveInfoDepth(self, outpath, fname):                        
-        # Save info depth table 
+        """Save info depth table."""
         if ((self.infodepth is not None) and fname):
             f = dataio.derive_filename(fname, ext='dat', sfx='depth')
             fn = str(dataio.get_output_file(f, path=outpath))
@@ -882,7 +905,19 @@ class MCCfit(ABC):
                 f.write(ss)
                 f.close
                 
-
+    def saveResolution(self, outpath, fname):                        
+        """Save table with spatial resolution parameters."""
+        if ((self.resolution is not None) and fname):
+            f = dataio.derive_filename(fname, ext='dat', sfx='resol')
+            fn = str(dataio.get_output_file(f, path=outpath))
+            # fn = deriveFilename(outpath+fname, ext='dat', sfx='depth')
+            ss = self.formatResultResol()
+            print('Resolution data saved in '+fn)
+            with open(fn, 'w') as f:
+                f.write('# Resolution data: '+fname + "\n")
+                f.write(ss)
+                f.close
+                
     def saveResults(self, outpath, fname, reglog=None):
         hasData = (self.data is not None)
         hasFit = (self.fit is not None)
@@ -927,6 +962,10 @@ class MCCfit(ABC):
     def calInfoDepth(self, x):
         [A, B, xc] = self.getScaling()
         self.infodepth = sam.convGauge(x-xc, self.xdir, 0, self.nev)
+
+    def calResolution(self, x):
+        [A, B, xc] = self.getScaling()
+        self.resolution = sam.convResol(x-xc, self.xdir, 0, self.nev)
         
     def setModelPoints(self, x, y):
         """Set x,y points to define the model

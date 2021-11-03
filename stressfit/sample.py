@@ -315,27 +315,133 @@ def shuffleEvents():
     else:
         _sampling.setRange(_sampling.sdata.shape[0])
 
-def convGauge(x, xdir, iext, nev):
-    """Calculate sampling volume center and pseudo strains
 
-    Arguments
-    ---------
-        x:  array
+def convResol(x, xdir, iext, nev):
+    """Calculate resolution parameters for given scan.
+
+    Parameters
+    ----------
+        x :  array
             scan positions [mm] along xdir
-        xdir: array
+        xdir : array
             scan direction in local coordinates
-        iext:  int
+        iext :  int
             model for extinction
             0 = small radius approximation (fast)
             1 = exact (slow)
-        nev:  int
+        nev :  int
             number of events from sdata to integrate
+    
     Returns
-        [x, pos, width, eps] as array
-        x: scan positions [mm]
-        pos: information depth
-        width: information width (FWHM)
-        eps:  pseudo-strain (NOT converted to 10^-6 units!)       
+    -------
+    dict:
+        keys = [x, pos, width, ctr, cov]
+    
+    Where:
+        - x : scan positions [mm]
+        - pos : information depth (depends on sample shape definition)
+        - width : information width (FWHM of depth)
+        - ctr :  sampling centre (x,y,z) in local coordinates
+        - cov : covariance matrix of sampling distribution 
+          (6 elements in Voigt notation)
+    """
+    global shape, _sampling
+    # Voigt indexing
+    iv = [[0,0], [1,1], [2,2], [1,2], [0,2], [0,1]]
+    # initialize local variables
+    nx = x.shape[0]
+    yd = np.zeros(nx) # depth
+    yd2 = np.zeros(nx) # depth^2
+    rc = np.zeros((nx,3)) # centre
+    cov = np.zeros((nx,6)) # covariance
+    xs = np.matrix(x)
+    # where to find r, ki, kf, p, dhkl
+    if (_sampling.nev != nev):
+        _sampling.setRange(nev)
+    rnd = range(0, _sampling.nev)
+    [jr, jki, jkf, jp, jd] = _sampling.idata[0:5]
+    # scan positions relative to r
+    dr = np.array(xs.T*xdir)
+
+    # loop through sampling events to make convolution
+    sumw = 0.
+    sump = 0.
+    for ir in rnd:
+        rn = _sampling.sdata[ir, jr:jr+3] - _sampling.sctr
+        r0 = shape.getLocalPos(rn)
+        ki = shape.getLocalDir(_sampling.sdata[ir, jki:jki+3])
+        kf = shape.getLocalDir(_sampling.sdata[ir, jkf:jkf+3])
+        p = _sampling.sdata[ir, jp]
+        sump += p
+        r = r0 + dr
+        # get event depths and flags for inside/outside events
+        [d, d2, ins] = shape.depthLocal(r)
+        # calculate extinction factor
+        if (iext == 1):
+            ex = getExtinction2(r, ki, kf)
+        else:
+            ex = getExtinction(r, ki, kf)
+        # total weight including extinction and scattering probability
+        w = p*ex*ins
+        sumw += w
+        wd = w*d
+        yd += wd
+        yd2 += wd*d
+        for j in range(3):
+            rc[:,j] += w*r[:,j]
+        for j in range(6):
+            [j1,j2] = iv[j]
+            cov[:,j] += w*r[:,j1]*r[:,j2]
+   
+    # This will avoid division by zero warnings:
+    sg = np.array( (sumw > 0) , dtype=int)
+    sumw += (1-sg)*1
+    pos = sg*yd/sumw
+    epos = sg*yd2/sumw
+    width = 2.3548*sg*np.sqrt(np.absolute(epos - pos**2))
+    ctr = np.zeros((nx,3))
+    covar = np.zeros((nx,6))
+    for j in range(3):
+        ctr[:,j] = sg*rc[:,j]/sumw
+    for j in range(6):
+        cc = sg*cov[:,j]/sumw
+        [j1,j2] = iv[j]
+        covar[:,j] = cc - ctr[:,j1]*ctr[:,j2]
+    res = {}
+    res['x'] = x.reshape((nx,1))
+    res['pos'] = pos.reshape((nx,1))
+    res['width'] = width.reshape((nx,1))
+    res['ctr'] = ctr
+    res['cov'] =  covar
+    return res
+
+def convGauge(x, xdir, iext, nev):
+    """Calculate sampling volume center and pseudo strains.
+
+    Parameters
+    ----------
+        x :  array
+            scan positions [mm] along xdir
+        xdir : array
+            scan direction in local coordinates
+        iext :  int
+            model for extinction
+            0 = small radius approximation (fast)
+            1 = exact (slow)
+        nev :  int
+            number of events from sdata to integrate
+    
+    Returns
+    -------
+    array:
+        [x, pos, width, cnts, eps]
+    
+    Where:
+       -  x : scan positions [mm]
+       -  pos : information depth
+       -  width : information width (FWHM) 
+       -  cnts : intensity (=sampling volume)
+       -  eps :  pseudo-strain (NOT converted to 10^-6 units!)   
     """
     global shape, _sampling
     # initialize local variables
