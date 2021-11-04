@@ -115,7 +115,7 @@ def plot_scene(nev, scan=None, filename='', rang=[30, 30], proj=1):
     gr.plotScene(rang, proj, sam.shape, ki, kf, _geom.scandir, sampling,  
                  save=True, file=outpng)
 
-def report_pseudo_strains(scan_range, file, nev=3000):
+def report_pseudo_strains(scan_range, file, nev=3000, plot=True):
     """Calculate, plot and save calculated pseuostrains and related data.
     
     Parameters
@@ -124,7 +124,7 @@ def report_pseudo_strains(scan_range, file, nev=3000):
         Scan range [mm] given as min, max and number of positions. 
         Positions are relative to the scan centre provided in sample geometry.
     file : str
-         Output file name (_gauge.dat will be added).
+         Output file name (_depth.dat will be added).
     nev: int, optional
         Number of events to be used for convolution.
     """
@@ -140,14 +140,14 @@ def report_pseudo_strains(scan_range, file, nev=3000):
     fx = len(x)*[1]
     fy = len(x)*[1]
     model.defDistribution(par=[x, y], vary=[fx, fy], ndim=100, scaled=True)
-    
-    f = dataio.derive_filename(file, ext='png', sfx='depth')
-    filepng = dataio.get_output_file(f)
-    f = dataio.derive_filename(file, ext='png', sfx='deps')
-    filepng2 = dataio.get_output_file(f)
     model.calInfoDepth(x)
-    gr.plotInfoDepth(model, save=True, file=filepng)
-    gr.plotPseudoStrain(model, save=True, file=filepng2)
+    if plot:
+        f = dataio.derive_filename(file, ext='png', sfx='depth')
+        filepng = dataio.get_output_file(f)
+        f = dataio.derive_filename(file, ext='png', sfx='deps')
+        filepng2 = dataio.get_output_file(f)
+        gr.plotInfoDepth(model, save=True, file=filepng)
+        gr.plotPseudoStrain(model, save=True, file=filepng2)
     model.saveInfoDepth('', file)
 
 def report_resolution(scan_range, file, nev=3000):

@@ -547,10 +547,14 @@ def derive_filename(file, ext='', sfx=''):
     -------
     :class:`pathlib.Path`
     """
+    known_ext = ['dat','png','txt','csv','xlsx','doc','docx']
     f = _Path(file)
     e = f.suffix
     path = f.parent
-    base = f.stem       
+    base = f.stem   
+    if e and e not in known_ext:
+        base = ''.join([base, e])
+        e=''
     if sfx:
         base = '_'.join([base, sfx])    
     if ext:
@@ -591,10 +595,11 @@ def get_input_file(filename, kind='data', path=None, **kwargs):
     """
     f = _Path(filename)
     if not f.is_absolute():
+        wks = workspace()
         if path:
             p = _Path(path)
-        elif kind in __work.keys():
-            p = __work.full_path(kind, as_posix=False)
+        elif kind in wks.keys():
+            p = wks.full_path(kind, as_posix=False)
         else:
             p = f.cwd()
         f = p.joinpath(f)
@@ -626,7 +631,7 @@ def get_output_file(filename, path=None, **kwargs):
         if path:
             p = _Path(path)
         else:
-            p = __work.full_path('output', as_posix=False)
+            p = workspace().full_path('output', as_posix=False)
         f = p.joinpath(f)
     return f
 
