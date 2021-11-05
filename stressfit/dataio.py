@@ -547,7 +547,7 @@ def derive_filename(file, ext='', sfx=''):
     -------
     :class:`pathlib.Path`
     """
-    known_ext = ['dat','png','txt','csv','xlsx','doc','docx']
+    known_ext = ['.dat','.png','.txt','.csv','.xlsx','.doc','.docx']
     f = _Path(file)
     e = f.suffix
     path = f.parent
