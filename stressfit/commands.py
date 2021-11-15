@@ -115,7 +115,12 @@ def plot_scene(nev, scan=None, filename='', rang=[30, 30], proj=1):
     gr.plotScene(rang, proj, sam.shape, ki, kf, _geom.scandir, sampling,  
                  save=True, file=outpng)
 
-def report_pseudo_strains(scan_range, file, nev=3000, plot=True):
+def report_pseudo_strains(scan_range, file, 
+                          nev=3000, 
+                          intensity=False,
+                          inline=True, 
+                          plot=True, 
+                          save=True):
     """Calculate, plot and save calculated pseuostrains and related data.
     
     Parameters
@@ -125,8 +130,16 @@ def report_pseudo_strains(scan_range, file, nev=3000, plot=True):
         Positions are relative to the scan centre provided in sample geometry.
     file : str
          Output file name (_depth.dat will be added).
-    nev: int, optional
+    nev : int, optional
         Number of events to be used for convolution.
+    intensity : bool
+        Plot also intensity vs. position
+    inline : bool
+        Plot all in one row (else plot intensity below the strains)
+    plot : bool
+        Show plot
+    save: bool
+        Save figures and table with results.
     """
     # Initialize model
     model = mc.Sfit(nev=nev, xdir=_geom.scandir)
@@ -142,15 +155,24 @@ def report_pseudo_strains(scan_range, file, nev=3000, plot=True):
     model.defDistribution(par=[x, y], vary=[fx, fy], ndim=100, scaled=True)
     model.calInfoDepth(x)
     if plot:
-        f = dataio.derive_filename(file, ext='png', sfx='depth')
-        filepng = dataio.get_output_file(f)
         f = dataio.derive_filename(file, ext='png', sfx='deps')
-        filepng2 = dataio.get_output_file(f)
-        gr.plotInfoDepth(model, save=True, file=filepng)
-        gr.plotPseudoStrain(model, save=True, file=filepng2)
-    model.saveInfoDepth('', file)
+        filepng = dataio.get_output_file(f)
+        gr.plot_pseudo_strain(model, strain=True, 
+                              intensity=intensity, 
+                              inline=inline,
+                              save=save, 
+                              file=filepng)
+    if file and save:
+        model.saveInfoDepth('', file)
 
-def report_resolution(scan_range, file, nev=3000):
+def report_resolution(scan_range, file, 
+                      nev=3000, 
+                      intensity=False,
+                      depths=False,
+                      cog=False,
+                      inline=True, 
+                      plot=True, 
+                      save=True):
     """Calculate, plot and save spatial resolution data.
     
     Parameters
@@ -159,9 +181,17 @@ def report_resolution(scan_range, file, nev=3000):
         Scan range [mm] given as min, max and number of positions. 
         Positions are relative to the scan centre provided in sample geometry.
     file : str
-         Output file name (_gauge.dat will be added).
-    nev: int, optional
+         Output file name (_depth.dat will be added).
+    nev : int, optional
         Number of events to be used for convolution.
+    cog : bool
+        Plot also centre of gravity of the sampling.
+    inline : bool
+        Plot all in one row (else plot intensity below the strains)
+    plot : bool
+        Show plot
+    save: bool
+        Save figures and table with results.
     """
     # Initialize model
     model = mc.Sfit(nev=nev, xdir=_geom.scandir)
@@ -175,15 +205,19 @@ def report_resolution(scan_range, file, nev=3000):
     fx = len(x)*[1]
     fy = len(x)*[1]
     model.defDistribution(par=[x, y], vary=[fx, fy], ndim=100, scaled=True)
-    
-    #f = dataio.derive_filename(file, ext='png', sfx='resol')
-    #filepng = dataio.get_output_file(f)
-    #f = dataio.derive_filename(file, ext='png', sfx='deps')
-    #filepng2 = dataio.get_output_file(f)
     model.calResolution(x)
-    #gr.plotInfoDepth(model, save=True, file=filepng)
-    #gr.plotPseudoStrain(model, save=True, file=filepng2)
-    model.saveResolution('', file)
+    if plot:
+        f = dataio.derive_filename(file, ext='png', sfx='dpos')
+        filepng = dataio.get_output_file(f)
+        #gr.plotInfoDepth(model, save=save, file=filepng)
+        #gr.plotPseudoStrain(model, save=save, file=filepng2)
+        gr.plot_resolution(model, depth=True, 
+                    cog=cog, 
+                    inline=inline,
+                    save=save, 
+                    file=filepng)
+    if file and save:
+        model.saveResolution('', file)
     
 def set_sampling(sampling):
     """Assign sampling events for use by convolution models.

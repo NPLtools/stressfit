@@ -158,8 +158,8 @@ def create_header(text, color='#35446B', size='+1'):
     return lbl
 
    
-def create_select(name='', options=[], label='', value=None, index=0, width_label=100, 
-                  width_drop=60, unit='px'):
+def create_select(name='', options=[], label='', value=None, index=0, 
+                  width_label=100, width_drop=60, unit='px'):
     """
     Create Dropdown widget for given options.
 
@@ -199,6 +199,28 @@ def create_select(name='', options=[], label='', value=None, index=0, width_labe
                            layout=ipy.Layout(max_width=max_width),
                            style=label_style)
     return sel
+
+def create_checkbox(name='', label='Select',value=False, indent=False,
+                    width_label=150, width_box=100, unit='px', tooltip=''):
+    """Create named checkbox."""
+    width = '{}{}'.format(width_label+width_box, unit)
+    label_style = {'description_width': '{}{}'.format(width_label,unit)} 
+    inp = SCheckbox(name=name, description=label, value=value, indent=indent,
+                                style=label_style,
+                                layout=ipy.Layout(width=width),
+                                tooltip=tooltip)
+    return inp
+
+def create_text(name='', label='Text',value='', indent=False,
+                width_label=150, width_box=100, unit='px', tooltip=''):
+    """Create named text input."""
+    width = '{}{}'.format(width_label+width_box, unit)
+    label_style = {'description_width': '{}{}'.format(width_label,unit)} 
+    inp = SText(name=name, description=label, value=value,
+                                style=label_style,
+                                layout=ipy.Layout(width=width),
+                                tooltip=tooltip)
+    return inp
 
 #%% Single-value input containers
 

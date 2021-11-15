@@ -141,66 +141,272 @@ def plotStrainModel(mcfit, save = False, file = 'strainModel.png'):
     plotModel(mcfit,title='Intrinsic strain distribution', 
               ylabel='Strain, $\mu\epsilon$', save=save, file=str(file))
 
+
+def plot_pseudo_strain(model, 
+                       strain=True, 
+                       intensity=False, 
+                       inline=True,
+                       save=False, 
+                       file=''):
+    """Plot pseudo-strain and intensity as a function of scan position..
     
-def plotInfoDepth(model, save = False, file = 'infodepth.png'):
-    """Plot information depth and width as a function of scan position.
-    
-    Arguments
-    ---------
-        model: MCCfit
+    Parameters
+    ----------
+        model : MCCfit
             fit model, must be initialized before
-        save: boolean
+        strain : bool
+            Plot strain vs position
+        intensity : bool
+            Plot intensity vs. position
+        inline : bool
+            Plot all in one row (else plot intensity below the strains)
+        save : boolean
             if True, save plot as PNG figure
-        file: string
+        file : string
             file name for the PNG output
     """
-    data = model.infodepth
-    if (data is not None):
-        fig, ax1 = plt.subplots()
-        fig.suptitle('Information depth')
-        ax2 = ax1.twinx()   
-        ax1.set_xlabel('Scan position, mm')
-        ax1.set_ylabel('Information depth,  mm', color='k')
-        ax2.set_ylabel('Sampling width,  mm', color='k')
-        ln1 = ax1.errorbar(data[:,0], data[:,1], fmt='bo-', label='depth')
-        ln2 = ax2.errorbar(data[:,0], data[:,2], fmt='ro-', label='width') 
-        lns = (ln1, ln2)
-        labs = ('depth', 'width')
-        ax1.legend(lns, labs, loc='lower right', frameon=False)
-        fn = str(file)
-        if (save and fn):
-            plt.savefig(fn, bbox_inches='tight')
-        plt.show()
-        
-def plotPseudoStrain(model, save = False, file = 'infodepth.png'):
-    """Plot information depth and width as a function of scan position.
-    
-    Arguments
-    ---------
-        model: MCCfit
-            fit model, must be initialized before
-        save: boolean
-            if True, save plot as PNG figure
-        file: string
-            file name for the PNG output
-    """
-    data = model.infodepth
-    if (data is not None):
-        fig, ax1 = plt.subplots()
-        fig.suptitle('Pseudo strain')  
-        ax1.set_xlabel('Scan position, mm')
-        ax1.set_ylabel('Strain,  1e-6', color='k')
-        ax1.errorbar(data[:,0], data[:,4], fmt='bo-')
-        ax1.grid()
-        #lns = (ln1, ln2)
-        #labs = ('depth', 'width')
-        #ax1.legend(ln1, labs, loc='lower right', frameon=False)
+    if model.infodepth is not None:
+        what = []
+        if strain:
+            what += ['strain']
+        if intensity:
+            what += ['intensity']
+        nf = len(what)
+        if nf==0:
+            return
+        if inline:
+            nx = nf
+            ny = 1
+        else:
+            nx = 1
+            ny = nf
+        xwidth = params['figure.figsize'][0]
+        yheight = params['figure.figsize'][1]
+        fig, axs = plt.subplots(nrows=ny, ncols=nx, 
+                                figsize=(nx*xwidth,ny*yheight))
+        if np.size(axs)==1:
+            axs = [axs]
+        axx = axs.reshape((axs.size,))
+        for i in range(len(what)):
+            if what[i]=='strain':
+                 plotPseudoStrain(model, ax=axx[i], save=save, file=file)
+            if what[i]=='intensity':
+                 plotPseudoIntensity(model, ax=axx[i], save=save, file=file)
         fn = str(file)
         if (save and fn):
             plt.savefig(fn, bbox_inches='tight')
         plt.show()
 
 
+def plot_resolution(model, 
+                    depth=True, 
+                    cog=False, 
+                    inline=True,
+                    save=False, 
+                    file=''):
+    """Plot pseudo-strain and intensity as a function of scan position..
+    
+    Parameters
+    ----------
+        model : MCCfit
+            fit model, must be initialized before
+        strain : bool
+            Plot strain vs position
+        intensity : bool
+            Plot intensity vs. position
+        inline : bool
+            Plot all in one row (else plot intensity below the strains)
+        save : boolean
+            if True, save plot as PNG figure
+        file : string
+            file name for the PNG output
+    """
+    if model.resolution is None:
+        return
+    what = []
+    if depth:
+        what += ['depth']
+    if cog:
+        what += ['cog']
+    nf = len(what)
+    if nf==0:
+        return
+    if inline:
+        nx = nf
+        ny = 1
+    else:
+        nx = 1
+        ny = nf
+    xwidth = params['figure.figsize'][0]
+    yheight = params['figure.figsize'][1]
+    fig, axs = plt.subplots(nrows=ny, ncols=nx, 
+                            figsize=(nx*xwidth,ny*yheight))
+    plt.subplots_adjust(wspace=0.4)
+    fig.suptitle('Sampling positions')
+    if np.size(axs)==1:
+        axs = [axs]
+    axx = axs.reshape((axs.size,))
+    for i in range(len(what)):
+        if what[i]=='depth':
+             plotInfoDepth(model, ax=axx[i], save=save, file=file)
+        if what[i]=='cog':
+             plotCOG(model, ax=axx[i], save=save, file=file)
+    fn = str(file)
+    if (save and fn):
+        plt.savefig(fn, bbox_inches='tight')
+    plt.show()
+
+    
+def plotInfoDepth(model, ax=None, save=False, file=''):
+    """Plot information depth and width as a function of scan position.
+    
+    Parameters
+    ----------
+        model : MCCfit
+            Fit model, must be initialized before
+        ax : Axis
+            If defined, plot on given Axis object, otherwise create its own.
+        save : boolean
+            If True, save plot as PNG figure
+        file : string
+            File name for the PNG output
+    """
+    if model.resolution is not None:
+        data = model.resolution
+        x = data['x']
+        yd = data['pos']
+        yw = data['width']
+    elif model.infodepth is not None:
+        data = model.infodepth
+        x = data[:,0]
+        yd = data[:,1]
+        yw = data[:,2]
+    else:
+        return
+    if ax is None:
+        fig, ax1 = plt.subplots()
+    else:
+        ax1 = ax
+    ax2 = ax1.twinx()   
+    ax1.set_title('Depth scale')
+    ax1.set_xlabel('Scan position, mm')
+    ax1.set_ylabel('Information depth,  mm', color='k')
+    ax2.set_ylabel('Sampling width,  mm', color='k')
+    ln1 = ax1.errorbar(x, yd, fmt='bo-', label='depth')
+    ln2 = ax2.errorbar(x, yw, fmt='ro-', label='width') 
+    lns = (ln1, ln2)
+    labs = ('depth', 'width')
+    ax1.legend(lns, labs, loc='lower right', frameon=True)
+    if ax is None:
+        fn = str(file)
+        if (save and fn):
+            plt.savefig(fn, bbox_inches='tight')
+        plt.show()
+ 
+def plotCOG(model, ax=None, save=False, file=''):
+    """Plot center of gravity of the sampling distribution.
+    
+    Parameters
+    ----------
+        model : MCCfit
+            Fit model, must be initialized before
+        ax : Axis
+            If defined, plot on given Axis object, otherwise create its own.
+        save : boolean
+            If True, save plot as PNG figure
+        file : string
+            File name for the PNG output
+    """
+    
+    if model.resolution is None:
+        return
+    x = model.resolution['x']
+    data = model.resolution['ctr']
+    if ax is None:
+        fig, ax1 = plt.subplots()
+    else:
+        ax1 = ax
+    ax1.set_title('Centre of gravity')
+    ax1.set_xlabel('Scan position, mm')
+    ax1.set_ylabel('Centre of gravity, mm')
+    ax1.errorbar(x, data[:,0], fmt='ro-', label='x')
+    ax1.errorbar(x, data[:,1], fmt='go-', label='y')
+    ax1.errorbar(x, data[:,2], fmt='bo-', label='z')
+    # ax1.grid()
+    ax1.minorticks_on()
+    ax1.grid(b=True, which='minor', color='0.7', linestyle='-')
+    ax1.grid(b=True, which='major', color='0.7', linestyle='-')
+    ax1.legend(loc='best', frameon=True)
+    if ax is None:
+        fn = str(file)
+        if (save and fn):
+            plt.savefig(fn, bbox_inches='tight')
+        plt.show()       
+ 
+def plotPseudoStrain(model, ax=None, save=False, file=''):
+    """Plot pseudo-strains as a function of scan position.
+    
+    Parameters
+    ----------
+        model : MCCfit
+            Fit model, must be initialized before
+        ax : Axis
+            If defined, plot on given Axis object, otherwise create its own.
+        save : boolean
+            If True, save plot as PNG figure
+        file : string
+            File name for the PNG output
+    """
+    data = model.infodepth
+    if data is None:
+        return
+    if ax is None:
+        fig, ax1 = plt.subplots()
+    else:
+        ax1 = ax
+    ax1.set_title('Pseudo strain')
+    ax1.set_xlabel('Scan position, mm')
+    ax1.set_ylabel('Strain,  1e-6')
+    ax1.errorbar(data[:,0], data[:,4], fmt='bo-')
+    ax1.grid()
+    if ax is None:
+        fn = str(file)
+        if (save and fn):
+            plt.savefig(fn, bbox_inches='tight')
+        plt.show()
+
+def plotPseudoIntensity(model, ax=None, save=False, file='infodepth.png'):
+    """Plot pseudo intensity (=sampling volume) as a function of scan position.
+    
+    Parameters
+    ----------
+        model : MCCfit
+            Fit model, must be initialized before
+        ax : Axis
+            If defined, plot on given Axis object, otherwise create its own.
+        save : boolean
+            If True, save plot as PNG figure
+        file : string
+            File name for the PNG output
+    """
+    data = model.infodepth
+    if data is None:
+        return
+    if ax is None:
+        fig, ax1 = plt.subplots() 
+    else:
+        ax1 = ax
+    ax1.set_title('Pseudo intensity')
+    ax1.set_xlabel('Scan position, mm')
+    ax1.set_ylabel('Intensity, rel. units')
+    ax1.errorbar(data[:,0], data[:,3], fmt='bo-')
+    ax1.grid()
+    if ax is None:
+        fn = str(file)
+        if (save and fn):
+            plt.savefig(fn, bbox_inches='tight')
+        plt.show()
+            
 def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False, 
               file='scene.png', arrows=True):
 

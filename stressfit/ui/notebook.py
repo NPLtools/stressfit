@@ -5,7 +5,6 @@ Created on Tue Oct  5 11:38:15 2021
 """
 
 # TODO workspace input: prefix, auto save options
-# TODO pseudo strain calculation
 # TODO exp. data input
 # TODO model definition - intensity
 # TODO model definition - strain
@@ -16,13 +15,13 @@ Created on Tue Oct  5 11:38:15 2021
 # TODO fit stress
 # 
 
-import abc
+#import abc
 import ipywidgets as ipy
 import json
 from IPython.display import display
 from .widgets import DirInput, FileInput, ArrayInput, SelectInput
 from .widgets import create_header, create_select, create_input_int 
-from .widgets import create_input_float
+from .widgets import create_input_float, create_checkbox, create_text
 from .widgets import SButton, SRadioButtons, SCheckbox
 from .widgets import choose_file, choose_file_save
 from pathlib import Path as _Path
@@ -54,6 +53,7 @@ class UI_base:
         self._values = {} # dict of widget values
         self._on_change = None
         self._on_init = None
+        self._options = {} # container for selection parmeters
     
     def _check_keys(self,data):
         """Verify that data contains all required keys."""
@@ -65,10 +65,7 @@ class UI_base:
     def name(self):
         """ID string for the input block."""
         return self._name
-            
-    ### Abstract methods to be overriden
    
-    @abc.abstractmethod
     def update_widgets(self, data):
         """Update input widgets from data.
 
@@ -78,16 +75,39 @@ class UI_base:
             Input names and values 
         
         """        
-        UI_base._err_ni('update_widgets')
+        for key in self._widgets:
+            if key in data:
+                self._widgets[key].value = data[key]
 
-    @abc.abstractmethod
     def update_values(self):
         """Update input data from widgets.
         
         Input data are stored in self._values as dict.
         
         """        
-        UI_base._err_ni('update_values')
+        for key in self._widgets:
+            self._values[key] = self._widgets[key].value
+
+    def update_options(self, name, options):
+        """Update the selection list."""
+        if not name in self._options:
+            return
+        if not name in self._widgets:
+            raise Exception('No selection widget corresponding to: {}'.format(name))    
+        val = self._widgets[name].value
+        self._options[name] = options
+        select_options = []
+        for key in options:
+            select_options.append((key,key))
+        self._widgets[name].options = select_options
+        # try to restore previous selection
+        try:
+            if val in self._widgets[name].options:
+                self._widgets[name].value = val
+            elif len(self._widgets[name].options)>0:
+                self._widgets[name].index = 0
+        except Exception as e:
+            print(e)
 
     ### Other methods
     def show(self, widgets=[], err=None, msg=None, **kwargs):
@@ -200,7 +220,7 @@ class UI_workspace(UI_base):
             self.update_widgets(data)
             self.update_values()
             if res:
-                print('Workspace configuration reloaded.')
+                self.message('Workspace configuration reloaded.')
             self._call_change({'work':data['work']})
     
     def _on_path_change(self, inp):
@@ -226,7 +246,7 @@ class UI_workspace(UI_base):
             with self._out:
                 wkp = self.wk.get_paths(keys=['work'])
                 msg = 'Workspace configuration saved in {}/{}.'
-                print(msg.format(wkp['work'],dataio.Workspace.cfg_name))
+                self.message(msg.format(wkp['work'],dataio.Workspace.cfg_name))
         except Exception as e:
             print(e)
     
@@ -237,32 +257,11 @@ class UI_workspace(UI_base):
                 data = self.wk.get_paths()
                 self.update_widgets(data)
                 self.update_values()
-                print('Workspace configuration reloaded.')
+                self.message('Workspace configuration reloaded.')
             else:
                 wkp = self.wk.get_paths(keys=['work'])
                 msg = 'Workspace configuration file {} not found in {}'
-                print(msg.format(dataio.Workspace.cfg_name, wkp['work']))
-            
-    def update_widgets(self, data):
-        """Update widgets and update workspace from data.
-
-        Parameters
-        ----------
-        data : dict
-            Expected keys are ['work', 'data', 'tables', 'instruments', 
-                               'output']
-            
-            All keys are optional.
-
-        """
-        for key in data:
-            if key in self._widgets:
-                self._widgets[key].value = data[key]
-
-    def update_values(self):
-        """Update input data from widgets.""" 
-        for key in self._widgets.keys():
-            self._values[key] = self._widgets[key].value
+                self.error(msg.format(dataio.Workspace.cfg_name, wkp['work']))
     
     def show(self, err=None, msg=None, **kwargs):
         """Display widgets."""
@@ -354,11 +353,11 @@ class UI_shape(UI_base):
         self.shapes = dataio.load_config('shapes')
         self._values['shape'] = self.select
         self._values['param'] = self.shapes[self.select]['param']
-        self.options = []
+        options = []
         for key in self.shapes:
-            self.options.append((self.shapes[key]['name'],key))
+            options.append((self.shapes[key]['name'],key))
         
-        wdg = create_select(name='shape', options=self.options, 
+        wdg = create_select(name='shape', options=options, 
                             label='', value=self.select,
                             width_label=0, width_drop=150)
         self._widgets['shape'] = wdg
@@ -538,9 +537,9 @@ class UI_geometry(UI_base):
         txt = self._name_inp.value
 #print(txt)
         if not txt:
-            self.message('Define a unique name')
+            self.error('Define a unique name')
         elif not txt or txt in self._values['list']:
-            self.message('The geometry name "{}" is already defined'.format(txt))
+            self.error('The geometry name "{}" is already defined'.format(txt))
         else:
             self.add_geometry(txt, update_table=True)
 
@@ -646,6 +645,7 @@ class UI_geometry(UI_base):
         btn_add.on_click(self._on_add)
         hint = ipy.Label('Enter unique name (e.g. "radial", "axial", ...)')
         lst.append(ipy.HBox([hint, self._name_inp, btn_add]))
+        lst.append(create_header('Defined geometries',size='-1'))  
         # output area for table
         lst.append(self._out)
         super().show(widgets=lst, err=err, msg=msg)
@@ -667,8 +667,8 @@ class UI_geometry(UI_base):
             self._update_table()
         arg = {'list':self._values['list']}
         self._call_change(**arg)
-        self.error('')
-        self.message('')
+        #self.error('')
+        #self.message('')
         
     def get_list(self):
         """Return the named list of added orientations.
@@ -741,7 +741,7 @@ class UI_sampling(UI_base):
         inp = ArrayInput(name='file',
                          label='Maximum events',
                          value=self._values['input']['nev'],
-                         isInt=True, step=1000, lmin=3000,
+                         isInt=True, step=1000, lmin=1000,
                          width_label=130)
         self._widgets['nev'] = inp
         # ID string
@@ -767,7 +767,7 @@ class UI_sampling(UI_base):
         if b.value in self._sampling:
             del self._sampling[b.value]
         self._update_table()
-        self.error('')
+        #self.error('')
         arg = {'list':self._values['list']}
         self._call_change(**arg)
     
@@ -899,7 +899,7 @@ class UI_sampling(UI_base):
             self.error('Provide a unique name for new sampling.')
             return
         
-        self.error('')
+        #self.error('')
         try:
             self._check_keys(data)
             sampling = comm.load_sampling(**data)
@@ -917,7 +917,7 @@ class UI_sampling(UI_base):
                 arg = {'list':self._values['list']}
                 self._call_change(**arg)
         except Exception as e:
-            self.error(e)
+            print(e)
             
     def get_sampling(self, key):
         """
@@ -1011,43 +1011,10 @@ class UI_attenuation(UI_base):
             is_value = (t=='value')
             self._widgets['table'].disabled = is_value
             self._widgets['value'].disabled = not is_value
-     
-            
-    def update_widgets(self, data):
-        """Update widgets from data.
-        
-        Expected input keys are:
-        
-        value : float
-            Attenuation coefficient [1/cm]
-        table : str
-            File with a table of att. coefficients:
-                (wavelength [AA], value [1/cm])
-        type : str
-            'value' to use the scalar value, 'table' to use the lookup table.
-
-        Parameters
-        ----------
-        data : dict
-            Input data.
-        """
-        for key in data:
-            if key in self._widgets:
-                self._widgets[key].value = data[key]
-        
-    def update_values(self):
-        """Update input data from widgets.
-        
-        Does not change the list of defined sampling sets.
-
-        """ 
-        for key in self._widgets:
-            self._values[key] = self._widgets[key].value
-        
         
     def show(self, err=None, msg=None, **kwargs): 
         """Display the input collection."""
-        lbl1 = create_header('Attenuation')
+        lbl1 = create_header('Beam attenuation')
         box = [lbl1] 
         box.append(self._widgets['type'])
         box.append(self._widgets['value'].ui())
@@ -1140,39 +1107,20 @@ class UI_plot_scene(UI_base):
         self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none')) 
         
         # select options
-        self.options_sampling = []
-        self.options_ori = []
-        self.update_sampling_options(samplings)
-        self.update_geometry_options(geometries)
-        
-    def update_sampling_options(self, samplings):
-        """Update the selection list of sampling data."""
-        self.samplings = samplings
-        self.options_sampling.clear()
-        for key in self.samplings:
-            self.options_sampling.append((key,key))
-        self._widgets['sampling'].options = self.options_sampling
-        if len(self.options_sampling)>0:
-            self._widgets['sampling'].index = 0
-            
-    def update_geometry_options(self, geometries):
-        """Update the selection list of geometries."""
-        self.geometries = geometries
-        self.options_ori.clear()
-        for key in self.geometries:
-            self.options_ori.append((key,key))
-            self._widgets['ori'].options = self.options_ori
-            self._widgets['ori'].index = 0
+        self._options['sampling'] = []
+        self._options['ori'] = []
+        self.update_options('sampling',samplings)
+        self.update_options('ori',geometries)
+    
 
     def _on_replot(self,b):
         # Plot experiment geometry 
         # (red arrow shows motion of sampling points in stationary sample)
         
         # read selected geometry
-        geometry = self.geometries[self._widgets['ori'].value]
-        sampling = self.samplings[self._widgets['sampling'].value]
+        geometry = self._options['ori'][self._widgets['ori'].value]
+        sampling = self._options['sampling'][self._widgets['sampling'].value]
         self._call_init(sampling=sampling, geometry=geometry)
-
 
        #  set_input(geometry, sampling)
         self._out.clear_output()
@@ -1181,27 +1129,12 @@ class UI_plot_scene(UI_base):
                             filename='', 
                             rang=2*[self._widgets['range'].value],
                             proj=self._widgets['proj'].value)    
-        
-    def update_widgets(self, data):
-        """Update widgets from input data.""" 
-        self._update_options()
-        if 'sampling' in data:
-            self.update_sampling_options(self, data['sampling']) 
-        elif 'geometry' in data:
-            self.update_geometry_options(self, data['geometry'])  
-        else:
-            for key in self._widgets:
-                if key in data:
-                    self._widgets[key].value = data[key]
 
-    def update_values(self):
-        """Update input data from widgets.""" 
-        for key in self._widgets:
-            self._values[key] = self._widgets[key].value
+
             
     def show(self, err=None, msg=None, **kwargs):
         """Display the input collection."""
-        lbl = create_header('Plot scene')
+        lbl = self.header
         btn_replot = ipy.Button(description='Replot',
                                 layout=ipy.Layout(width='80px'))
         btn_replot.on_click(self._on_replot)
@@ -1214,6 +1147,201 @@ class UI_plot_scene(UI_base):
         lst = [lbl, ipy.HBox([box1, box2])]
         super().show(widgets=lst, err=err, msg=msg)
  
+class UI_resolution(UI_base):
+    """Calculate resolution effects.
+        
+    A dialog for calculation of resolution effects: pseudo-strain, spatial
+    resolution, sampling centre of mass, etc.
+    
+    Parameters
+    ----------
+    samplings: dict
+        List of loaded sampling data sets.
+        as defined by the class :class:`UI_sampling` (use :meth:`get_values`)
+    geometries: dict
+        List of oriantations, as defined by the class :class:`UI_orientations`
+        (use :meth:`get_values`)
+    rang: int
+        Display range in mm. 
+    proj: int
+        Initially selected projection (0 ..2) 
+    nev: int
+        Number of sampling events to show.
+        
+    Example
+    -------
+    Provided that the objects `s` and `g` are the dialogs for sampling
+    and geometry, respectively, than create and display this dialog
+    as 
+    
+    `plot = UI_plot_scene(s.get_list(), g.get_list())`
+    
+    `plot.show()`
+    
+    
+    """
+    
+    def __init__(self, samplings, geometries, rang=[-10, 10], steps=21, 
+                 nev=3000):
+        super().__init__('resolution', ['sampling','ori','nrec','strain',
+                                   'resolution','save','prefix','range',
+                                   'steps']) 
+        
+        self._values['sampling'] = ''
+        self._values['ori'] = ''
+        self._values['nrec'] = nev
+        self._values['strain'] = True
+        self._values['resolution'] = False
+        self._values['save'] = True
+        self._values['prefix'] = ''
+        self._values['range'] = rang
+        self._values['steps'] = steps
+        
+        self.header = create_header('Calculate resolution effects')
+        # sampling selection
+        wdg = create_select(name='sampling', label='Sampling', 
+                            options=[], 
+                            width_label=100, width_drop=100)
+        self._widgets['sampling'] = wdg
+        # oreiantation selection
+        wdg =  create_select(name='ori', label='Orientation', 
+                             options=[], 
+                             width_label=100, width_drop=100)
+        self._widgets['ori'] = wdg
+        # number of events to plot
+        wdg = create_input_int(name='nrec', label='Events',
+                               value=self._values['nrec'], 
+                               lmin=1000, lmax=100000, step=1000,
+                               width_label=100, width_num=100)
+        self._widgets['nrec'] = wdg 
+        # calculate pseudo-strain
+        wdg = create_checkbox(name='strain', label='Pseudo-strain', 
+                              value=self._values['strain'],
+                              width_label=100, width_box=20,
+                              tooltip='Calculate psudo-strain',
+                              indent=False)
+        self._widgets['strain'] = wdg
+        # calculate resolution
+        wdg = create_checkbox(name='resolution', label='Resolution', 
+                              value=self._values['resolution'],
+                              width_label=100, width_box=20,
+                              tooltip='Calculate resolution',
+                              indent=False)
+        self._widgets['resolution'] = wdg
+        # auto-save
+        wdg = create_checkbox(name='save', label='Save',
+                              value=self._values['save'],
+                              width_label=100, width_box=20,
+                              tooltip='Auto-save results',
+                              indent=False)
+        self._widgets['save'] = wdg
+        # prefix for output file names
+        wdg = create_text(name='prefix', label='Prefix', 
+                          value=self._values['prefix'],
+                          width_label=60, width_box=100,
+                          tooltip='Prefix for output file names')
+        self._widgets['prefix'] = wdg
+        # scan range
+        wdg = ArrayInput(name='range', 
+                   label='Scan range',
+                   value=self._values['range'], 
+                   hint='.',
+                   step=0.1,
+                   width_label=80)
+        self._widgets['range'] = wdg
+        # number of steps
+        wdg = ArrayInput(name='steps', 
+                   label='',
+                   value=self._values['steps'], 
+                   hint='Define scan range and number of steps.',
+                   isInt=True,
+                   lmin=3,
+                   lmax=201,
+                   width_num=80,
+                   width_label=0)
+        self._widgets['steps'] = wdg
+
+        # output area
+        self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none')) 
+        
+        # select options
+        self._options['sampling'] = []
+        self._options['ori'] = []
+        self.update_options('sampling',samplings)
+        self.update_options('ori',geometries)
+            
+    def _get_output_filename(self, ext=''):
+        """Generate base output filename."""
+        pfx = self._widgets['prefix'].value
+        ori = self._widgets['ori'].value
+        spl = self._widgets['sampling'].value
+        
+        if pfx:
+            base = '{}_{}_{}'.format(pfx, spl, ori)
+        else:
+            base = '{}_{}'.format(spl, ori)
+        if ext:
+            fname = base + ext
+        else:
+            fname = base
+        return fname
+    
+    def _on_replot(self,b):
+        # Calculate and plot results
+        
+        # read selected geometry
+        geometry = self._options['ori'][self._widgets['ori'].value]
+        # read selected sampling
+        sampling = self._options['sampling'][self._widgets['sampling'].value]
+        # call init function if defined
+        self._call_init(sampling=sampling, geometry=geometry)
+
+        nev = self._widgets['nrec'].value
+        fname = self._get_output_filename()
+        rang = list(self._widgets['range'].value)
+        nstp = self._widgets['steps'].value
+        scan_range = rang + [nstp]
+        save = self._widgets['save'].value
+        
+        # clear output
+        self._out.clear_output()
+        with self._out:
+            if self._widgets['strain'].value:
+                comm.report_pseudo_strains(scan_range, fname, 
+                                           nev=nev,
+                                           intensity=True,
+                                           inline=True,
+                                           plot=True, 
+                                           save=save)
+            if self._widgets['resolution'].value:    
+                comm.report_resolution(scan_range, fname, 
+                                       nev=nev,
+                                       cog=True,
+                                       inline=True,
+                                       plot=True, 
+                                       save=save)
+
+    def show(self, err=None, msg=None, **kwargs):
+        """Display the input collection."""
+        lbl = self.header
+        btn_run = ipy.Button(description='Run',
+                                layout=ipy.Layout(width='80px'))
+        btn_run.on_click(self._on_replot)
+        box1 = ipy.VBox([self._widgets['sampling'], 
+                         self._widgets['ori'], 
+                         self._widgets['nrec']])
+        box2 = ipy.HBox([self._widgets['range'].ui(), 
+                         self._widgets['steps'].ui()])
+        box3 = ipy.HBox([self._widgets['strain'], 
+                         self._widgets['resolution']
+                         ])
+        box4 = ipy.HBox([self._widgets['prefix'],
+                         btn_run
+                         ])
+        box = ipy.HBox([box1, ipy.VBox([box2, box3, box4])])
+        lst = [lbl, box, self._out]
+        super().show(widgets=lst, err=err, msg=msg)
+        
  
 #%% Top level UI class
 
@@ -1225,7 +1353,8 @@ class UI():
                       'geometry',
                       'sampling',
                       'attenuation',
-                      'scene']
+                      'scene',
+                      'resolution']
     def __init__(self):
         self._last_input_file = 'input.json'
         self.setup = {}
@@ -1251,6 +1380,12 @@ class UI():
         self.ui['scene'] = UI_plot_scene(
             self.ui['sampling'].get_list(),
             self.ui['geometry'].get_list())
+        self._add_input_ui(self.ui['scene'])
+        
+        self.ui['resolution'] = UI_resolution(
+            self.ui['sampling'].get_list(),
+            self.ui['geometry'].get_list())
+        self._add_input_ui(self.ui['resolution'])
         
         # set event handlers
         self.ui['workspace'].set_on_change(self._change)
@@ -1259,6 +1394,7 @@ class UI():
         self.ui['sampling'].set_on_change(self._change)
         
         self.ui['scene'].set_on_init(self._init)
+        self.ui['resolution'].set_on_init(self._init)
     
     def _add_input_ui(self, ui):
         if ui.name in UI._registered_ui:
@@ -1283,6 +1419,8 @@ class UI():
                                         self.ui['scene']]}
         tabs_data['material'] = {'title':'Material',
                                   'ui':[self.ui['attenuation']]}
+        tabs_data['resolution'] = {'title':'Resolution',
+                                  'ui':[self.ui['resolution']]}
         # create tab container
         tab = ipy.Tab() 
         
@@ -1353,18 +1491,21 @@ class UI():
         elif obj.name in ['geometry']:
                 data.update(**kwargs)
                 new_options = self.ui['geometry'].get_list()
-                self.ui['scene'].update_geometry_options(new_options)
+                self.ui['scene'].update_options('ori',new_options)
+                self.ui['resolution'].update_options('ori',new_options)
         elif obj.name in ['sampling']:
                 data.update(**kwargs)
                 new_options = self.ui['sampling'].get_list()
-                self.ui['scene'].update_sampling_options(new_options)
+                self.ui['scene'].update_options('sampling',new_options)
+                self.ui['resolution'].update_options('sampling',new_options)
 
     def _init(self, obj, **kwargs):
         """Initialize stressfit.
         
         Callback used by IU groups to initialize stressfit.
-        """        
-        if obj.name == 'scene':
+        """ 
+        if obj.name in ['scene', 'resolution']:
+            self._err.clear_output()
             if 'sampling' in kwargs:
                 comm.set_sampling(kwargs['sampling'])
             if 'geometry' in kwargs:
@@ -1374,6 +1515,8 @@ class UI():
     def save(self, filename=''):
         """Save input data in JSON format."""
         try:
+            for key in self.ui: 
+                self.ui[key].update_values()
             out = {'ui': self.setup} 
             txt = json.dumps(out,indent=4)
             if filename:
