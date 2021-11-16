@@ -154,7 +154,8 @@ def create_header(text, color='#35446B', size='+1'):
     """Return header as HTML widget."""
     font_fmt = "<b><font color='{}' size='{}'>{}</font></b>"
     html = font_fmt.format(color,size,text)
-    lbl = ipy.HTML(value=html)
+    layout = ipy.Layout(padding='5px 20px 5px 0px')
+    lbl = ipy.HTML(value=html, layout=layout)
     return lbl
 
    
@@ -208,7 +209,7 @@ def create_checkbox(name='', label='Select',value=False, indent=False,
     inp = SCheckbox(name=name, description=label, value=value, indent=indent,
                                 style=label_style,
                                 layout=ipy.Layout(width=width),
-                                tooltip=tooltip)
+                                description_tooltip =tooltip)
     return inp
 
 def create_text(name='', label='Text',value='', indent=False,
@@ -217,9 +218,10 @@ def create_text(name='', label='Text',value='', indent=False,
     width = '{}{}'.format(width_label+width_box, unit)
     label_style = {'description_width': '{}{}'.format(width_label,unit)} 
     inp = SText(name=name, description=label, value=value,
-                                style=label_style,
-                                layout=ipy.Layout(width=width),
-                                tooltip=tooltip)
+                continuous_update=False,
+                style=label_style,
+                layout=ipy.Layout(width=width),
+                description_tooltip=tooltip)
     return inp
 
 #%% Single-value input containers

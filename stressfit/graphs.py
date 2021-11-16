@@ -530,4 +530,6 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
     if (save and fn):
         plt.savefig(fn, bbox_inches='tight')
     plt.show()
+    if (save and fn):
+        print('Figure saved in {}.'.format(fn))
 

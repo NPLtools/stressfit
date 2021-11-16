@@ -77,7 +77,7 @@ def load_sampling(file='', path=None, nev=None, columns=[1, 4, 7, 10, 11],
 
 
 
-def plot_scene(nev, scan=None, filename='', rang=[30, 30], proj=1):
+def plot_scene(nev, scan=None, filename='', rang=[30, 30], proj=1, save=True):
     """Plot 2D scene with experiment geometry.
 
     Parameters
@@ -113,7 +113,7 @@ def plot_scene(nev, scan=None, filename='', rang=[30, 30], proj=1):
     kf = Geometry.rotate(ki, 1, take_off) 
     # do plot
     gr.plotScene(rang, proj, sam.shape, ki, kf, _geom.scandir, sampling,  
-                 save=True, file=outpng)
+                 save=save, file=outpng)
 
 def report_pseudo_strains(scan_range, file, 
                           nev=3000, 
