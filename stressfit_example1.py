@@ -108,7 +108,7 @@ shape = S.ShapeTube(Rin=4.0, Rout=8.0, height=50.0)
 # angles = sample orientation (Euler angles YXY) in deg
 scan = comm.load_input('eps_SS_rad.dat', 
                        intensity='int_SS_rad.dat', 
-                       scandir=[0., 0., 1.],
+                       scandir=[0., 0., -1.],
                        scanorig=[0, 0, 0],
                        rotctr=[0, 0, 0], 
                        angles=[135, 0, 0])

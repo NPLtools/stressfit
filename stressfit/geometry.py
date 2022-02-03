@@ -41,22 +41,22 @@ class Geometry:
             Rotation matrix (transform vectors to sample frame)
     """
     
-    def __init__(self):
+    def __init__(self, **kwargs):
         """Create Geometry object with default settings.
         
         See the :func:`~set` function for custom setting. 
         """
-        self.define()
+        self.define(**kwargs)
     
-    def define(self, scandir=[0, 0, 1], scanorig=[0, 0, 0], angles=[0, 0, 0],
+    def define(self, scandir=[0, 0, -1], scanorig=[0, 0, 0], angles=[0, 0, 0],
             rotctr=[0, 0, 0], **kwargs):
         """Define geometry properties.
         
         Parameters
         ----------
         scandir : array(3), optional
-            Scan direction in sample coordinates (moving of sample 
-            across stationary gauge)
+            Scan direction in sample coordinates (moving of events 
+            across stationary sample)
         scanorig : array(3), optional
             Scan origin (encoder = 0) in sample coordinates, in [mm]
         angles : array(3), optional
@@ -66,10 +66,12 @@ class Geometry:
         """
         # NOTE: we must invert scandir, because it should define move of events
         # in stationary sample. 
-        self.scandir = -np.array(scandir)
+        self.scandir = np.array(scandir)
         self.scanorig = np.array(scanorig)
         self.rotctr = np.array(rotctr)
         self.angles = np.array(angles)*_deg
+        if 'name' in kwargs:
+            self.name = kwargs['name']
         self.rot = Geometry.EulerYXY(self.angles)
         
     def toSample(self, v):

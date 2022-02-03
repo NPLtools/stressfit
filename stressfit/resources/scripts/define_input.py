@@ -38,7 +38,7 @@ shape = {"shape": "Tube",
 geometry = {}
 glist = {}
 glist['radial'] = {"angles": [135, 0, 0],
-                   "scandir": [0,0,1],
+                   "scandir": [0,0,-1],
                    "rotctr": [0,0,0],
                    "scanorig": [0,0,0]
                    }
