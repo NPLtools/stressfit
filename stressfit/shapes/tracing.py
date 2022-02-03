@@ -9,6 +9,30 @@ import numpy as np
 _eps = 1.0e-12
 _inf = 1.0e+12
 
+def ell(theta, a, b, alpha):
+    """Calculate x,y coordinates of a rotated ellipse.""" 
+    co = np.cos(theta)
+    si = np.sin(theta)
+    x = a*co*np.cos(alpha) + b*si*np.sin(alpha)
+    y = -a*co*np.sin(alpha) + b*si*np.cos(alpha)
+    return [x,y]    
+
+def ell_limits(a, b, alpha):
+    """Calculate x,y limits of a rotated ellipse."""
+    thx = np.arctan2(b*np.sin(alpha),a*np.cos(alpha))
+    thy = np.arctan2(-b*np.cos(alpha),a*np.sin(alpha))
+    limx = [ell(thx, a, b, alpha)[0],ell(thx+np.pi, a, b, alpha)[0]]
+    limy = [ell(thy, a, b, alpha)[1],ell(thy+np.pi, a, b, alpha)[1]]
+    return [max(limx), max(limy)]
+
+def get_metric_ell2D(a, b, angle):
+    """Calculate metric tensor for a 2D ellipse."""
+    dia = np.diagflat([1/a**2,1/b**2])
+    co = np.cos(angle)
+    si = np.sin(angle)
+    R = np.array([[co, si],[-si, co]])
+    gm = R.dot(dia.dot(R.T))
+    return gm
 
 def crossLayer(w, r, k, ix):
     """Calculate cross-times with plane parallel layer.
@@ -71,6 +95,7 @@ def crossRadial(rad, rsq, ksq, rk):
     return [tin, tout]
 
 
+
 def crossCylinder(rad, r, k):
     """Calculate cross-times with cyllindric surface (axis along r[:,1]).
 
@@ -94,6 +119,34 @@ def crossCylinder(rad, r, k):
     ksq = k1.dot(k1)
     rk = r1.dot(k1)
     res = crossRadial(rad, rsq, ksq, rk)
+    return res
+
+
+def crossEllipse(gm, r, k):
+    """Calculate cross-times with cyllindric surface with elliptic basis.
+    
+    Cylinder axis is along r[:,1].
+
+    Parameters
+    ----------
+    gm: array
+        metric tensor
+    r: array(:,3)
+        position vectors
+    k: array(3)
+        velocity vectors
+    Returns
+    -------
+        list [tin, tout]
+        where tin, tout are arrays of entry and exit times (tin = tout).
+        If tin>=tout, then there is no cross-section.
+    """
+    r1 = r[:, 0::2]
+    k1 = k[0::2]
+    rsq = np.sum(r1*(r1.dot(gm)), axis=1)
+    ksq = k1.dot(gm.dot(k1))
+    rk = r1.dot(gm.dot(k1))
+    res = crossRadial(1.0, rsq, ksq, rk)
     return res
 
 
@@ -181,6 +234,96 @@ def crossHollowCyl(R, ctr, r, k):
     tin.sort(axis=1)
     tout.sort(axis=1)
     return [tin, tout]
+
+def crossTubes(R, ctr, r, k):
+    """Calculate cross-times with a cylinder with multiple coaxial holes.
+
+    Parameters
+    ----------
+    R: array_like
+        Inner and outer radii. R[0] is the outer radius, R[1:] are holes radii. 
+    ctr: array(:,3)
+        Coordinates of the centers of the inner and outer cylinders.
+        The first elements is for the outer radius.
+    r: array(:,3)
+        position vectors
+    k: array(3)
+        velocity vector
+    Return
+    ------
+    list of [tin, tout]
+        tin, tout are arrays of entry and exit times (tin <= tout).
+        tin, tout are sorted on axis=1 (corresponds to positions r).
+        Row (axis=0) correspond to the radii, R.  
+    """
+    nc = len(R)
+    ti = nc*[0]
+    tf = nc*[0]
+    ins = nc*[0]
+    inf = nc*[0]
+    for i in range(nc):
+        [ti[i], tf[i]] = crossCylinder(R[i], r-ctr[i,:], k)
+        ins[i] = np.array(tf[i]>ti[i], dtype=int) 
+        inf[i] = (1-ins[i])*_inf
+    tin = nc*[0]
+    tout = nc*[0]
+    for i in range(1,nc):
+        tin[i] = tf[i]*ins[i] + inf[i]
+        tout[i] = ti[i]*ins[i] + inf[i]
+    tin[0] = ti[0]*ins[0] + inf[0]
+    tout[0] = tf[0]*ins[0] + inf[0]
+    atin =  np.array(tin).T
+    atout =  np.array(tout).T
+    atin.sort(axis=1)
+    atout.sort(axis=1)
+    ins = np.array(atout>atin, dtype=int) 
+    return [atin, atout, ins]
+
+def crossETubes(gm, ctr, r, k):
+    """Calculate cross-times with a cylinder with multiple coaxial holes.
+    
+    Like crossETubes, but assumes elliptic basis of the cylinder and holes.
+
+    Parameters
+    ----------
+    gm: list of arrays
+        Metric matrices. gm[0] is the outer surface, g[1:] for the holes. 
+    ctr: array(:,3)
+        Coordinates of the centers of the outer cylinder and inner inner holes.
+        The first row is for the outer cylinder.
+    r: array(:,3)
+        position vectors
+    k: array(3)
+        velocity vector
+    Return
+    ------
+    list of [tin, tout]
+        tin, tout are arrays of entry and exit times (tin <= tout).
+        tin, tout are sorted on axis=1 (corresponds to positions r).
+        Row (axis=0) correspond to the radii, R.  
+    """
+    nc = len(gm)
+    ti = nc*[0]
+    tf = nc*[0]
+    ins = nc*[0]
+    inf = nc*[0]
+    for i in range(nc):
+        [ti[i], tf[i]] = crossEllipse(gm[i], r-ctr[i,:], k)
+        ins[i] = np.array(tf[i]>ti[i], dtype=int) 
+        inf[i] = (1-ins[i])*_inf
+    tin = nc*[0]
+    tout = nc*[0]
+    for i in range(1,nc):
+        tin[i] = tf[i]*ins[i] + inf[i]
+        tout[i] = ti[i]*ins[i] + inf[i]
+    tin[0] = ti[0]*ins[0] + inf[0]
+    tout[0] = tf[0]*ins[0] + inf[0]
+    atin =  np.array(tin).T
+    atout =  np.array(tout).T
+    atin.sort(axis=1)
+    atout.sort(axis=1)
+    ins = np.array(atout>atin, dtype=int) 
+    return [atin, atout, ins]
 
 def crossShellCyl(R1, R2, r, k):
     """Calculate cross-times with hollow cylinder.

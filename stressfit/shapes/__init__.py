@@ -40,7 +40,8 @@ from .shapePlateCurved import ShapePlateCurved
 from .shapeShell import ShapeShell
 from .shapeTube import ShapeTube
 from .shapeSph import ShapeSph
-
+from .shapeTubes import ShapeTubes
+from .shapeETubes import ShapeETubes
 
 # constants for shape identification
 Plate = 'Plate'
@@ -49,6 +50,8 @@ Cylinder = 'Cylinder'
 Tube = 'Tube'
 Sphere = 'Sphere'
 Shell = 'Shell'
+Tubes = 'Tubes'
+ETubes = 'ETubes'
 
 def create(shape, **kwargs):
     """Create an instance of a shape class.
@@ -64,6 +67,8 @@ def create(shape, **kwargs):
      - stressfit.shapes.Tube
      - stressfit.shapes.Sphere
      - stressfit.shapes.Shell
+     - stressfit.shapes.Tubes
+     - stressfit.shapes.ETubes
     
      **kwargs:
      Named arguments to the shape constructor.
@@ -84,6 +89,10 @@ def create(shape, **kwargs):
             comp = ShapeSph(**kwargs)
        elif shape==Shell:
             comp = ShapeShell(**kwargs)
+       elif shape==Tubes:
+            comp = ShapeTubes(**kwargs)
+       elif shape==ETubes:
+            comp = ShapeETubes(**kwargs)
        else:
            raise Exception('Undefined shape: {}'.format(shape))
     except Exception as e:
@@ -109,9 +118,8 @@ def help():
     print(ShapeSph.__doc__)
     print(fmt.format('Shell'))
     print(ShapeShell.__doc__)
-
-
-
+    print(fmt.format('Tubes'))
+    print(ShapeTubes.__doc__)
 
 def test():
     import stressfit.shapes as shapes
@@ -129,7 +137,12 @@ def test():
 #Curved plate:
     assert shapes.create(shapes.PlateCurved, rho1=[0.03, 0.0], 
                          rho2=[0.03, 0.0])
-    
+#Tubes:
+    assert shapes.create(shapes.Tubes, Rout=7, height=30, 
+                         Rin=[3, 2], 
+                         ctr=[[-4, 0],[3, 0]], 
+                         sdir=[0,0,1],
+                         sctr=[0,0,0])    
     # print('stressfit.shapes.test OK')
 
 

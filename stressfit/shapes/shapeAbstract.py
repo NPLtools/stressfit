@@ -25,6 +25,8 @@ class ShapeAbstract:
         self._R = np.eye(3, 3)
         self._isRot = False
         self._pos = np.zeros(3)
+        self._sdir = np.array([0., 0., 1.])
+        self._sctr = np.zeros(3)
 
     ### Abstract methods to be overriden
 
@@ -101,6 +103,24 @@ class ShapeAbstract:
         raise NotImplementedError("Subclass must implement abstract method")
 
     ### Class methods which should work for all descendants
+
+
+    def set_scan(self, sdir, sctr):
+        """Set scan direction and centre.
+
+        Parameters
+        ----------
+        
+        sdir : array_like
+            Scan direction in local coordinates.
+        sctr : array_like
+            Scan origin in local coordinates.
+        
+        """
+        sdir = np.array(sdir, dtype=float)
+        self._sdir = sdir/np.sqrt(sdir.dot(sdir))
+        self._sctr = np.array(sctr, dtype=float)
+
 
     def depth(self, r):
         """Calculate depths under the surface in lab coordinates.
