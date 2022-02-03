@@ -8,6 +8,9 @@ Created on Tue Aug 15 13:44:06 2017
 import ipywidgets as ipy
 from traitlets import traitlets
 from pathlib import Path as _Path
+import numpy as np
+import ipysheet
+from IPython.display import display
 
 def choose_path(initialdir=None):
     """Choose directory dialog using tkinter."""
@@ -311,12 +314,14 @@ class DirInput(BasicInput):
     @value.setter
     def value(self, value):
         """Value setter."""
+        # temporary switch off calling of observe.
+        en = self._call_enabled
         self._call_enabled = False
         if isinstance(value, _Path):
             self.txt.value = value.as_posix()
         else:
             self.txt.value = str(value)
-        self._call_enabled = True
+        self._call_enabled = en
             
     def _on_button(self,obj):
         """Open path dialog and update text input."""
@@ -353,10 +358,12 @@ class FileInput(BasicInput):
         Optional directory name. 
     label : str
         Label to appear before the text input.
+    fileonly : bool
+        If true, value returns only filename as a string. 
+        The path cannot be changed. Only files relative to the given path 
+        are accepted. 
     tooltip : str
         A tooltip string (shows onthe button  mouse over event).
-    output : `ipywidgets.Output`
-        Optional output widget is used to show error messages.
     width_label : int
         With of the label in px
     width_button : int
@@ -364,12 +371,12 @@ class FileInput(BasicInput):
     
     """
     
-    def __init__(self,  name='', file='',path='', label='', tooltip='', 
-                 output=None,
-                 width_label=150, width_button=50):
+    def __init__(self,  name='', file='',path='', label='', fileonly=False,
+                 tooltip='', width_label=150, width_button=50):
         
         super().__init__(name, '.')
         self._path = path
+        self._fileonly = fileonly
         self._set_file(file)
         self.label = label
         self.tooltip = tooltip
@@ -399,42 +406,77 @@ class FileInput(BasicInput):
 
     @property
     def value(self):
-        """Return file name as dict with file and path items."""
-        return self._value
+        """Return file name.
+        
+        If `self._fileonly`, then return just filename 
+        as string. Otherwise return dict with `file` and `path` items. 
+        
+        """
+        if self._fileonly:
+            return self._value['file']
+        else:
+            return self._value
     
     @value.setter
     def value(self, value):
-        """Set file name from dict with file and path items.
+        """Set file and path names.
         
-        The path item is optional. 
+        Get file name from value and set new file and path names by
+        callinf `self._set_file()`. If value contains `path`, update 
+        `self._path` value first.
+        
+        Parameters
+        ----------
+        value : dict or str
+            dict should contain `file` and `path` items
+            str is iterpreted as file name. 
+         
         """
-        if 'path' in value and value['path'] is not None:
-            self._path = value['path']
-        self._set_file(value['file'])
+        _path = self._path
+        if isinstance(value, dict):
+            if 'path' in value and value['path'] is not None:
+                self._path = value['path']
+            f = value['file']
+        else:
+            f = value
+        try:    
+            self._set_file(f)
+        except Exception as e:
+            self._path = _path
+            raise e
+        # temporary switch off calling of observe.
+        en = self._call_enabled
         self._call_enabled = False
         self.txt.value = self._file
-        self._call_enabled = True
+        self._call_enabled = en
     
     def _set_file(self, file):
         """Set new file name.
         
-        If file is relative, join it with path info. 
-        
-        If file is absolute, update the path info.                
+        1. Define full name. If file is relative, join it with 
+           `self._path`.  
+        2. Try to set `self._file` relative to `self._path`. If not possible, 
+           then: if not `fileonly`,  define new `self._path`, else
+           raise exception.
         """
         f = _Path(file)
+        p = _Path(self._path)
         if f.is_absolute():
-            p = f.parent
-            self._fullname = f
-            self._file = f.name
-            self._path = p.as_posix()
+            fullname = f
         else:
-            p = _Path(self._path)
-            self._fullname = p.joinpath(file)
-            try:
-                self._file = self.fullname.relative_to(p).as_posix()
-            except:
-                self._file = file # this should not happen
+            fullname = p.joinpath(file)
+        try:
+            _file = fullname.relative_to(p).as_posix()
+        except:
+            if not self._fileonly:
+                p = f.parent
+                _file = f.name
+            else:
+                msg = 'File name must be relative to {}'
+                raise Exception(msg.format(p.as_posix()))
+        self._fullname = fullname
+        self._path = p.as_posix()
+        self._file = _file
         self._value = {'path': self._path, 'file': self._file}                    
         
     def _on_button(self,ex):
@@ -442,17 +484,23 @@ class FileInput(BasicInput):
         s = choose_file(initialdir=self._fullname.parent.as_posix(), 
                         initialfile=self._fullname.name)
         if s:
-            self._set_file(s)
-            self.txt.value = self._file
-            
+            try:
+                self._set_file(s)
+                self.txt.value = self._file
+            except Exception as e:
+                print(e)
+             
     def _on_text(self, change):
         """Text change - update value."""
         if change['name']=='value':
             s = change['new']
-            if s:
-                self._set_file(s)
-                self._call_observe()
-                 
+            if s is not None:
+                try:
+                    self._set_file(s)
+                    self._call_observe()
+                except Exception as e:
+                    print(e)
+                                 
     def ui(self, width='100%', border='none'):
         """Return input widget as HBox with flex layout."""
         layout = ipy.Layout(display='flex', flex_flow='row', 
@@ -562,9 +610,10 @@ class ArrayInput(BasicInput):
                 raise Exception('Array lengths do not match: {},{}'.format(nd,ni))
             for i in range(ni):
                 self._value[i] = value[i]
+        en = self._call_enabled
         self._call_enabled = False
         self._update_widgets()
-        self._call_enabled = True
+        self._call_enabled = en
                 
     def _update_widgets(self):
         """Set values to the widgets."""
@@ -680,12 +729,14 @@ class SelectInput(BasicInput):
         
     def _update_widgets(self):
         """Set values to the widgets."""
+        en = self._call_enabled
         try:
             self._call_enabled = False
             self.input.value = self._value
+            self._call_enabled = en
         except Exception as e:
             msg = 'Cannot set value to options: {}\n{}'
-            self._call_enabled = True
+            self._call_enabled = en
             raise Exception(msg.format(self._value,e))
 
     def get_index(self):
@@ -711,3 +762,402 @@ class SelectInput(BasicInput):
         wdg.append(hint)
         box = ipy.GridBox(wdg, layout=grid_layout)          
         return box  
+
+
+class DistTable(BasicInput):
+    """Table with xy nodes describing a free function.
+    
+    Beased in ipysheet, https://github.com/QuantStack/ipysheet/.
+    
+    Displays and handles a list of x,y coordinates and fix attributes. 
+    It serves to describe a free distribution functions for fitting.
+    
+    To display the widget, call display(ui()), and then call redraw() 
+    in order to display the table itself.
+    
+    Use the property 'value' to set or retrieve table data as dict. 
+    
+    Parameters
+    ----------
+    name: str
+        Name of this component. 
+    value : dict
+        x, y, fix_x amd fix_y lists. 
+        x,y are lists of float numbers. dix_x,y are boolean values.
+    nx: int
+        Number of nodes for default table.
+    x_range: list(2)
+        x-range for default table.
+        
+    """
+    
+    _headers = ['x','fix_x','y','fix_y']   
+    def __init__(self, name='', value=None, nx=6, x_range=[0.0, 10.0],
+                 border='1px solid', width='auto'):
+        super().__init__(name, value)
+        self.num_format = '0.0'
+        self._cells = {}
+        self._row_select = []      
+        self._data = {}
+        self._border = border
+        self._width = width
+        
+        self._set_default_data(nx=nx, x_range=x_range)
+        if isinstance(value, dict):
+            self.import_data(value)
+        self._data_orig = self._copy_data()
+        layout = ipy.Layout(min_width=self._width, height='auto', 
+                            border='none', 
+                            margin='0px 0px 0px 0px')
+        self._out = ipy.Output(layout=layout)
+    
+    @property
+    def value(self):
+        """Value getter."""
+        return self.export_data()
+    
+    @value.setter
+    def value(self, value):
+        """Value setter."""
+        self.import_data(value)
+        self.redraw()
+    
+    def _set_default_data(self, nx=6, x_range=[0.0, 10.0]):
+        [x1, x2] = x_range
+        self._data['x'] = list(np.linspace(x1, x2, num=nx))
+        self._data['fix_x'] = nx*[True]
+        self._data['y'] = list(np.zeros(nx))
+        self._data['fix_y'] = nx*[False]
+        self._data_orig = self._copy_data()
+    
+    def _copy_data(self):
+        """Return copy of table data."""
+        data = {}
+        for k in self._data:
+            data[k] = self._data[k].copy()
+        return data
+    
+
+    
+    def _on_del_button(self, b):
+        self._delete_rows()
+        
+    def _on_add_button(self, b):
+        self._insert_rows()
+    
+    def _render_readonly(self, value):
+        out = {}
+        print(value)
+        if value.read_only:
+            out = {'backgroundColor' : "#EEEEEE"}
+        return out
+       
+    def _create_sheet(self):
+        """Create ipysheet from table data (self._data)."""
+        nr = len(self._data['x'])  
+        layout = ipy.Layout(min_width='auto', height='auto', 
+                            border='none', 
+                            margin='0px 0px 0px 0px')
+        sheet = ipysheet.sheet(rows=nr, columns=len(DistTable._headers)+1,
+                               row_headers = False,
+                               column_headers = [' ']+DistTable._headers,
+                               stretch_headers='none', layout=layout)
+               
+        stl = {'textAlign':'center'}
+        gbcg = "#EEEEEE"
+        
+        # other data cells
+        self._cells.clear()
+        self._cells['x'] = ipysheet.column(1, self._data['x'][1:nr-1], 
+                                                row_start=1, numeric_format=self.num_format)
+        self._cells['fix_x'] = ipysheet.column(2, self._data['fix_x'][1:nr-1], 
+                                                    row_start=1, type='checkbox', style=stl)
+        self._cells['y'] = ipysheet.column(3, self._data['y'][1:nr-1], 
+                                                row_start=1, numeric_format=self.num_format)
+        self._cells['fix_y'] = ipysheet.column(4, self._data['fix_y'][1:nr-1], 
+                                                    row_start=1, type='checkbox', style=stl)
+
+        # x[0] and x[-1] must be always a fixed parameter        
+        self._cells['00'] = ipysheet.cell(0,1, self._data['x'][0], type='numeric',
+                                              numeric_format=self.num_format)
+        ipysheet.cell(0,2, [None], read_only=True, background_color=gbcg);
+        self._cells['02'] = ipysheet.cell(0,3, self._data['y'][0], type='numeric',
+                                              numeric_format=self.num_format)
+        self._cells['03'] = ipysheet.cell(0,4, self._data['fix_y'][0], type='checkbox', 
+                                               style=stl, background_color="white")
+
+        self._cells['10'] = ipysheet.cell(nr-1,1, self._data['x'][nr-1], type='numeric',
+                                              numeric_format=self.num_format)
+        ipysheet.cell(nr-1,2, [None], read_only=True, background_color=gbcg);
+        self._cells['12'] = ipysheet.cell(nr-1,3, self._data['y'][nr-1], type='numeric',
+                                              numeric_format=self.num_format)
+        self._cells['13'] = ipysheet.cell(nr-1,4, self._data['fix_y'][nr-1], type='checkbox', 
+                                               style=stl, background_color="white")
+        
+        # 1st column: check boxes for row selection
+        ipysheet.cell(0, 0, [None], read_only=True, background_color=gbcg);
+        self._row_select = ipysheet.column(0, (nr-2)*[False], row_start=1, 
+                                           style=stl,
+                                           background_color=gbcg)
+        ipysheet.cell(nr-1, 0, [None], read_only=True, background_color=gbcg);
+        self.sheet = sheet
+
+    
+    def _sheet_to_data(self):
+        """Retrieve data from the sheet."""
+        my_cells = ['00','02','03','10','12','13']
+        if not all(k in self._cells.keys() for k in my_cells+DistTable._headers):
+            raise Exception('DistTable: no sheet data.')
+        data = {}
+        data['x'] = [self._cells['00'].value] + self._cells['x'].value + [self._cells['10'].value]
+        data['fix_x'] = [True] + self._cells['fix_x'].value + [True]
+        data['y'] = [self._cells['02'].value] + self._cells['y'].value + [self._cells['12'].value]
+        data['fix_y'] = [self._cells['03'].value] + self._cells['fix_y'].value + [self._cells['13'].value]
+        self._data = data
+
+    def _delete_rows(self):
+        """Delete selected rows."""
+        try:
+            self._sheet_to_data()
+            sel = self._row_select.value
+            # collect data items to be deleted
+            delc = {}
+            for k in self._data:
+                delc[k] = []
+            for i in range(len(sel)):
+                if sel[i]:
+                    for k in self._data:
+                        delc[k].append(self._data[k][i+1])
+            # delete selected data items
+            for k in delc:
+                for d in delc[k]:
+                    self._data[k].remove(d)
+            self.redraw()
+        except Exception as e:
+            raise e
+
+    def _insert_rows(self, before=False):
+        """Insert rows after/before the selected ones."""
+        try:
+            self._sheet_to_data()
+            sel = self._row_select.value
+            d0 = self._copy_data()
+            # collect selected indexes
+            idx = []
+            if before:
+                di = 1
+            else:
+                di = 2
+            for i in range(len(sel)):
+                if sel[i]:
+                    idx.append(i+di)            
+            di = 0
+            for i in idx:
+                # insert values after i
+                j = i + di
+                x = 0.5*(d0['x'][i-1] + d0['x'][i])
+                y = 0.5*(d0['y'][i-1] + d0['y'][i])
+                self._data['x'].insert(j,x)
+                self._data['y'].insert(j,y)
+                self._data['fix_x'].insert(j,d0['fix_x'][i])
+                self._data['fix_y'].insert(j,d0['fix_y'][i])
+                di += 1
+            self.redraw()
+        except Exception as e:
+            raise e
+
+    def reset(self):
+        """Reset to original value."""
+        self.import_data(self._data_orig)
+        self.redraw()
+    
+    def import_data(self, data, set_as_orig=False):
+        """Import new table data."""
+        if not all(k in data.keys() for k in DistTable._headers):
+            raise Exception('DistTable import: missing keys.')
+        nr = len(data['x'])
+        for key in data:
+            if nr != len(data[key]):
+                raise Exception('DistTable import: unequal column lengths.')
+            self._data[key] = data[key]
+        if set_as_orig:
+            self._data_orig = self._copy_data()
+    
+    def export_data(self):
+        """Export sheet to data as dict."""
+        self._sheet_to_data()
+        return self._data
+    
+    def export_as_arrays(self):
+        """Return data as 4 numpy arrays.
+        
+        Returns
+        -------
+        dict
+            - x :  x-coordinates an array of float
+            - y :  y-values an array of float
+            - fix_x : fix flags for x values as an array of int
+            - fix_y : fix flags for y values as an array of int
+        """
+        self._sheet_to_data()
+        return {'x': np.array(self._data['x']), 
+                'y': np.array(self._data['y']),
+                'fix_x':np.array(np.array(self._data['fix_x']),dtype=int),
+                'fix_y':np.array(np.array(self._data['fix_xy']),dtype=int)}
+            
+    def redraw(self):
+        """Redraw the input table."""
+        self._create_sheet()
+        self._out.clear_output()
+        with self._out:
+            display(self.sheet)
+    
+    def ui(self):
+        """Return the input container."""
+        del_btn = ipy.Button(description='delete', 
+                             layout=ipy.Layout(width='60px'), 
+                             tooltip='delete row')
+        del_btn.on_click(self._on_del_button)
+        add_btn = ipy.Button(description='insert', 
+                             layout=ipy.Layout(width='60px'), 
+                             tooltip='insert row')
+        add_btn.on_click(self._on_add_button)
+        #lbl = ipy.Label('Rows: ')
+        layout = ipy.Layout(width=self._width, border=self._border, 
+                            margin='0px 0px 0px 0px')
+        hb = ipy.HBox([del_btn, add_btn])
+        self._create_sheet()
+        out = ipy.VBox([hb, self._out],layout=layout)
+        return out
+      
+
+
+class ScaleTable(BasicInput):
+    """Table with distribution scale parameters.
+    
+    Beased in ipysheet, https://github.com/QuantStack/ipysheet/.
+       
+    Use the property 'value' to set or retrieve table data as dict. 
+    
+    Parameters
+    ----------
+    name: str
+        Name of this component. 
+    value : dict
+        - keys : names of the values as list 
+        - value : y-scale, y-offset and x-offset as list
+        - fix : corresponding fix attributes as bool as list
+    """
+    
+    _headers = ['keys','values','fix']
+    
+    def __init__(self, name='', value=None, fmt='0.00'):
+        super().__init__(name, value)
+        self.num_format = fmt
+        self._cells = {}
+        self._data = {}
+        self._set_default_data()
+        if isinstance(value, dict):
+            self.import_data(value)
+    
+    @property
+    def value(self):
+        """Value getter."""
+        return self.export_data()
+    
+    @value.setter
+    def value(self, value):
+        """Value setter."""
+        self.import_data(value)
+    
+    def _set_default_data(self):
+        self._data['keys'] = ['y-scale', 'y0', 'x0']
+        self._data['values'] = [1.0, 0.0, 0.0]
+        self._data['fix'] = [True, True, True]
+        self._data_orig = self._copy_data()
+    
+        
+    def _copy_data(self):
+        """Return copy of table data."""
+        data = {}
+        for k in self._data:
+            data[k] = self._data[k].copy()
+        return data
+    
+                
+    def _create_sheet(self):
+        """Create ipysheet from table data (self._data)."""
+        layout=ipy.Layout(width='auto', height='auto', border='none', 
+                          margin='0px 0px 0px 0px')
+        sheet = ipysheet.sheet(rows=3, columns=2,
+                               row_headers = self._data['keys'],
+                               column_headers = ['value', 'fixed'],
+                               stretch_headers='none', layout=layout)
+        stl = {'textAlign':'center'}
+        vals = self._data['values']
+        fixes = self._data['fix']
+        self._cells.clear()
+        self._cells['values'] = ipysheet.column(0, vals, row_start=0, 
+                                               numeric_format=self.num_format)
+        self._cells['fix'] = ipysheet.column(1, fixes, row_start=0, 
+                                             type='checkbox', style=stl)
+        self.sheet = sheet
+    
+    def _sheet_to_data(self):
+        """Retrieve self._data from the sheet."""
+        for key in self._cells:
+            self._data[key] = self._cells[key].value
+    
+    def _data_to_sheet(self):
+        """Set self._data to the sheet."""
+        for key in self._cells:
+            if key in self._data:
+                self._cells[key].value = self._data[key]
+        self.sheet.row_headers = self._data['keys']
+        for c in self._cells:
+            self._cells[c].send_state()
+
+    def reset(self):
+        """Reset to original value."""
+        self.import_data(self._data_orig)
+    
+    def import_data(self,data, set_as_orig=False):
+        """Import new data."""
+        if not all(k in data.keys() for k in ScaleTable._headers):
+            raise Exception('Invalid import data: missing keys.')
+        nr = len(data['values'])
+        for key in ScaleTable._headers:
+            if nr != len(data[key]):
+                raise Exception('Invalid import data: unequal array lengths.')
+            self._data[key] = data[key]
+        if set_as_orig:
+            self._data_orig = self._copy_data()
+        self._data_to_sheet()
+    
+    def export_data(self):
+        """Export sheet to data as dict."""
+        self._sheet_to_data()
+        return self._data
+    
+    def export_as_arrays(self):
+        """Return data as 2 numpy arrays.
+        
+        Returns
+        -------
+        dict
+            - value : scale, y0 and x0 as an array of float
+            - fix : fix flags as an array of int
+        """
+        self._sheet_to_data()
+        vals = self._data['values']
+        fixes = self._data['fix']
+        return {'values': np.array(vals), 'fix':np.array(fixes,dtype=int)}
+    
+    def redraw(self):
+        """Update table after manual change of parameters."""
+        self._data_to_sheet()
+        
+    def ui(self):
+        """Return the input widget."""
+        self._create_sheet()
+        return self.sheet
