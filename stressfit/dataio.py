@@ -64,13 +64,26 @@ import numpy as np
 import datetime
 import json
 from pathlib import Path as _Path
+import os
 from functools import wraps
+
 
 __work = None
 
+def workspace():
+    """Access Workspace object.
+    
+    Return
+    ------
+    instance of :class:`dataio.Workspace`
+        Workspace object which defines and maintains user 
+        workspace directories.
+    """
+    global __work
+    if __work is None:
+        __work = Workspace()
+    return __work
 
-
-### Classes
 
 class Workspace():
     """
@@ -94,7 +107,7 @@ class Workspace():
     The paths are internally saved as pathlib.Path objects.
     
     The workspace paths can be saved in the work directory in 
-    the file `.stressfit` and loaded from it. The file is searched for when
+    the file `.workspace` and loaded from it. The file is searched for when
     switching to a new work directory and loaded if found. 
     
     By default, `data`, `tables` and `instruments` point to the package 
@@ -102,13 +115,39 @@ class Workspace():
     
     """
     
-    cfg_name = '.stressfit'
+    _wks_name = '.workspace'
+    _setup_name = '.setup'
     types = ['work', 'data', 'tables', 'instruments', 'output']
     def __init__(self):
         self._path_keys = Workspace.types
         self._paths = {} 
         self.reset_paths()
-
+        self._create_app_dirs()
+            
+        if not self._appwks.exists():
+            self.save(default=True)
+        else:
+            # Let exceptions pass, at least the package default should work.
+            try:
+                self.load(default=True)
+            except:
+                pass
+        
+    @property
+    def appdir(self):
+        """Directory with global stressfit configuration data."""
+        return self._appdir
+    
+    @property
+    def wksdir(self):
+        """Directory with stressfit configuration data for given workspace."""
+        return self._wksdir
+    
+    @property
+    def inputfile(self):
+        """File with application input data in the current workspace."""
+        return self._wksdir.joinpath(Workspace._setup_name_)
+    
     def reset_paths(self):
         """Reset paths to package defaults.
         
@@ -123,6 +162,38 @@ class Workspace():
         if not self._paths['output'].exists():
             self._paths['output'] = _Path().cwd()
             self._paths['work'] = self._paths['output']
+  
+    def _create_app_dirs(self):
+        """Create global configuration directories and files."""
+        ep = os.getenv('APPDATA')
+        if ep:
+            epath = _Path(ep).joinpath('.stressfit')
+        else:
+            epath = _Path.home().joinpath('.stressfit')
+        if not epath.exists():
+            epath.mkdir()
+        elif epath.is_file():
+            epath.unlink()
+            epath.mkdir()
+        # application data folder
+        self._appdir = epath
+        # file with application default workspace info
+        self._appwks = epath.joinpath(Workspace._wks_name)
+
+    def _create_user_dirs(self):
+        """Create user configuration directories and files."""
+        ep = self._paths['work']
+        epath = _Path(ep).joinpath('.stressfit')
+        if not epath.exists():
+            epath.mkdir(parents=True)
+        elif epath.is_file():
+            msg = 'Cannot create workspace folder. Remove file {} first.'
+            raise Exception(msg.format(epath.as_posix()))
+        # application data folder
+        self._wksdir = epath
+        # file with application default workspace info
+        self._wksdata = epath.joinpath(Workspace._wks_name)
+        
   
     def keys(self):
         """Return path eys as list."""
@@ -189,6 +260,7 @@ class Workspace():
             except Exception:
                 msg = 'Cannot set relative work path: {}'
                 print(msg.format(work_path))
+        
         # try to load configuration
         out = self.load()
         # if not loaded, check relative paths:
@@ -212,7 +284,7 @@ class Workspace():
         if key in self._paths:
             return self._paths[key]
         else:
-            return self._path['work']
+            return self._paths['work']
             
     def set_paths(self, **kwargs):
         """
@@ -285,7 +357,7 @@ class Workspace():
             if not f.exists():
                 raise Exception(fmt.format(f.as_posix()))
 
-    def load(self):
+    def load(self, default=False):
         """Load workspace path names from local workspace configuration file.
         
         If successful, update workspace setting.
@@ -296,36 +368,57 @@ class Workspace():
             True if successfully loaded and workspace updated.
         """
         out = False
-        file = self._paths['work'].joinpath(Workspace.cfg_name)
+        if default:
+            file = self._appwks
+        else:
+            self._create_user_dirs()
+            file = self._wksdata
         if file.exists():
             try:
-                f = open(file, 'r')
-                lines = f.readlines() 
-                f.close()
+                with open(file, 'r') as f:
+                    lines = f.readlines() 
                 res = json.loads('\n'.join(lines))
-                if 'workspace' in res:
-                    w = res['workspace']
-                    self.set_paths(**w)
-                    out = True
+                if not 'workspace' in res:
+                    msg = 'Cannot find workspace info in {}'
+                    raise Exception(msg.format(file))
+                info = res['workspace']
+                if default and 'work' in info:
+                    # NOTE: change_workspace calls load(default=False)
+                    self.change_workspace(info['work'])
+                else:
+                    self.set_paths(**info)
+                out = True
             except Exception as e:
                 print(e)
         return out
 
-    def save(self):
-        """Save workspace path names in local workspace configuration file."""
-        if self._paths['work'].exists():
-            file = self._paths['work'].joinpath(Workspace.cfg_name)
-            keys = self._path_keys.copy()
-            try:
+    def save(self, default=False):
+        """Save workspace path names in local workspace configuration file.
+        
+        Parameters
+        ----------
+        as_default : bool
+            If true, save to the user application data folder. Otherwise
+            save configuration under the current workspace directory and
+            exclude the 'work' item (workspace directory).
+        
+        """
+        if default:
+            file = self._appwks
+        else:
+            self._create_user_dirs()
+            file = self._wksdata
+        keys = self._path_keys.copy()
+        try:
+            if not default:
                 keys.remove('work')
-                lst = self.get_paths(absolute=False, keys=keys)
-                out = {'workspace':lst}
-                txt = json.dumps(out,indent=4)
-                f = open(file, 'w')
+            lst = self.get_paths(absolute=False, keys=keys)
+            out = {'workspace':lst}
+            txt = json.dumps(out,indent=4)
+            with open(file, 'w') as f:
                 f.write(txt)
-                f.close()
-            except Exception as e:
-                print(e)
+        except Exception as e:
+            print(e)
 
     def print_info(self, absolute=False):
         """Print ifnormation on workspace paths."""
@@ -333,7 +426,7 @@ class Workspace():
         lst = self.get_paths(absolute=absolute)
         for key in lst:
             print(fmt.format(key,lst[key]))
-
+            
 class Param(dict):
     """
     Class encapsulating a single instrument parameter.
@@ -653,9 +746,9 @@ def loadwrapper(func):
        try:
            fname = get_input_file(filename, **kwargs)
            if fname.exists():
-               print('Trying to load {}.'.format(fname))
+               #print('Trying to load {}.'.format(fname))
                res = func(fname, **kwargs)
-               print('Succeeded.')
+               #print('Succeeded.')
            else:
                raise Exception('File {} does not exist.'.format(fname))
        except Exception as e:
@@ -818,17 +911,19 @@ def save_text(text, filename, **kwargs):
 
 
 @loadwrapper
-def load_data(filename, rows=[0, -1], **kwargs):
+def load_data(filename, rows=[0, -1], verbose=True, **kwargs):
     """
     Load a numeric table from a text file using :meth:`numpy.loadtxt`.
    
     Parameters
     ----------
-    filename: str
+    filename : str
         File name.
-    rows: list(2)
+    rows : list(2)
         Range of rows (excluding # comments) to evaluate. 
         Use [0, -1] for full range.
+    verbose : bool
+        If True, print info on loaded file.
     **kwargs
         Keyword arguments passed to :func:`numpy.loadtxt`
     
@@ -842,6 +937,8 @@ def load_data(filename, rows=[0, -1], **kwargs):
         if k in kwargs:
             kwargs.pop(k)
     d = np.loadtxt(filename, **kwargs)
+    if verbose:
+        print('File loaded: {}'.format(filename))
     if (rows[1]>=0):
         return d[rows[0]:rows[1]+1,:]
     elif rows:
@@ -1152,19 +1249,6 @@ def save_params(data, filename, comment="", source="", **kwargs):
     save_text(out, filename, **kwargs)
 
 
-def workspace():
-    """Access Workspace object.
-    
-    Return
-    ------
-    instance of :class:`dataio.Workspace`
-        Workspace object which defines and maintains user 
-        workspace directories.
-    """
-    global __work
-    if __work is None:
-        __work = Workspace()
-    return __work
 
 
 def test():
