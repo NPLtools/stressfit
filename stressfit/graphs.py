@@ -7,6 +7,7 @@ Created on Thu Aug 31 08:47:39 2017
 import numpy as np
 from matplotlib import pyplot as plt
 from numpy.linalg import norm
+import copy
 
 # set default plot properties
 params = {'legend.fontsize': 'x-large',
@@ -142,61 +143,6 @@ def plotStrainModel(mcfit, save = False, file = 'strainModel.png'):
               ylabel='Strain, $\mu\epsilon$', save=save, file=str(file))
 
 
-def plot_pseudo_strain(model, 
-                       strain=True, 
-                       intensity=False, 
-                       inline=True,
-                       save=False, 
-                       file=''):
-    """Plot pseudo-strain and intensity as a function of scan position..
-    
-    Parameters
-    ----------
-        model : MCCfit
-            fit model, must be initialized before
-        strain : bool
-            Plot strain vs position
-        intensity : bool
-            Plot intensity vs. position
-        inline : bool
-            Plot all in one row (else plot intensity below the strains)
-        save : boolean
-            if True, save plot as PNG figure
-        file : string
-            file name for the PNG output
-    """
-    if model.infodepth is not None:
-        what = []
-        if strain:
-            what += ['strain']
-        if intensity:
-            what += ['intensity']
-        nf = len(what)
-        if nf==0:
-            return
-        if inline:
-            nx = nf
-            ny = 1
-        else:
-            nx = 1
-            ny = nf
-        xwidth = params['figure.figsize'][0]
-        yheight = params['figure.figsize'][1]
-        fig, axs = plt.subplots(nrows=ny, ncols=nx, 
-                                figsize=(nx*xwidth,ny*yheight))
-        if np.size(axs)==1:
-            axs = [axs]
-        axx = axs.reshape((axs.size,))
-        for i in range(len(what)):
-            if what[i]=='strain':
-                 plotPseudoStrain(model, ax=axx[i], save=save, file=file)
-            if what[i]=='intensity':
-                 plotPseudoIntensity(model, ax=axx[i], save=save, file=file)
-        fn = str(file)
-        if (save and fn):
-            plt.savefig(fn, bbox_inches='tight')
-        plt.show()
-
 
 def plot_resolution(model, 
                     depth=True, 
@@ -244,7 +190,7 @@ def plot_resolution(model,
     plt.subplots_adjust(wspace=0.4)
     fig.suptitle('Sampling positions')
     if np.size(axs)==1:
-        axs = [axs]
+        axs = np.array([axs],dtype=object)
     axx = axs.reshape((axs.size,))
     for i in range(len(what)):
         if what[i]=='depth':
@@ -375,38 +321,187 @@ def plotPseudoStrain(model, ax=None, save=False, file=''):
             plt.savefig(fn, bbox_inches='tight')
         plt.show()
 
-def plotPseudoIntensity(model, ax=None, save=False, file='infodepth.png'):
-    """Plot pseudo intensity (=sampling volume) as a function of scan position.
+
+
+def plot_collection(data, dim = None, inline=True, title='', save=False, file=''):
+    """Plot multiple results in a grid of plots.
     
     Parameters
     ----------
-        model : MCCfit
-            Fit model, must be initialized before
+        data : dict
+            A collection of datasets to be passed to :func:`plot_results`.
+        dim : list
+            Optional dimensions of the grid, [nx, ny] 
+        inline : bool
+            Plot all in one row (else plot one per row).
+        title : str
+            Optional main title.
+        save : boolean
+            if True, save plot as PNG figure
+        file : string
+            file name for the PNG output
+    """
+    what = []
+    what = list(data.keys())
+    if isinstance(dim, list):
+        [nx, ny] = dim
+    elif isinstance(dim, int):
+        nx = dim
+        ny = int(0.9999*len(what)/nx) + 1
+    else:
+        nf = len(what)
+        if nf==0:
+            return
+        if inline:
+            nx = nf
+            ny = 1
+        else:
+            nx = 1
+            ny = nf
+    xwidth = params['figure.figsize'][0]
+    yheight = params['figure.figsize'][1]
+    fig, axs = plt.subplots(nrows=ny, ncols=nx, 
+                            figsize=(nx*xwidth,ny*yheight))
+#    plt.subplots_adjust(wspace=0.4, hspace=0.3)
+    if title:
+        fig.suptitle(title, fontsize='x-large', weight ='bold')
+    if np.size(axs)==1:
+        axs = np.array([axs],dtype=object)
+    axx = axs.reshape((axs.size,))
+    for i in range(len(what)):
+        d = data[what[i]]
+        plot_results(d, ax=axx[i])
+    fig.tight_layout()
+    fn = str(file)
+    if (save and fn):
+        print('Figure saved in {}'.format(fn))
+        plt.savefig(fn, bbox_inches='tight')
+    plt.show()
+
+
+def plot_results(data, ax=None, save=False, file=''):
+    """Plot data on given axis.
+    
+    Parameters
+    ----------
+        data : dict
+            Includes at least: `title, xlabel, ylabel, x, y`.
+            It can include also: `xerr, yerr, args`, where args is a dict 
+            with other keyword arguments to be passed to :func:`errorbar`.
+             
+            It can also include a key `other`, which defines additional 
+            data to be shown on the plot. It should include at least: 
+            `x, y, fmt, label`. 
+            Optionally, It can include also: `xerr, yerr` .
+              
         ax : Axis
             If defined, plot on given Axis object, otherwise create its own.
         save : boolean
-            If True, save plot as PNG figure
+            If True, save plot as PNG figure.
         file : string
-            File name for the PNG output
+            File name for the PNG output.
     """
-    data = model.infodepth
+    def get_args(d):
+        args = {'label':None, 'fmt':'ko-', 'xerr': None, 'yerr':None}
+        for key in ['label','fmt','xerr','yerr']:
+            if key in d:
+                args[key] = d[key]
+        if 'args' in d:
+            args.update(d['args'])
+        return args
+    
+    def get_slice(d,lim=[0,10]):
+        out = copy.deepcopy(d)
+        rang = range(*lim)
+        for key in ['x','y','xerr','yerr']:
+            out[key] = d[key][rang]
+        return out
+    
+    def split_to_segments(d):
+        """Split plot to masked and unmasked segments."""
+        mask = d['valid']
+        # mask margin indices
+        idx = [i for i in range(len(mask)-1) if mask[i] != mask[i+1]]
+        # number of segments
+        out = []
+        if len(idx) == 0:
+            d['masked'] = False
+            out.append(d)
+        else:
+            i0 = 0
+            idx.append(len(mask)-1)
+            for iseg in idx:
+                slc = get_slice(d, lim=[i0, iseg+1])
+                if mask[i0]:
+                    slc['masked'] = False                    
+                else:
+                    slc['masked'] = True
+                out.append(slc)
+                i0 = iseg+1
+        return out
+    
+    def plot(ax, d):
+        """Plot data on given axis.
+        
+        If data includes data ask, plot separately valid data and then
+        the masked data in shadow collor.
+        """
+        mcolor = 'grey'
+        mstyle = '-'
+        args = get_args(d)
+        if 'valid' in d:
+            # data mask is provided
+            # split to slices
+            slcs = split_to_segments(d)
+            for i in range(len(slcs)):
+                s = slcs[i]
+                args = get_args(s)
+                if s['masked']:
+                    del args['label']
+                    del args['fmt']
+                    ax.errorbar(s['x'], s['y'], color=mcolor, 
+                        linestyle=mstyle, **args)
+                else:
+                    if i != 0:
+                        del args['label']
+                    ax.errorbar(s['x'], s['y'], **args)
+        else:
+            ax.errorbar(d['x'], d['y'], **args)
+    
     if data is None:
         return
+    if 'other' in data:
+        other = data['other']
+    else:
+        other = []
     if ax is None:
         fig, ax1 = plt.subplots() 
     else:
         ax1 = ax
-    ax1.set_title('Pseudo intensity')
-    ax1.set_xlabel('Scan position, mm')
-    ax1.set_ylabel('Intensity, rel. units')
-    ax1.errorbar(data[:,0], data[:,3], fmt='bo-')
+    ax1.set_title(data['title'])
+    ax1.set_xlabel(data['xlabel'])
+    ax1.set_ylabel(data['ylabel'])
+    plot(ax1, data)
+    #args = get_args(data)
+    #ax1.errorbar(data['x'], data['y'], **args)
+    if other is not None:
+        if isinstance(other, list):
+            dlist = other
+        else:
+            dlist = [other]
+        for d in dlist:
+            plot(ax1, d)
+            #args = get_args(d)
+            #ax1.errorbar(d['x'], d['y'], **args)
     ax1.grid()
+    ax1.legend(loc='best', frameon=True)
     if ax is None:
         fn = str(file)
         if (save and fn):
             plt.savefig(fn, bbox_inches='tight')
         plt.show()
             
+        
 def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False, 
               file='scene.png', arrows=True):
 
@@ -424,7 +519,7 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
         ki, kf: ndarray[3]
             incident and exit k-vector
         sdir: ndarray[3]
-            scan direction - shows motoin of events in stationary sample
+            scan direction - shows motion of events in stationary sample
         sampling: :class:`Sampling
             Instance of the Sampling object
         save: boolean
@@ -433,23 +528,11 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
             file name for the PNG output        
     
     """
-    nd = sampling.nev
-    [jr, jki, jkf, jp, jd] = sampling.idata[0:5]
-    r = sampling.sdata[0:nd, jr:jr+3]-sampling.sctr
-    p = sampling.sdata[0:nd, jp]
-    dhkl = sampling.sdata[0:nd, jd]
-# gr.plotScene(rang, proj, shape, ki, kf, sdir, r-sam.sctr, p, dhkl, save = True, file = outpng)
-
-    nd = r.shape[0]
-    meanp = np.mean(p)
-    w = 1*p/meanp
-    r0 = np.zeros((nd, 3))
-    rc = shape.getLocalPos([0., 0., 0.])
-    for j in range(nd):
-        rloc = shape.getLocalPos(r[j, :])
-        r0[j, :] = rloc[:]
-
+    has_sampling = sampling is not None
+    
+    
     # centre in local coord.
+    rc = shape.getLocalPos([0., 0., 0.])
     if (proj == 0):
         ix = 2
         iy = 1
@@ -463,27 +546,45 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
     xmax = +0.5*rang[0] + rc[ix]
     ymin = -0.5*rang[1] + rc[iy]
     ymax = +0.5*rang[1] + rc[iy]
-
-
-    # make color scale for dhkl 
-    d0 = np.sum(p*dhkl)/np.sum(p)  # mean dhkl
-    dd = 1e6*(dhkl - d0)/d0  # convert to strain
-    dmin = np.min(dd)  
-    dmax = np.max(dd)
-    # dirty trick to set color scale symmetric around zero
-    # moving 1st two events outside range and set dd to limits
-    out = np.max(abs(np.array(rang)))
-    r0[0:2,] = 2*np.array([out, out, out])
-    w[0:2] = 0.
-    # reduce scale to improve contrast
-    dlim = 0.5*max(abs(dmin), abs(dmax))
-    dd = np.minimum(dd, dlim)
-    dd = np.maximum(dd, -dlim)
-    dd[0] = -dlim
-    dd[1] = dlim
+    
+    
+    
+    if has_sampling:
+        nd = sampling.nev
+        [jr, jki, jkf, jp, jd] = sampling.idata[0:5]
+        r = sampling.sdata[0:nd, jr:jr+3]-sampling.sctr
+        p = sampling.sdata[0:nd, jp]
+        dhkl = sampling.sdata[0:nd, jd]
+        nd = r.shape[0]
+        meanp = np.mean(p)
+        w = 1*p/meanp
+        r0 = np.zeros((nd, 3))
+        for j in range(nd):
+            rloc = shape.getLocalPos(r[j, :])
+            r0[j, :] = rloc[:]
+        # make color scale for dhkl 
+        d0 = np.sum(p*dhkl)/np.sum(p)  # mean dhkl
+        dd = 1e6*(dhkl - d0)/d0  # convert to strain
+        dmin = np.min(dd)  
+        dmax = np.max(dd)
+        # dirty trick to set color scale symmetric around zero
+        # moving 1st two events outside range and set dd to limits
+        out = np.max(abs(np.array(rang)))
+        r0[0:2,] = 2*np.array([out, out, out])
+        w[0:2] = 0.
+        # reduce scale to improve contrast
+        dlim = 0.5*max(abs(dmin), abs(dmax))
+        dd = np.minimum(dd, dlim)
+        dd = np.maximum(dd, -dlim)
+        dd[0] = -dlim
+        dd[1] = dlim
 
     # make space for color legend
-    wleg = 1.3
+    
+    if has_sampling:
+        wleg = 1.3
+    else:
+        wleg = 0.0
     wfig = 5  # size of the figure
     if (rang[0] >= rang[1]):
         size = (wleg + wfig, wfig*rang[1]/rang[0])
@@ -498,12 +599,15 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
     ax.set_xlabel(lbl[ix]+", mm")
     ax.set_ylabel(lbl[iy]+", mm")
     
-    # plot shape
+        # plot shape
     shape.plotContours(ax, proj, "#444444", "dashed")
-    # plot events                       
-    cm = plt.cm.get_cmap('RdYlBu')
-    sc = ax.scatter(r0[:, ix], r0[:, iy], s=w, cmap=cm, c=dd)
-    plt.colorbar(sc, label='pseudo-strain, 1e-6')
+    if has_sampling:
+        # plot events                       
+        cm = plt.cm.get_cmap('RdYlBu')
+        sc = ax.scatter(r0[:, ix], r0[:, iy], s=w, cmap=cm, c=dd)
+        plt.colorbar(sc, label='pseudo-strain, 1e-6')
+    
+    
     # plot ki, kf arrows and scan direction
     if (arrows):
         arrow_len = 0.25*rang[0]
@@ -525,7 +629,8 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
         ax.arrow(rc[ix], rc[iy], xd[ix], xd[iy],
                  head_width=arrw, head_length=arrw, fc='r', ec='r')
     plt.title("Scattering geometry")
-    ax.invert_xaxis()
+    if proj<2:
+        ax.invert_xaxis()
     fn = str(file)
     if (save and fn):
         plt.savefig(fn, bbox_inches='tight')
