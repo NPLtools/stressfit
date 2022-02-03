@@ -13,6 +13,7 @@ stressfit.matrix.psmodel:
     Analytical calculations of pseudo-strains, using Gaussian sampling model.
 """
 import numpy as np
+#from typing import NamedTuple
 #from math import sqrt, log, tan
 
 import stressfit.matrix.mxtof as mxtof
@@ -20,10 +21,155 @@ import stressfit.matrix.psmodel as psm
 import stressfit.matrix.components as com
 import stressfit.dataio as io
 
+import json
+
+# TODO: move constants to a special unit
 deg = np.pi/180
 g_norm=1/np.sqrt(4*np.log(2))  # gaussian distribution
 g_uni=np.sqrt(1/6)  # uniform distribution
 
+
+class IParams(dict):
+    """
+    Class encapsulating all instrument parameters.
+    
+    Provides also basic I/O methods.
+    
+    
+    
+    
+    """
+    
+    # keys for instrument components
+    _comp_keys = ['src', 'guide', 'col_0', 'col_1', 'col_2', 'det']
+
+    # keys for component parameters
+    _var_keys = {'src':['twidth', 'tshape', 'dist'],
+                 'guide': ['width', 'dist', 'm'],
+                 'col': ['width', 'dist', 'on'],
+                 'det': ['binwidth', 'binshape', 'dist', 'amin', 'amax', 
+                         'resol']
+                 }
+      
+    
+    def __init__(self, name="default"):
+        self.name = name
+        self.file = None
+        dict.__init__(self)
+    
+    
+    
+    def load(self, filename, fmt='JSON', path=None):
+        """Load from text file.
+
+        **Accepted formats:**
+
+        - JSON (default)
+        - INI
+        
+        INI format:
+            
+        This fromat is provided for backward compatibility. Load and save 
+        parameters using the JSON format.
+        
+        For the parameter file format, see :func:`.dataio.load_params`.
+        Expected parameter definition is 
+        "``component_variable = value # description``".     
+        The metod tries to resolve component and variable names if separated by 
+        an underscore. A comment following parameter value on the same line is 
+        interpreted as a description string.
+
+       
+        Parameters
+        ----------
+        filename: str
+            Input file name. 
+        fmt: str
+            File format. Default is JSON.
+        path: str, optional
+            Search path for the input file. It is ignored if ``filename`` is
+            given as absolute path. If ``filename`` is relative and ``path``
+            is not defined, then the `instrument search path` defined
+            by the function :func:`.dataio.set_path` is used. 
+            
+        """
+
+        if fmt=='JSON':
+            self._load_par_json(filename, path=path)
+        elif fmt=='INI':
+            self._load_par_ini(filename, path=path)
+        else:
+            raise Exception('Unknown format specification: {}'.format(fmt))
+ 
+
+    def _load_par_json(self, filename, path=None):
+        """Load from a JSON file."""
+        fname = io.get_input_file(filename, kind='instrument', path=path)
+        in_file = open(fname, "r") 
+        self.clear()
+        c = json.load(in_file)
+        self.update(c)
+        self.file = filename
+        in_file.close()
+
+    def _load_par_ini(self, filename, path=None):
+        """
+        Load instrument parameters from a text file.
+        
+        For the file format, see :func:`.dataio.load_params`.
+        
+        This method is provided for backward compatibility.
+        Use :meth:`.IParams._load_par_json()` to 
+        load parameters in the JSON format. 
+        
+        The metod tries to resolve component and parameter names if separated by 
+        an underscore. A comment following parameter value on the same line is 
+        interpreted as a description string.
+        
+        """     
+        # key replacement for backward compatibility
+        replkey = {'pulse_width':'src_twidth',
+                   'pulse_shape':'src_tshape'}
+        # component id replacement for backward compatibility
+        repls = {'gd':'guide',
+                 's0':'col_0','s1':'col_1','s2':'col_2',
+                 'd':'det'}
+        self.clear()
+        params = io.load_params(filename, kind='instrument', path=path)
+        if not params:
+            print('WARNING: No parameters loaded.')
+            return
+        self.file = filename
+        # go through parameters and resolve `compid_varid` strings
+        for key in params:
+            if key in replkey:
+                k = replkey[key]
+            else:
+                k = key
+            idk = k.split('_')
+            if len(idk)>1:
+                compid = idk[0]
+                varid = idk[1]
+                # replace obsolete compid with the correct ones
+                if compid in repls:
+                    compid = repls[compid]
+                # for recognized components, resolve type and variable
+                if compid in IParams._comp_keys:
+                    typ = compid.split('_')[0]
+                    # typ for _comp_keys should always exist
+                    vkeys = IParams._var_keys[typ]
+                    # create new empty component if not yet done
+                    if not compid in self:
+                        self[compid] = {}
+                    # if varid is known, assign parameter to components[compid]
+                    if varid in vkeys:
+                        params[key].ids = "{}_{}".format(compid,varid)
+                        self[compid][varid] = params[key]
+                    else:
+                        raise Exception('Unknown parameter: {}.'.format(key))
+                else:
+                    raise Exception('Unknown component: {}.'.format(compid))
+    
 
 
 def getDetBinsCyl(radius=2000.0, angle=[90.0], phi=None):
@@ -363,7 +509,6 @@ class DiffTOF():
             self.setBin(ibin0)
         return res
     
-###    Shortcuts calling execFnc
 
     def getGaugeParams(self, i_bin=None):
         """Get gauge parameters DSE, beta, zeta."""    
