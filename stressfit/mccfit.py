@@ -27,6 +27,21 @@ _quiet = False
 
 intpmodels = ['natural','clamped', 'PCHIP', 'Akima']
 
+def intClear():
+    global _ispline
+    _ispline = None
+
+def intDefined():
+    return _ispline is not None
+
+def intFnc(x):
+    """Returns interpolated intensity function value """
+    if (_ispline is None):
+        y = np.ones(x.shape)
+    else:
+        y = splev(x, _ispline, ext=1)
+    return np.maximum(0., y)
+
 def quiet(b):
     global _quiet
     _quiet=b
@@ -239,6 +254,91 @@ def costFnc(params, model, areg, guess):
         res = np.concatenate((res, np.array([y])), axis=0)
     return res
 
+def runFit_alt(model, maxiter=200, maxc=10, areg=0., bootstrap=False, loops=3):
+    """ Execution of least square fit.
+    
+        Arguments
+        ---------
+            model : mccfit class
+                class handling model parameters
+            maxiter : int
+                maximum number of function evaluations
+            areg: float
+                regularization coefficient
+            bootstrap: boolean
+                run loops to estimate confidence limits
+            loops: int
+                number of bootstrap loops
+        Returns
+        -------
+            results : boolean
+                    success
+    """
+    global _chi2, _reg
+    if (model.data is None):
+        msg = 'Set value of {}.data.'.format(model.__class__.__name__)
+        raise Exception('No data defined for fitting. '+msg)
+    if (bootstrap):
+        res = runFitEx(model, maxiter=maxiter, loops=loops, areg=areg)
+        return res
+    ndim = model.dist.shape[0]
+    ndata = model.data.shape[0]
+    xdata = model.data[:,0]
+    _chi2 = np.inf
+    _reg = np.inf
+    # initialize distribution array
+    xdis = model.dist[:,0]
+    model.fitInit()
+    iterf = None
+    if (maxiter>0):
+        data_orig = model.data.copy()
+        ydata = data_orig[:,1]
+        for i in range(maxc):
+            minner = Minimizer(costFnc, model.params, 
+                               fcn_args=(model, areg, True), 
+                               iter_cb=iterf)
+            model.result = minner.minimize(method='leastsq', 
+                            params=model.params, 
+                            ftol=model.ftol, 
+                            epsfcn=model.epsfcn, 
+                            max_nfev=maxiter)
+            model.params = model.result.params
+                  
+            [yfit, fit_err, ypos] = model.getSmearedFnc(xdata)
+            er = np.sqrt(fit_err**2 + model.data[:,2]**2)
+            resid = (yfit - data_orig[:,1])/er
+            _chi2 = getChi2(resid, model.params)   
+            _reg = model.result.redchi
+            print('chi2 = {:g}, reg = {:g}'.format(_chi2, _reg))
+            delta = ydata - yfit
+            model.data[:,1] = ydata + delta
+        model.data = data_orig 
+    else:
+        [yfit, fit_err, ypos] = model.getSmearedFnc(xdata)
+    model.areg = areg
+    # par =params as array (par, serr)
+    model.par = params2array(model.params)
+    # fit = array(x, y, yerr) with fitted curve
+    model.fit = np.array([xdata, yfit, fit_err]).T
+    # pos = array(x, y, yerr), with nominal and information depths
+    model.pos = np.array([xdata, ypos, np.zeros(ndata)]).T
+
+    # dist = array(x, y, xerr, yerr) with interpolated distribution
+    ydis = model.getDistribution(xdis)
+    dis_err = np.zeros(ndim)
+    model.dist = np.array([xdis, ydis, dis_err]).T
+    model.chi  = _chi2 
+    model.reg = _reg
+    if (model.avgrange is not None):
+        av = getAverage(xdis, ydis, rang = model.avgrange)  
+        model.avg = [av, 0.]
+    if (not _quiet) : print('runFit finished\n')
+    if (model.result is not None):
+        res = model.result.success
+    else:
+        res = True
+    model.fitFinal()
+    return res
 
 def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
     """ Execution of least square fit.
@@ -801,14 +901,14 @@ class MCCfit(ABC):
                 tab-delimited table with self.infodepth 
         """
         ss = "# Date: " + str(datetime.datetime.now()) + "\n"
-        hdr = ['position', 'depth', 'width', 'intensity', 'pseudo_strain']
+        hdr = ['position', 'depth', 'x', 'y', 'z', 'width', 'intensity', 'pseudo_strain']
         ss += '# Header: ' + '\t'.join(f for f in hdr) + '\n'   
         hasData = (self.infodepth is not None)
         if (hasData):
             nm = self.infodepth.shape[0]
-            fmt = '{:g}'+4*'\t{:g}'
+            fmt = '{:g}'+7*'\t{:g}'
             for i in range(nm):
-                row = self.infodepth[i,:]
+                row = self.infodepth[i,[0,1,5,6,7,2,3,4]]
                 sm = fmt.format(*row) 
                 ss += sm + '\n'
         return ss
@@ -893,24 +993,26 @@ class MCCfit(ABC):
         return res
 
     def saveInfoDepth(self, outpath, fname):                        
-        """Save info depth table."""
+        """Save info depth table - obsolete. Use savePseudoStrain."""
+        self.savePseudoStrain(self, outpath, fname, sfx='depth')
+   
+    def savePseudoStrain(self, outpath, fname, sfx='deps'):                        
+        """Save pseudo-strain, intensity and information depth table."""
         if ((self.infodepth is not None) and fname):
-            f = dataio.derive_filename(fname, ext='dat', sfx='depth')
+            f = dataio.derive_filename(fname, ext='dat', sfx=sfx)
             fn = str(dataio.get_output_file(f, path=outpath))
-            # fn = deriveFilename(outpath+fname, ext='dat', sfx='depth')
             ss = self.formatResultDepth()
-            print('Depth scale saved in '+fn)
+            print('Pseudo-strain data saved in '+fn)
             with open(fn, 'w') as f:
-                f.write('# Depth scale data: '+fname + "\n")
+                f.write('# Pseudo-strain data: '+fname + "\n")
                 f.write(ss)
-                f.close
-                
-    def saveResolution(self, outpath, fname):                        
+                f.close             
+   
+    def saveResolution(self, outpath, fname, sfx='resol'):                        
         """Save table with spatial resolution parameters."""
         if ((self.resolution is not None) and fname):
-            f = dataio.derive_filename(fname, ext='dat', sfx='resol')
+            f = dataio.derive_filename(fname, ext='dat', sfx=sfx)
             fn = str(dataio.get_output_file(f, path=outpath))
-            # fn = deriveFilename(outpath+fname, ext='dat', sfx='depth')
             ss = self.formatResultResol()
             print('Resolution data saved in '+fn)
             with open(fn, 'w') as f:
@@ -959,9 +1061,13 @@ class MCCfit(ABC):
                 f.write(ss)
                 f.close
     
-    def calInfoDepth(self, x):
+    def calInfoDepth(self, x, use_int=False):
+        ifunc = None
+        if use_int:
+            ifunc = intFnc
         [A, B, xc] = self.getScaling()
-        self.infodepth = sam.convGauge(x-xc, self.xdir, 0, self.nev)
+        self.infodepth = sam.convGauge(x-xc, self.xdir, 0, self.nev, 
+                                       ifunc=ifunc)
 
     def calResolution(self, x):
         [A, B, xc] = self.getScaling()

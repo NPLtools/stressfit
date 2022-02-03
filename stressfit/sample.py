@@ -279,7 +279,7 @@ def getExtinction(r, ki, kf):
     # path =  [depthi, depthf, pathi, pathf]
     p = np.abs(np.array([paths[0], paths[1]]))
     mu = getMu(2.*np.pi/norm(ki))
-    arg = -(p.T.dot(mu.T))
+    arg = -p.T.dot(mu.T)
     res = np.exp(arg)
     return res
 
@@ -293,13 +293,7 @@ def getExtinction2(r, ki, kf):
     aex = np.array(ext)
     ins = aex[:, 0]
     p = aex[:, 1:3]
-    x = np.array([1., 1.])
-    if (ext_mu is not None):
-        lam = 2.*np.pi/norm(ki)
-        mu = x*np.interp(lam,
-                         ext_lambda, ext_mu, left=ext_mu[0], right=ext_mu[-1])
-    else:
-        mu = ext_coeff*x
+    mu = getMu(2.*np.pi/norm(ki))
     arg = -p.dot(mu.T)
     res = ins*np.exp(arg)
     return res
@@ -415,7 +409,7 @@ def convResol(x, xdir, iext, nev):
     res['cov'] =  covar
     return res
 
-def convGauge(x, xdir, iext, nev):
+def convGauge(x, xdir, iext, nev, ifunc=None):
     """Calculate sampling volume center and pseudo strains.
 
     Parameters
@@ -450,6 +444,7 @@ def convGauge(x, xdir, iext, nev):
     yd = np.zeros(nx)
     yi = np.zeros(nx)
     yd2 = np.zeros(nx)
+    rc = np.zeros((nx,3)) # centre
     xs = np.matrix(x)
     ex = np.zeros(nx)
     # where to find r, ki, kf, p, dhkl
@@ -483,7 +478,11 @@ def convGauge(x, xdir, iext, nev):
             ex = getExtinction(r, ki, kf)
         # total weight including extinction and scattering probability
         eps = deps
-        w = p*ex*ins
+        if ifunc is None:
+            I0 = np.ones(nx)
+        else:
+            I0 = ifunc(d)
+        w = p*ex*ins*I0
         wd = w*d
         weps = w*eps
         sumw += w
@@ -491,6 +490,8 @@ def convGauge(x, xdir, iext, nev):
         yc += weps
         yd += wd
         yd2 += wd*d
+        for j in range(3):
+            rc[:,j] += w*r[:,j]
     # This will avoid division by zero warnings:
     sg = np.array( (sumw > 0) , dtype=int)
     yc += (1-sg)*1.
@@ -499,8 +500,11 @@ def convGauge(x, xdir, iext, nev):
     eps = sg*yc/sumw
     pos = sg*yd/sumw
     epos = sg*yd2/sumw
+    ctr = np.zeros((nx,3))
+    for j in range(3):
+        ctr[:,j] = sg*rc[:,j]/sumw
     width = 2.3548*sg*np.sqrt(np.absolute(epos - pos**2))
-    return np.array([x, pos, width, cnts, 1e6*eps]).T
+    return np.array([x, pos, width, cnts, 1e6*eps, ctr[:,0], ctr[:,1], ctr[:,2]]).T
 
 def convIntensity(x, model, iext=0):
     """Convolution of the scattering intensity distribution

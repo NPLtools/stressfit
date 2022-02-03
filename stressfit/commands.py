@@ -59,8 +59,18 @@ def load_sampling(file='', path=None, nev=None, columns=[1, 4, 7, 10, 11],
     :obj:`stressfit.sample.Sampling`
     """
     src = {}
-    fs = dataio.get_input_file(file, path=path)
+    if isinstance(file, dict):
+        fname = file['file']
+        if 'path' in file:
+            fpath = file['path'] 
+        else:
+            fpath = path
+    else:
+        fname = file
+        fpath = path       
+    fs = dataio.get_input_file(fname, path=fpath)
     data = np.loadtxt(fs)
+    print('load_sampling: {}'.format(fs))
     # backwars compatibility, maxn = nev
     if 'maxn' in kwargs:
         nev = kwargs['maxn']
@@ -72,7 +82,7 @@ def load_sampling(file='', path=None, nev=None, columns=[1, 4, 7, 10, 11],
     src['path'] = fs.parent.as_posix()
     src['data'] = data[:nrec,:]
     src['columns'] = columns
-    sampling = sam.Sampling(src)
+    sampling = sam.Sampling(src=src)
     return sampling
 
 
@@ -115,31 +125,29 @@ def plot_scene(nev, scan=None, filename='', rang=[30, 30], proj=1, save=True):
     gr.plotScene(rang, proj, sam.shape, ki, kf, _geom.scandir, sampling,  
                  save=save, file=outpng)
 
-def report_pseudo_strains(scan_range, file, 
-                          nev=3000, 
-                          intensity=False,
-                          inline=True, 
-                          plot=True, 
-                          save=True):
-    """Calculate, plot and save calculated pseuostrains and related data.
+
+
+def cal_pseudo_strains(scan_range, nev=3000, use_int=False):
+    """Calculate pseudo-strains and pseudo-intensities.
     
     Parameters
     ----------
     scan_range : [min, max, n]
         Scan range [mm] given as min, max and number of positions. 
         Positions are relative to the scan centre provided in sample geometry.
-    file : str
-         Output file name (_depth.dat will be added).
     nev : int, optional
         Number of events to be used for convolution.
-    intensity : bool
-        Plot also intensity vs. position
-    inline : bool
-        Plot all in one row (else plot intensity below the strains)
-    plot : bool
-        Show plot
-    save: bool
-        Save figures and table with results.
+    use_int : bool
+        Use previously fitted intensity distribution in calculation 
+        of pseudo-strain.
+        
+    Returns
+    -------
+    dict
+        Results as dict with keys `strain`, `intensity`.
+        Each of them contains a dict with results including:
+            title, xlabel, ylabel, x, y
+        In addition, it returns `model`, a pointer to the Sfit object.
     """
     # Initialize model
     model = mc.Sfit(nev=nev, xdir=_geom.scandir)
@@ -153,21 +161,73 @@ def report_pseudo_strains(scan_range, file,
     fx = len(x)*[1]
     fy = len(x)*[1]
     model.defDistribution(par=[x, y], vary=[fx, fy], ndim=100, scaled=True)
-    model.calInfoDepth(x)
+    model.calInfoDepth(x, use_int=use_int)
+    data = model.infodepth
+    result = {}
+    sres = {}
+    ires = {}
+    # strain
+    sres['title'] = 'Pseudo strain'
+    sres['xlabel'] = 'Scan position, mm'
+    sres['ylabel'] = 'Strain,  1e-6'
+    sres['x'] = data[:,0]
+    sres['y'] = data[:,4]
+    result['strain'] = sres
+    # intensity
+    ires['title'] = 'Pseudo intensity'
+    ires['xlabel'] = 'Scan position, mm'
+    ires['ylabel'] = 'Intensity, rel. units'
+    ires['x'] = data[:,0]
+    ires['y'] = data[:,3]
+    result['intensity'] = ires
+    return result, model
+        
+
+def report_pseudo_strains(scan_range, file, 
+                          nev=3000, 
+                          intensity=False,
+                          inline=True, 
+                          plot=True, 
+                          save=True,
+                          use_int=False):
+    """Calculate, plot and save calculated pseuostrains and related data.
+    
+    Parameters
+    ----------
+    scan_range : [min, max, n]
+        Scan range [mm] given as min, max and number of positions. 
+        Positions are relative to the scan centre provided in sample geometry.
+    file : str
+         Output file name. Just base name is used, `_depth.dat` will be added.
+    nev : int, optional
+        Number of events to be used for convolution.
+    intensity : bool
+        Plot also intensity vs. position
+    inline : bool
+        Plot all in one row (else plot intensity below the strains)
+    plot : bool
+        Show plot
+    save: bool
+        Save figures and table with results.
+    use_int : bool
+        Use previously fitted intensity distribution in calculation 
+        of pseudo-strain.
+    """
+    
+    data, model = cal_pseudo_strains(scan_range, nev=nev, use_int=use_int)
+    if not intensity and 'intensity' in data:
+        del data['intensity']                          
     if plot:
         f = dataio.derive_filename(file, ext='png', sfx='deps')
         filepng = dataio.get_output_file(f)
-        gr.plot_pseudo_strain(model, strain=True, 
-                              intensity=intensity, 
-                              inline=inline,
-                              save=save, 
-                              file=filepng)
+        gr.plot_collection(data, inline=inline, save=save, file=filepng)
+
     if file and save:
-        model.saveInfoDepth('', file)
+        model.savePseudoStrain('', file, sfx='deps')
+    return data
 
 def report_resolution(scan_range, file, 
                       nev=3000, 
-                      intensity=False,
                       depths=False,
                       cog=False,
                       inline=True, 
@@ -217,7 +277,7 @@ def report_resolution(scan_range, file,
                     save=save, 
                     file=filepng)
     if file and save:
-        model.saveResolution('', file)
+        model.saveResolution('', file, sfx='dpos')
     
 def set_sampling(sampling):
     """Assign sampling events for use by convolution models.
@@ -230,15 +290,20 @@ def set_sampling(sampling):
     """
     sam.setSampling(sampling)
     
+    
+def get_sampling():
+    """Return currently set sampling object."""
+    return sam.getSampling()
+    
 def set_geometry(geometry):
     """Set experiment geometry data.
     
-    The geometry is provided as a dictionnary with following keys and values:
+    The geometry is provided as a dictionary with following keys and values:
         
         scandir : array(3), optional
             Scan direction in sample coordinates
         scanorig : array(3), optional
-            Sscan origin (encoder = 0) in sample coordinates, in [mm]
+            Scan origin (encoder = 0) in sample coordinates, in [mm]
         angles : array(3), optional
             Sample orientation (Euler angles YXY), in [deg]
         rotctr : array(3), optional
@@ -256,7 +321,7 @@ def set_geometry(geometry):
         raise Exception('Sample shape not defined. Use set_shape().')
     sam.shape.reset()
     sam.shape.rotate(*list(_geom.angles))
-    sam.shape.moveTo(_geom.scanorig)
+    sam.shape.moveTo(-_geom.scanorig)
 
 def set_scan(scan):
     """Set scan parameters."""
@@ -450,7 +515,8 @@ def load_input(strain, intensity=None,
               scanorig=[0, 0, 0], 
               rotctr=[0, 0, 0],
               angles=[0, 0, 0],
-              sampling=None):
+              sampling=None,
+              verbose=True):
     """Load experimental data and metadata.
     
     Parameters
@@ -473,6 +539,8 @@ def load_input(strain, intensity=None,
         Sample orientation (Euler angles YXY)
     sampling: dict
         Sampling events loaded by the function :func:`load_sampling`.
+    verbose : bool
+        If True, print info on loaded file.
 
     Returns
     -------
@@ -481,10 +549,10 @@ def load_input(strain, intensity=None,
 
     """
     scan = {}
-    scan['eps'] = dataio.load_data(strain, path=path)
+    scan['eps'] = dataio.load_data(strain, path=path, verbose=verbose)
     scan['epsfile'] = strain
     if intensity:
-        scan['int'] = dataio.load_data(intensity, path=path)
+        scan['int'] = dataio.load_data(intensity, path=path, verbose=verbose)
         scan['intfile'] = intensity
     else:
         scan['int'] = None
@@ -525,7 +593,7 @@ def define_ifit(scan, nodes, nev, **kwargs):
         Scan properties, as returned by :func:`~stressfit.commands.load_input`.
     nodes : list(4) or array
         [x,y,fx,fy], where x,y are the node coordinates and fx,fy 
-        are flags (0|1) marking corresponding fixed parameters. 
+        are flags (0|1) marking corresponding free parameters. 
     nev : int
         Number of sampling events to be used for convolution.
     **kwargs : 
@@ -704,13 +772,30 @@ def run_fit_guess(model, maxiter=100, areg=1e-3):
     maxiter : int, optional
         Maximum number of iterations. 
     areg : array of float
-        Regularization parametesr.The length of the aray defines the number of
+        Regularization parameters.The length of the array defines the number of
         fits.
     """
     mc.runFit(model, maxiter=maxiter, areg = areg, guess=True)
     report_fit(model, '')
         
-    
+def run_fit_alt(model, maxiter=100, areg=1e-3, maxc=10):
+    """Run guess fit.
+     
+    Fast fit which neglects smearing, only subtracts pseudo-strains. 
+
+    Parameters
+    ----------
+    model : obj
+        Instance of a model class from ``stressfit.mccfit`` (Ifit or Sfit)
+    maxiter : int, optional
+        Maximum number of iterations. 
+    areg : array of float
+        Regularization parameters.The length of the array defines the number of
+        fits.
+    """
+    mc.runFit_alt(model, maxiter=maxiter, maxc=maxc, areg = areg)
+    #report_fit(model, '')
+            
 def run_fit_reg(model, maxiter=100, areg=[1e-4, 1e-3], outname=None, guess=True):
     """Run regularization loop with fitting of given model.
 
