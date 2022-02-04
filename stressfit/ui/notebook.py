@@ -20,6 +20,7 @@ Created on Tue Oct  5 11:38:15 2021
 import abc
 import ipywidgets as ipy
 import json
+import copy
 from IPython.display import display
 from .widgets import DirInput, FileInput, ArrayInput, SelectInput
 from .widgets import create_header, create_select, create_input_int 
@@ -31,6 +32,7 @@ import numpy as np
 import stressfit.commands as comm
 import stressfit.shapes as shapes
 import stressfit.dataio as dataio
+import stressfit.graphs as gr
 
 def _has_keys(args, keys):
     """Verify that all args are in keys."""
@@ -78,6 +80,7 @@ class UI_base:
         self._keys = keys # list of allowed value keys
         self._widgets = {} # dict of input widgets
         self._values = {} # dict of widget values
+        self._buttons = [] # Command buttons next to the collection label 
         self._on_change = None
         self._on_init = None
         self._options = {} # container for selection parmeters
@@ -117,14 +120,6 @@ class UI_base:
         UI_base._err_ni('_create_ui')
 
 # private methods
-
-    def _copy(self, value):
-        """Return copy of the value."""
-        if isinstance(value,(list,dict,np.ndarray)):
-            out = value.copy()
-        else:
-            out = value
-        return out
 
     def _check_keys(self,data):
         """Verify that data contains all required keys."""
@@ -172,7 +167,7 @@ class UI_base:
         """
         for key in self._keys:
             if key in values:
-                self._values[key] = self._copy(values[key])
+                self._values[key] = copy.deepcopy(values[key])
 
     def get_values(self):
         """Return actual input values as dict."""
@@ -188,7 +183,7 @@ class UI_base:
     def update_values(self):
         """Update values from widgets."""        
         for key in self._widgets:
-            self._values[key] = self._copy(self._widgets[key].value)
+            self._values[key] = copy.deepcopy(self._widgets[key].value)
 
     def update_options(self, name, options):
         """Update the selection list."""
@@ -259,8 +254,10 @@ class UI_base:
         hdr = create_header(self.uiparam['title'],
                       color=self.uiparam['title_color'],
                       size=self.uiparam['title_size'])
+        top = [hdr] + self._buttons
+        top_wdg = ipy.HBox(top)
         layout = ipy.Layout(margin='0px 0px 20px 0px')
-        display(ipy.VBox([hdr, ui], layout=layout))
+        display(ipy.VBox([top_wdg, ui], layout=layout))
 
 
 class UI_base_list(UI_base):
@@ -426,7 +423,7 @@ class UI_base_list(UI_base):
         if 'input' in values:
             for key in self._keys:
                 if key in values['input']:
-                    self._values['input'][key] = self._copy(values['input'][key])
+                    self._values['input'][key] = copy.deepcopy(values['input'][key])
                     #print('set_values {}\n\t{}\n\t{}'.format(key,self._values['input'][key],values['input'][key]))
         if 'list' in values: 
             lst = values['list']
@@ -440,7 +437,7 @@ class UI_base_list(UI_base):
         # self._values['input'].clear()
         for key in self._keys:
             if key in self._widgets:
-                self._values['input'][key] = self._copy(self._widgets[key].value)
+                self._values['input'][key] = copy.deepcopy(self._widgets[key].value)
     
     def update_widgets(self):
         """Update input widgets from data."""
@@ -470,9 +467,12 @@ class UI_base_list(UI_base):
         if data is None:
             self.update_values()
         else:
-            self._check_keys(data)
+            try:
+                self._check_keys(data)
+            except Exception as e:
+                print(e)
             self.set_values({'input':data})
-        self._values['list'][name] = self._copy(self._values['input'])
+        self._values['list'][name] = copy.deepcopy(self._values['input'])
         
         if update_table:
             self._update_table()
@@ -573,8 +573,10 @@ class UI_base_list(UI_base):
         add_box = ipy.HBox([hint, self._name_inp, btn_add])
         
         # display everything
+        top = [hdr] + self._buttons
+        top_wdg = ipy.HBox(top)
         layout = ipy.Layout(margin='0px 0px 20px 0px')
-        display(ipy.VBox([hdr, ui, add_box, list_hdr, self._out], 
+        display(ipy.VBox([top_wdg, ui, add_box, list_hdr, self._out], 
                          layout=layout))
         # update table
         self._update_table()      
@@ -882,7 +884,7 @@ class UI_shape(UI_base):
                 raise Exception('Unknown parameter type: {}'.format(value))
             wgt.observe(self._on_change_param)
             items[key] = wgt
-        
+        self._widgets['param'].clear()
         self._widgets['param'].update(items)
         self.update_values()
 
@@ -909,8 +911,11 @@ class UI_shape(UI_base):
         """
         layout = ipy.Layout(width='100%')
         if (change['name']=='value'):
+            # get new set of params for the new shape
             self._change_select(change['new'])
+            # create widgets for the new shape params
             self._reset_widgets()
+            # display the new param widgets
             wdg = []
             for w in self._widgets['param'].values():
                 wdg.append(w.ui())
@@ -918,12 +923,13 @@ class UI_shape(UI_base):
             self._out.clear_output()
             with self._out:
                 display(box)
+            # callback to the UI._change method. 
             self._call_change(**{'shape':self.select})
  
     def update_widgets(self):
         """Update parameter input widgets from data."""
         if self._values['shape'] != self.select:
-            self._on_change_shape({'name':'value', 'new':self._values['select']})
+            self._on_change_shape({'name':'value', 'new':self._values['shape']})
         param = self._values['param']
         items = self._widgets['param']
         for key in param:
@@ -1148,7 +1154,7 @@ class UI_sampling(UI_base_list):
         try:
             assert self._is_unique(name)
             super().add_data(name, data=data, update_table=False)
-            vals = self._copy(self._values['list'][name])
+            vals = copy.deepcopy(self._values['list'][name])
             #print('UI_sampling.add_data: {}'.format(vals))
             sampling = comm.load_sampling(**vals)
             s = sampling.src
@@ -1181,6 +1187,7 @@ class UI_attenuation(UI_base):
         self.wk = workspace
         super().__init__(name, ['type','value','table'],**kwargs)
         self.uiparam['title'] = 'Beam attenuation'
+        self._current_att = {'att':1.1}
          
     def _init_values(self, **kwargs):
         self._values['table'] = 'Fe_mu.dat'
@@ -1238,14 +1245,30 @@ class UI_attenuation(UI_base):
             Either single value [1/cm] or the file name.
         """
         self.update_values()
-        
+        #print('get_attenuation')
         if self._values['type'] == 'value':
             att = self._values['value']
+            self._current_att.clear()
+            self._current_att['att'] = att
         else:
             val = self._widgets['table'].value
             file = val['file']
             path = val['path']
-            att = dataio.load_data(file, kind='tables', path=path)
+            # load file only if changed
+            if 'file' in self._current_att:
+                qry = [val[k]==self._current_att[k] for k in ['file','path']]
+            else:
+                qry = [False]
+            #print('get_attenuation ',qry, val)
+            if not all(qry):
+                att = dataio.load_data(file, kind='tables', path=path, 
+                                       verbose=False)
+                self._current_att.clear()
+                self._current_att.update(val)
+                self._current_att['att'] = att
+            else:
+                att = self._current_att['att']
+            
         return att
 
     def show(self, err=None, msg=None, **kwargs): 
@@ -1349,13 +1372,14 @@ class UI_plot_scene(UI_base):
         btn_replot = ipy.Button(description='Replot',
                                 layout=ipy.Layout(width='80px'))
         btn_replot.on_click(self._on_replot)
+        self._buttons.append(btn_replot)
         box1 = ipy.VBox([self._widgets['sampling'], 
                          self._widgets['ori'], 
                          self._widgets['proj'],
                          self._widgets['nrec']])
         layout = ipy.Layout(justify_content='center')
         hbox = ipy.HBox([box1, self._out],layout=layout)
-        box = ipy.VBox([self._widgets['rang'], btn_replot, hbox])
+        box = ipy.VBox([self._widgets['rang'], hbox])
         return box
     
     def _get_output_filename(self, ext=''):
@@ -1519,6 +1543,7 @@ class UI_resolution(UI_base):
         btn_run = ipy.Button(description='Run',
                                 layout=ipy.Layout(width='80px'))
         btn_run.on_click(self._on_replot)
+        self._buttons.append(btn_run)
         
         layout = ipy.Layout(margin='10px 5px 5px 10px')
         box1 = ipy.VBox([self._widgets['sampling'], 
@@ -1536,7 +1561,7 @@ class UI_resolution(UI_base):
         
         #style = {'margin': '5px 5px 5px 50px'}
         hbox = ipy.HBox([box1, box2, box3])
-        box = ipy.VBox([btn_run, hbox, self._out])
+        box = ipy.VBox([hbox, self._out])
         return box
             
     def _get_output_filename(self, ext=''):
@@ -1622,15 +1647,17 @@ class UI_data(UI_base_list):
         (use :meth:`get_values`)
     """
 
-    def __init__(self, name, workspace, samplings, geometries, header='Input data'):
+    def __init__(self, name, workspace, samplings, geometries, options, header='Input data'):
         self.wk = workspace
         super().__init__(name,  
-                         ['strain', 'intensity', 'ori', 'sampling'],
+                         ['strain', 'intensity', 'ori', 'sampling','nrec'],
                          list_template='80px auto auto repeat(2,100px)',
                          list_hdr=['ID','strain', 'intensity',  
                                    'orientation','sampling'],
                          list_fmt=['{}'] + 2*['{}'] + 2*['{}']) 
-              
+        self.pgm_options = options   
+        # output area for plots
+        self._outgr = ipy.Output(layout=ipy.Layout(width='100%', border='none'))
         self.uiparam['title'] = header
         self.uiparam['list_title'] = 'Loaded data'
         self.uiparam['add_label_width'] = 'auto'
@@ -1650,6 +1677,7 @@ class UI_data(UI_base_list):
         self._values['input']['intensity'] = ''
         self._values['input']['ori'] = ''
         self._values['input']['sampling'] = ''
+        self._values['nrec'] = 3000
                 
     def _create_widgets(self, **kwargs):
         """Create widgets registered in self._widgets."""
@@ -1679,13 +1707,26 @@ class UI_data(UI_base_list):
         wdg =  create_select(name='ori', label='Orientation', 
                              options=[], 
                              width_label=80, width_drop=100)
-        self._widgets['ori'] = wdg   
+        self._widgets['ori'] = wdg  
+        # number of events to plot
+        wdg = create_input_int(name='nrec', label='Events',
+                               value=self._values['nrec'], 
+                               lmin=1000, lmax=100000, step=1000,
+                               width_label=80, width_num=100)
+        self._widgets['nrec'] = wdg 
 
     def _create_ui(self, **kwargs):
         # set selection options
         for key in self._options:
             # calling on itself make sens: it will update widget state
             self.update_options(key, self._options[key])
+        
+        btn_run = ipy.Button(description='Show',
+                                layout=ipy.Layout(width='80px'))
+        btn_run.on_click(self._on_replot)
+        self._buttons.append(btn_run)
+        # dirty trick: this is not a button, but we want it next to the button
+        self._buttons.append(self._widgets['nrec'])
         layout = ipy.Layout(margin='10px 5px 5px 10px')
         box = ipy.VBox([self._widgets['strain'].ui(),
                          self._widgets['intensity'].ui(),
@@ -1744,7 +1785,19 @@ class UI_data(UI_base_list):
                 self.error(msg.format(item['sampling'], key), clear=False)
             if delete and (not (ans1 and ans2)):
                 self._delete(key)
-        
+
+    def _get_output_filename(self, name='data_name', ext=''):
+        """Generate base output filename."""
+        pfx = self.pgm_options['prefix']        
+        if pfx:
+            base = '{}_{}'.format(pfx, name)
+        else:
+            base = '{}'.format(name)
+        if ext:
+            fname = base + '_{}'.format(ext)
+        else:
+            fname = base
+        return fname        
         
     def add_data(self, name, data=None, update_table=False):
         """Add a dataset to the list.
@@ -1764,7 +1817,7 @@ class UI_data(UI_base_list):
         try:
             assert self._is_unique(name)
             super().add_data(name, data=data, update_table=update_table)
-            vals = self._copy(self._values['list'][name])
+            vals = copy.deepcopy(self._values['list'][name])
             #print('UI_data.add_data: {}'.format(vals))
             ori = vals['ori']
             sam = vals['sampling']
@@ -1788,8 +1841,116 @@ class UI_data(UI_base_list):
         except Exception as e:
             self._delete(name)
             raise(e)
+    
+    def _plot_comparison(self, simdata, expdata):
         
-
+        def exp_to_dict(expdata, what='int'):
+            # convert exp. data do dict for plotting
+            out = {}
+            if what=='int':
+                out['title'] = expdata['intfile']
+                out['xlabel'] = 'Scan position, mm'
+                out['ylabel'] = 'Intensity, rel. units'
+                out['x'] = expdata['int'][:,0]
+                out['y'] = expdata['int'][:,1]
+                out['yerr'] = expdata['int'][:,2]
+            else:
+                out['title'] = expdata['epsfile']
+                out['xlabel'] = 'Scan position, mm'
+                out['ylabel'] = 'Strain,  1e-6'
+                out['x'] = expdata['eps'][:,0]
+                out['y'] = expdata['eps'][:,1]
+                out['yerr'] = expdata['eps'][:,2]
+            return out
+        
+        def scale(data, A=1, B=0, x0=0):
+            """Scale intensity data."""
+            out = copy.deepcopy(data)
+            out['x'] = data['x']-x0
+            out['y'] = A*data['y'] + B
+            if 'yerr' in data:
+                out['yerr'] = A*data['yerr']
+            return out
+        
+        coll = {}
+        has_intensity = None
+        dim = 2
+        inline = True
+        for key in expdata:
+            dexp = expdata[key]
+            dsim = simdata[key]  
+            # use first data set to decide if intenisty should be plotted
+            if has_intensity is None:
+                has_intensity = dsim['intensity'] is not None
+                if has_intensity:
+                    dim = 2
+                    inline = True
+            # strain
+            toplot = exp_to_dict(dexp, what='eps')
+            toplot['title'] = dexp['epsfile']
+            toplot['label'] = 'experiment'
+            toplot['fmt'] = 'ko'            
+            other = dsim['strain']
+            other['label'] = 'simulation'
+            other['fmt'] = 'b-'
+            toplot['other'] = other
+            coll[key+'_s'] = toplot            
+            # intensity
+            if dexp['int'] is not None:
+                toplot = exp_to_dict(dexp, what='int')
+                toplot['title'] = dexp['intfile']
+                toplot['label'] = 'experiment'
+                toplot['fmt'] = 'ko'
+                sim_int = dsim['intensity']['y']
+                A = dexp['int'][:,1].mean()/sim_int.mean()
+                other = scale(dsim['intensity'], A=A, B=0, x0=0)
+                other['label'] = 'simulation'
+                other['fmt'] = 'b-'
+                toplot['other'] = other
+            else:
+                toplot = dsim['intensity']
+                toplot['label'] = 'simulation'
+                toplot['fmt'] = 'b-'
+            coll[key+'_i'] = toplot
+        if len(coll)>0:    
+            gr.plot_collection(coll, dim=dim, inline=inline)      
+    
+    def _on_replot(self,b):
+        """Plot data with simulated pseudo-strains and pseudo-intensities."""
+        expdata = {}
+        simdata = {}
+        for name in self._data:
+            data = self._data[name]
+            x = data['eps'][:,0]        
+            scan_range = [min(x), max(x), 2*len(x)+1]
+            fname = self._get_output_filename(name=data['epsfile'])       
+            nev = self._values['nrec']
+            save = self.pgm_options['save']
+            
+            # read selected geometry
+            geometry = {k:data[k] for k in ['angles','scandir','rotctr','scanorig']}
+            # read selected sampling
+            sampling = data['sampling']
+            # call init function if defined
+            self._call_init(sampling=sampling, geometry=geometry)
+    
+            res = comm.report_pseudo_strains(scan_range, fname, 
+                                             nev=nev,
+                                             intensity=True,
+                                             inline=True,
+                                             plot=False, 
+                                             save=save)
+            expdata[name] = data
+            simdata[name] = res
+        # clear output
+        self._outgr.clear_output()
+        with self._outgr:
+            self._plot_comparison(simdata, expdata)
+      
+    def show(self, err=None, msg=None, **kwargs): 
+        """Display the input collection."""
+        super().show(err=err, msg=msg, **kwargs)
+        display(self._outgr)
         
 #%% Top level UI class
 
@@ -1846,7 +2007,8 @@ class UI():
         obj = UI_data('data',
             self.wk,
             self.ui['sampling'].get_data(),
-            self.ui['geometry'].get_data())
+            self.ui['geometry'].get_data(),
+            self.ui['options'].get_values())
         # initialize dat list
         inp = {'strain':'eps_SS_rad.dat', 
                'intensity':'int_SS_rad.dat',
@@ -1865,6 +2027,7 @@ class UI():
         
         self.ui['scene'].set_on_init(self._init)
         self.ui['resolution'].set_on_init(self._init)
+        self.ui['data'].set_on_init(self._init)
     
     def _add_input_ui(self, ui):
         if ui.name in UI._registered_ui:
@@ -1909,15 +2072,8 @@ class UI():
         for key in keys:
             i = keys.index(key)
             tab.set_title(i, tabs_data[key]['title'])
-            
-                
+                           
         # display all
-        display(tab)
-        keys = list(tabs_data.keys())
-        for key in keys:
-            for ui in tabs_data[key]['ui']:
-                with tabs[key]:
-                    ui.show(msg=self._msg, err=self._err)
         
         # button bar
         btn_save = ipy.Button(description='Save input')
@@ -1926,6 +2082,15 @@ class UI():
         btn_load.on_click(self._on_load_input)
         
         display(ipy.HBox([btn_save,btn_load]))
+        
+        display(tab)
+        keys = list(tabs_data.keys())
+        for key in keys:
+            for ui in tabs_data[key]['ui']:
+                with tabs[key]:
+                    ui.show(msg=self._msg, err=self._err)
+        
+
         display(self._err)
         display(self._msg) 
     
@@ -1971,7 +2136,9 @@ class UI():
                 self.ui['data'].validate()
         elif obj.name in ['sampling']:
                 data.update(**kwargs)
-                new_options = self.ui['sampling'].get_list()
+                #new_options = self.ui['sampling'].get_list()
+                new_options = self.ui['sampling'].get_data()
+                #print('UI._change, new_options:\n{}'.format(new_options))
                 self.ui['scene'].update_options('sampling',new_options)
                 self.ui['resolution'].update_options('sampling',new_options)
                 self.ui['data'].update_options('sampling',new_options)
@@ -1982,13 +2149,16 @@ class UI():
         
         Callback used by IU groups to initialize stressfit.
         """ 
-        if obj.name in ['scene', 'resolution']:
+        if obj.name in ['scene', 'resolution', 'data']:
             self._err.clear_output()
             if 'sampling' in kwargs:
-                print('UI._init: {}'.format(kwargs))
+                #print('UI._init: {}'.format(kwargs))
                 comm.set_sampling(kwargs['sampling'])
             if 'geometry' in kwargs:
                 comm.set_geometry(kwargs['geometry'])
+            # set attenuation
+            att = self.ui['attenuation'].get_attenuation()
+            comm.set_attenuation(att)
             
 
     def save(self, filename=''):
@@ -2025,7 +2195,7 @@ class UI():
                 return
             for key in self.ui:
                 if key in inp['ui']:
-                    print('updating {}'.format(key))
+                    #print('updating {}'.format(key))
                     self.ui[key].set_values(inp['ui'][key])
                     self.ui[key].update_widgets() 
                     self.ui[key].notify()

@@ -79,7 +79,7 @@ def load_sampling(file='', path=None, nev=None, columns=[1, 4, 7, 10, 11],
         fpath = path       
     fs = dataio.get_input_file(fname, path=fpath)
     data = np.loadtxt(fs)
-    print('load_sampling: {}'.format(fs))
+    #print('load_sampling: {}'.format(fs))
     # backwars compatibility, maxn = nev
     if 'maxn' in kwargs:
         nev = kwargs['maxn']
@@ -578,8 +578,12 @@ def load_input(strain, intensity=None,
     scan['eps'] = dataio.load_data(strain, path=path, verbose=verbose)
     scan['epsfile'] = strain
     if intensity:
-        scan['int'] = dataio.load_data(intensity, path=path, verbose=verbose)
-        scan['intfile'] = intensity
+        try:
+            scan['int'] = dataio.load_data(intensity, path=path, verbose=verbose)
+            scan['intfile'] = intensity
+        except:
+            scan['int'] = None
+            scan['intfile'] = ''
     else:
         scan['int'] = None
         scan['intfile'] = ''

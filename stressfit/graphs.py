@@ -370,13 +370,15 @@ def plot_collection(data, dim = None, inline=True, title='', save=False, file=''
     axx = axs.reshape((axs.size,))
     for i in range(len(what)):
         d = data[what[i]]
-        plot_results(d, ax=axx[i])
+        if d is not None:
+            plot_results(d, ax=axx[i])
     fig.tight_layout()
     fn = str(file)
     if (save and fn):
-        print('Figure saved in {}'.format(fn))
         plt.savefig(fn, bbox_inches='tight')
     plt.show()
+    if (save and fn):
+        print('Figure saved in {}'.format(fn))
 
 
 def plot_results(data, ax=None, save=False, file=''):
@@ -494,7 +496,8 @@ def plot_results(data, ax=None, save=False, file=''):
             #args = get_args(d)
             #ax1.errorbar(d['x'], d['y'], **args)
     ax1.grid()
-    ax1.legend(loc='best', frameon=True)
+    if 'legend' in data:
+        ax1.legend(loc='best', frameon=True)
     if ax is None:
         fn = str(file)
         if (save and fn):
