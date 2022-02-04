@@ -242,6 +242,7 @@ class Workspace():
         work_path : str
             Must be a full path. If not, :meth:`pathlib.Path.absolute` is 
             tried to derive absolute path.
+            If None, the current directory is used.
         
         Return
         ------
@@ -250,7 +251,10 @@ class Workspace():
         """
         out = False
         old_work = self._paths['work']
-        p = _Path(work_path)
+        if work_path is None:
+            p = _Path.cwd()
+        else:
+            p = _Path(work_path)
         if p.is_absolute():
             self._paths['work'] = p
         else:
@@ -276,7 +280,7 @@ class Workspace():
                         pp = self._paths['work'].joinpath(p)
                         if not pp.exists():
                             self._paths[key] = old_work.joinpath(p)
-            self.set_paths()
+            #self.set_paths()
         return out
         
     def path(self, key):

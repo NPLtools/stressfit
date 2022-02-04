@@ -994,7 +994,7 @@ class MCCfit(ABC):
 
     def saveInfoDepth(self, outpath, fname):                        
         """Save info depth table - obsolete. Use savePseudoStrain."""
-        self.savePseudoStrain(self, outpath, fname, sfx='depth')
+        self.savePseudoStrain(outpath, fname, sfx='depth')
    
     def savePseudoStrain(self, outpath, fname, sfx='deps'):                        
         """Save pseudo-strain, intensity and information depth table."""
@@ -1158,7 +1158,7 @@ class Ifit(MCCfit):
         for i in range(self.nd):
             self.params['y_'+str(i)].set(min=0.)
 
-    def reportFit(self, outpath='', file='', plotSampling=False):
+    def reportFit(self, outpath='', file='', plotSampling=False, **kwargs):
         if (file):
             saveit=True
             f = dataio.derive_filename(file, ext='png', sfx='fit')
@@ -1182,7 +1182,7 @@ class Ifit(MCCfit):
         self.saveResults(outpath, file)
 
         # Information depth and sampling width
-        if (plotSampling):
+        if plotSampling:
             self.calInfoDepth(self.data[:,0])
             gr.plotInfoDepth(self, save=saveit, file=outpngdepth)
             self.saveInfoDepth(outpath, file)
@@ -1220,7 +1220,7 @@ class Sfit(MCCfit):
         ey = A*err
         return [y, ey, pos]
 
-    def reportFit(self, outpath='', file='', reglog=None):   
+    def reportFit(self, outpath='', file='', reglog=None, **kwargs):   
         # Plot result, fit
         if (file):
             saveit=True

@@ -14,6 +14,15 @@ _geom = Geometry()
 _compl = None
 _setup = {}
 
+def validate_workspace(verbose=True):
+    try:
+        dataio.workspace().validate_paths()
+        if verbose:
+            print('Workspace setting:')
+            dataio.workspace().print_info(absolute=True)
+    except Exception as e:
+        print('ERROR:')
+        print(e)
 
 def set_user_input(setup):
     """Set user input data.
@@ -441,6 +450,23 @@ def set_shape(shape, **kwargs):
         sam.shape.reset()
         sam.shape.rotate(*list(_geom.angles))
         sam.shape.moveTo(_geom.scanorig)
+
+
+def set_workspace(workdir):
+    """Set new workspace directory.
+    
+    Other workspace paths can be set by :func:`set_environment`.
+    For example set_environment(output=some_direcotry) will define a new output 
+    directory. Relative paths are then interpreted as relative to the 
+    workspace directory.
+
+    Parameters
+    ----------
+    workdir : str
+        New workspace directory name.
+
+    """
+    dataio.workspace().change_workspace(workdir);
 
 def set_environment(data=None, tables=None, output=None, instruments=None):
     """Set paths for data input and outpout folders.

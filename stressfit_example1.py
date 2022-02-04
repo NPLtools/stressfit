@@ -1,10 +1,14 @@
+#!/usr/bin/env python
 # coding: utf-8
+
+# In[1]:
+
+
 import numpy as np
 import stressfit.shapes as S
 import stressfit.mccfit as mc
 import stressfit.commands as comm
 from IPython.display import HTML
-# import warnings
 deg = np.pi/180.
 HTML('''<script>
 code_show=false; 
@@ -20,14 +24,11 @@ $( document ).ready(code_toggle);
 </script>
 <b>To hide/show the code blocks, click <a href="javascript:code_toggle()">here</a>.</b>''')
 
-# warnings.simplefilter('error', UserWarning)
-
 
 # # STRESSFIT
 # <p>
 # <i>Written by:</i> Jan Saroun, Nuclear Physics Institute CAS, Rez, saroun@ujf.cas.cz<br/>
-# <i>Date:</i> 22/05/2018<br/>
-# <i>Version:</i> 0.9.2<br/>
+# <i>Date:</i> 03/02/2022<br/>
 # <i>Source:</i> https://github.com/NPLtools/stressfit
 # </p>
 # <p>
@@ -52,14 +53,24 @@ $( document ).ready(code_toggle);
 # </p>
 # 
 
-#%% USER INPUT
+# In[2]:
 
-# Define environment: input/output folders (can be absolute or relative)
-# Set to None for searching in package resources
-input_path = None # input data
+
+# Set the workspace directory. None for the current directory.
+workspace = None
+workspace = r'D:\Saroun\git\test\stressfit\test'
+# Set the other input/output folders (can be absolute or relative).
+# Relative paths should exist under the workspace directory.
+# Set to None for searching in package resources.
 output_path = './output' # output data
+input_path = None # input data
 tables_path = None # lookup tables etc.
 sampling_path = None # directory with simulated sampling points 
+
+# Set workspace and validate
+comm.set_workspace(workspace)
+comm.set_environment(data=input_path, output=output_path, tables=tables_path)
+comm.validate_workspace()
 
 
 # ## Sample definition
@@ -73,48 +84,82 @@ sampling_path = None # directory with simulated sampling points
 # ### Sample shape
 # Sample dimensions depend on the selected shape. Choose one of the classes defined in the Shapes folder of the package:
 # 
-# <code> S.ShapePlate(thickness) </code> <br />
+# <code> S.create('Plate', thickness=10.0) </code> <br />
 # An infinitely large flat plate of given thickness.
 # 
-# <code> S.ShapePlateCurved(thickness, length, height, [r1x, r1y],  [r2x, r2y]) </code><br />
-# A curved plate of given thickness (z), length (x) and height (y). <code>[r1x, r1y]</code> are curvature radii along x and y of the front surcae (z>0). <code>[r2x, r2y]</code> are the radii for the rear surface.
+# <code> S.create('PlateCurved',thickness=5.0, length=50.0, height=15.0, rho1=[0.02, 0.0], rho2=[0.02, 0.0]) </code><br />
+# A curved plate of given thickness (z), length (x) and height (y). <code>rho1</code> are curvature radii along x and y of the front surcae (z>0). <code>rho2</code> are the radii for the rear surface.
 # 
-# <code> S.ShapeCyl(radius, height) </code><br />
+# <code> S.create('Cylinder', radius=4.0, height=30.0) </code><br />
 # A cylindrical shape with axis along y-axis.
 # 
-# <code> S.ShapeShellCyl(Rin, Rout, height) </code><br /> 
-# A hollow cylinder with axis along y-axis. Rin, Rout are the inner and outer radii.
+# <code> S.create('Tube', Rin=4.0, Rout=8.0, height=30.0, ctr=[0,0], sref=1) </code><br /> 
+# A hollow cylinder with axis along y-axis. 
+# - Rin, Rout are the inner and outer radii.
+# - ctr is the x,z position of the hole centre
+# - sref defines the reference surface for depth calculation (0/1 for the inner/outer surface)
 # 
-# <code> S.ShapeSph(radius) </code> <br />
+# <code> S.create('Sphere', radius=8.0) </code> <br />
 # A spherical sample.
 # 
-# The next block in this template defines a tube: a hollow cylinder with inner radius 4 mm, outer radius 8 mm and height 50 mm. Zero scan position corresponds to the instrumental gauge volume centered at the surface. Measured strain direction is defined by the angle <code>omega</code>.
+# <code> S.create('ETubes', a=8.0, b=8.0, angle=0.0, height=30.0, holes=[], sdir=[0,0,1], sctr=[0,0,0]) </code><br />
+# A cylinder with axis || y and multiple coaxial elliptic holes.
+# 
+#     a : float
+#         First semi-axis of the sample basis, parallel to x if angle=0. 
+#     b : float
+#         Second semi-axis of the sample basis, parallel to z if angle=0.  
+#     angle : float
+#         Angle of the semiaxis a with respect to x [deg]
+#     height : float
+#         Height in [mm].
+#     holes : list of dict
+#         Each item defines a hole. 
+#         The parameters are
+#             x, z : coordinates of the centre
+#             a, b : ellipse semi-axes
+#             angle : angle of the semiaxis a with respect to x [deg].
+#     sdir : array_like
+#         Scan direction in local coordinates.
+#     sctr : array_like
+#         Scan origin in local coordinates. 
+# 
+# ### Input data
+# The input experimental data are integral peak intensities and strains measured as a function of scan depth. They are provided as text files with three columns: depth [mm], intensity [any unit] or strain [$\mu\epsilon = 10^{-6}$], and error (std. deviation). 
+# 
 # 
 
+# ## User input
+# The next block in this template defines a tube: a hollow cylinder with inner radius 4 mm, outer radius 8 mm and height 50 mm. Zero scan position corresponds to the instrumental gauge volume centered at the surface. Measured strain direction is defined by the angle <code>omega</code>.
 
-# Set sample shape (see comment above).
+# In[3]:
+
+
+# USER INPUT:
+
+# Create sample shape (see comment above).
 # Dimensions [mm]
 radius1 = 4.
 radius2 = 8
 height = 50.0
-shape = S.ShapeTube(Rin=4.0, Rout=8.0, height=50.0)
+shape = S.create('Tube', Rin=4.0, Rout=8.0, height=50.0)
 
-# Define input data with info about experimental geometry:
-# give filename with strain data as the first argument
-# intensity = filename with intensity scan
-# scandir = scan direction in sample coordinates (where the sample moves)
-# scanorig = scan origin (encoder = 0) in sample coordinates
-# rotctr = sample rotation centre (sample coordinates)
-# angles = sample orientation (Euler angles YXY) in deg
-scan = comm.load_input('eps_SS_rad.dat', 
-                       intensity='int_SS_rad.dat', 
-                       scandir=[0., 0., -1.],
-                       scanorig=[0, 0, 0],
-                       rotctr=[0, 0, 0], 
-                       angles=[135, 0, 0])
+# Define input data for measured strain and intensity
+# 3-column text format with scan position, value and error
+strain = 'eps_SS_rad.dat'
+intensity='int_SS_rad.dat'
 
+# Define scan geometry
+# Scan direction in sample coordinates (where the gauge moves)
+scandir=[0., 0., -1.]
+# Sample orientation (Euler angles YXY) in deg
+angles=[135, 0, 0]
+# Scan origin (encoder = 0) in sample coordinates
+scanorig=[0, 0, 0]
+# Sample rotation centre (sample coordinates)
+rotctr=[0, 0, 0]
 
-# Material attenuation, provide either of
+# Define material attenuation, either of:
 # File name: A table with 2 columns: wavelength [A], attenuation [1/cm]
 # Float number: attenuation [1/cm]:
 att = 'Fe_mu.dat'
@@ -132,12 +177,19 @@ nev_use = 3000
 # scene width,height in [mm]
 scene_range = [16, 16]  
 # projection plane (zy=0, xz=1, xy=2)
-scene_projection = 1  
+scene_projection = 1 
+
 
 # ## Initialization commands
 
-# Set environment
-comm.set_environment(data=input_path, output=output_path, tables=tables_path)
+# In[4]:
+
+
+
+
+# Load the data and save it in the scan variable with all meta-data. 
+scan = comm.load_input(strain, intensity=intensity,scandir=scandir,
+                       scanorig=scanorig, rotctr=rotctr, angles=angles)
 
 # Load and set sampling distribution
 sampling = comm.load_sampling(sampling_file, path=sampling_path, maxn=nev_load)
@@ -153,22 +205,33 @@ comm.set_shape(shape)
 # Set experiment geometry 
 comm.set_scan(scan)   
 
-# Plot experiment geometry
-comm.plot_scene(nev_plot, scan['epsfile'], rang=scene_range, proj=scene_projection)
+
+# ## Sampling distribution
+# 
+# The following command plots the sample and sampling events in requested projection. The <b>red arrow defines the scan direction</b> (where the events move in the sample during the scan). The color scale shows pseudo-strains associated with each event.
+
+# In[5]:
 
 
-#%% INTENSITY FIT
+comm.plot_scene(nev_plot, scan=scan['epsfile'], rang=scene_range, proj=scene_projection)
+
+
+# ## Fit intensities
 # Fitting of intensities allows to determine the variation of scattering probability and extinction with scan depth. It can also help to correct for any missfit between the encoder positions (stored in the data file) and true surface position. Note that sometimes these effects can't be distinguished from each other. With a strong variation of scattering probability (e.g. due to a greadient in texture or composition near the surface), it is not possible to reliably determine the surface position and extinction just from the intensity variation. Then some of the parameters must be determined independently and fixed for fitting. On the other hand, it is the product of extinction and scattering probability distributions which affects pseudo-strains, therefore they do not need to be exactly distinguished.
 # 
 # NOTE:<br/>
-# Scattering probability and strain distributions are defined on depth scale, where depth is the shortest distance to the front sample surface. Definition of the <i>front surface</i> depends on the sample shape. For plates, it is the distance to the upper surface (in local coordinates of the sample). For sphers and cylinders, it is the distance from the curved surface (the outer one in the case of hollow shapes).
+# Scattering probability and strain distributions are defined on the depth scale. Definition of the <i>depth</i> depends on the sample shape. For plates, it is the distance to the upper surface (in local coordinates of the sample). For sphers and cylinders, it is the distance from the curved surface (the outer one in the case of hollow shapes). For complex samples like ETubes, the 'depth' is a position inside the sample projected on the scan direction.
 # 
 # ### Define initial values
 # 
 # The depth distributions are modelled as a set of points interpolated by splines of selected order (1 to 3). Define below a minimum number of depth and intensity values which gives a satisfactory estimate of the intensity variation. Obviously, the intensity values should be kept constant for homogeneous materials.
+# 
+# <b>Provide the fit model settings below:</b>
+
+# In[6]:
 
 
-# MODEL PARAMETERS
+# USER INPUT for intensity fit 
 #--------------------------------------------------------------------
 # Give initial values, followed by flags (0|1), fx=1 means a free variable, 0 for fixed. 
 
@@ -208,8 +271,11 @@ loops = 3
 areg = 1e-3
 # Set False to skip intensity fit
 runIFit = True
-#--------------------------------------------------------------------
 
+#---------------------------------------------------------------------
+# Guess fit
+# If necessary, adjust the above parameters to improve the initial model.
+#----------------------------------------------------------------------
 ifit = comm.define_ifit(scan, [x,y,fx,fy], nev_use)
 
 # define scaling (background, amplitude and depth shift). minval,maxval=limits of these parameters.
@@ -219,29 +285,38 @@ ifit.setInterpModel(interpolation)
 
 # Run guess fit with given parameters (see docs for run_fit_guess)
 if runIFit:
+    print('Check the fit estimate and iprove the model if necessary:')
     comm.run_fit_guess(ifit, maxiter=100, areg=areg)
     
-#%% Is the above guess fit OK? Then continue ...
+
+
+# ### Run fit
+# Is the above estimate good? Then execute the following box to run fitting procedure and plot results.
+
+# In[7]:
+
 
 if runIFit:
     comm.run_fit(ifit, maxiter=maxiter, areg=areg, bootstrap=bootstrap, 
                  loops=loops)
-    comm.report_fit(ifit, scan['intfile'], plotSampling=True)    
+    comm.report_fit(ifit, scan['intfile'], plotSampling=True)
 
 
-#%% STRAIN FIT
-
+# ## Fit strain distribution
 # Fitting of strain depth distribution is similar to the above procedure for fitting intensities. The scattering probability distribution determined above will be automatically taken into account in modelling of pseudo-strains below.
 # 
 # ### Define initial values
 # 
 # The depth distributions are modelled as a set of points [depth, $\epsilon$(depth)] interpolated by splines of selected order (1 to 3). Define below a minimum number of depth and strain values which gives a satisfactory estimate of the strain distribution. 
+# 
+# <b>Provide the fit model settings below:</b>
 
-# Define strain depth distribution  
-# Give initial values, followed by flags (0|1), fx=1 means a free variable, 0 for fixed.  
+# In[8]:
 
-# MODEL PARAMETERS
+
+# USER INPUT for strain fit 
 #--------------------------------------------------------------------
+# Give initial values, followed by flags (0|1), fx=1 means a free variable, 0 for fixed. 
 # initial depth values [mm]
 x =  [0., 1., 2.0 , 2.5, 3.0 , 3.5 , 3.7 ,  4.]
 fx = len(x)*[1]
@@ -284,8 +359,11 @@ maxiter=200
 runReg = False
 # Run strain fit?
 runSFit = True
-#--------------------------------------------------------------------
 
+#---------------------------------------------------------------------
+# Guess fit
+# If necessary, adjust the above parameters to improve the initial model.
+#----------------------------------------------------------------------
 # use surface position from intensity fit
 zc = ifit.params['xc'].value
 print('Using surface position: {:g}\n'.format(zc))
@@ -298,18 +376,40 @@ sfit.setInterpModel(interpolation)
 # Run guess fit with given parameters (see docs for run_fit_guess)
 if runSFit:
     comm.run_fit_guess(sfit, maxiter=maxguess, areg=areg)
-    
-#%% Is the above guess fit OK? Then continue ...
+
+
+# ## Run fit
+# 
+# Is the above estimate good? Then continue by running the whole fitting job. 
+# 
+# The setting provided above defines the process:
+# 
+# - A bootstrap cycle, if defined, is applied to estimate confidence limit.
+# - A regularization cycle for given number of are coefficients is executed if requested. 
+
+# In[ ]:
+
 
 # Run fit with regularization
 if runSFit and runReg:
     comm.run_fit_reg(sfit, maxiter=maxiter, areg=aregs, outname='')
 
-#%% Choose the best areg value and run the final fit
- 
+
+# ### Run the final fit
+# 
+# Choose the optimum value of <code>areg</code> (regularization coefficient) and run the command below.
+
+# In[9]:
+
+
 areg = 1e-7
 if runSFit:
     comm.run_fit(sfit, maxiter=maxiter, areg=areg, outname=scan['epsfile'], 
                  bootstrap=bootstrap, loops=loops)
+
+
+# In[ ]:
+
+
 
 
