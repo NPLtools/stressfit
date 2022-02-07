@@ -1,13 +1,13 @@
-
+#!/usr/bin/env python
 # coding: utf-8
 
 # In[ ]:
 
+
 import numpy as np
 import stressfit.shapes as S
-import stressfit.sample as sam
-import stressfit.graphs as gr
 import stressfit.mccfit as mc
+import stressfit.commands as comm
 from IPython.display import HTML
 deg = np.pi/180.
 HTML('''<script>
@@ -28,8 +28,7 @@ $( document ).ready(code_toggle);
 # # STRESSFIT
 # <p>
 # <i>Written by:</i> Jan Saroun, Nuclear Physics Institute CAS, Rez, saroun@ujf.cas.cz<br/>
-# <i>Date:</i> 22/05/2018<br/>
-# <i>Version:</i> 0.9.2<br/>
+# <i>Date:</i> 03/02/2022<br/>
 # <i>Source:</i> https://github.com/NPLtools/stressfit
 # </p>
 # <p>
@@ -56,11 +55,22 @@ $( document ).ready(code_toggle);
 
 # In[ ]:
 
-# Define environment
-# input data folder
-inpath = mc.path2win(r'.\input')
-# output data folder
-outpath = mc.path2win(r'.\output')
+
+# Set the workspace directory. None for the current directory.
+workspace = None
+workspace = r'D:\Saroun\git\test\stressfit\test'
+# Set the other input/output folders (can be absolute or relative).
+# Relative paths should exist under the workspace directory.
+# Set to None for searching in package resources.
+output_path = './output' # output data
+input_path = None # input data
+tables_path = None # lookup tables etc.
+sampling_path = None # directory with simulated sampling points 
+
+# Set workspace and validate
+comm.set_workspace(workspace)
+comm.set_environment(data=input_path, output=output_path, tables=tables_path)
+comm.validate_workspace()
 
 
 # ## Sample definition
@@ -74,146 +84,155 @@ outpath = mc.path2win(r'.\output')
 # ### Sample shape
 # Sample dimensions depend on the selected shape. Choose one of the classes defined in the Shapes folder of the package:
 # 
-# <code> S.ShapePlate(thickness) </code> <br />
+# <code> S.create('Plate', thickness=10.0) </code> <br />
 # An infinitely large flat plate of given thickness.
 # 
-# <code> S.ShapePlateCurved(thickness, length, height, [r1x, r1y],  [r2x, r2y]) </code><br />
-# A curved plate of given thickness (z), length (x) and height (y). <code>[r1x, r1y]</code> are curvature radii along x and y of the front surcae (z>0). <code>[r2x, r2y]</code> are the radii for the rear surface.
+# <code> S.create('PlateCurved',thickness=5.0, length=50.0, height=15.0, rho1=[0.02, 0.0], rho2=[0.02, 0.0]) </code><br />
+# A curved plate of given thickness (z), length (x) and height (y). <code>rho1</code> are curvature radii along x and y of the front surcae (z>0). <code>rho2</code> are the radii for the rear surface.
 # 
-# <code> S.ShapeCyl(radius, height) </code><br />
+# <code> S.create('Cylinder', radius=4.0, height=30.0) </code><br />
 # A cylindrical shape with axis along y-axis.
 # 
-# <code> S.ShapeShellCyl(Rin, Rout, height) </code><br /> 
-# A hollow cylinder with axis along y-axis. Rin, Rout are the inner and outer radii.
+# <code> S.create('Tube', Rin=4.0, Rout=8.0, height=30.0, ctr=[0,0], sref=1) </code><br /> 
+# A hollow cylinder with axis along y-axis. 
+# - Rin, Rout are the inner and outer radii.
+# - ctr is the x,z position of the hole centre
+# - sref defines the reference surface for depth calculation (0/1 for the inner/outer surface)
 # 
-# <code> S.ShapeSph(radius) </code> <br />
+# <code> S.create('Sphere', radius=8.0) </code> <br />
 # A spherical sample.
 # 
-# The next block in this template defines a tube: a hollow cylinder with inner radius 4 mm, outer radius 8 mm and height 50 mm. Zero scan position corresponds to the instrumental gauge volume centered at the surface. Measured strain direction is defined by the angle <code>omega</code>.
+# <code> S.create('ETubes', a=8.0, b=8.0, angle=0.0, height=30.0, holes=[], sdir=[0,0,1], sctr=[0,0,0]) </code><br />
+# A cylinder with axis || y and multiple coaxial elliptic holes.
 # 
+#     a : float
+#         First semi-axis of the sample basis, parallel to x if angle=0. 
+#     b : float
+#         Second semi-axis of the sample basis, parallel to z if angle=0.  
+#     angle : float
+#         Angle of the semiaxis a with respect to x [deg]
+#     height : float
+#         Height in [mm].
+#     holes : list of dict
+#         Each item defines a hole. 
+#         The parameters are
+#             x, z : coordinates of the centre
+#             a, b : ellipse semi-axes
+#             angle : angle of the semiaxis a with respect to x [deg].
+#     sdir : array_like
+#         Scan direction in local coordinates.
+#     sctr : array_like
+#         Scan origin in local coordinates. 
+# 
+# ### Input data
+# The input experimental data are integral peak intensities and strains measured as a function of scan depth. They are provided as text files with three columns: depth [mm], intensity [any unit] or strain [$\mu\epsilon = 10^{-6}$], and error (std. deviation). 
+# 
+# 
+
+# ## User input
+# The next block in this template defines a tube: a hollow cylinder with inner radius 4 mm, outer radius 8 mm and height 50 mm. Zero scan position corresponds to the instrumental gauge volume centered at the surface. Measured strain direction is defined by the angle <code>omega</code>.
 
 # In[ ]:
 
-# 1. Sample orientation:
 
-# Sample rotation. 
-# At zero angles, the z-axis is parallel to the beam, y-axis is vertical.
-# omega, chi, phi are Euler angles (rotation around Y, X, Y).
-# Example for a plate symmetric reflection with incidence angle = theta:
-#   set chi=0, phi=0, omega=90 + theta
+# USER INPUT:
 
-omega = 180*deg + 45*deg
-chi = 0.0*deg
-phi = 0.0*deg
-
-# Scattering angle
-take_off = 91.77*deg 
-
-# Set sample shape (see comment above).
+# Create sample shape (see comment above).
 # Dimensions [mm]
 radius1 = 4.
 radius2 = 8
 height = 50.0
-shape = S.ShapeShellCyl(radius1, radius2, height)
+shape = S.create('Tube', Rin=4.0, Rout=8.0, height=50.0)
 
-# Set sample position
-shape.rotate(omega, chi, phi)
-shape.moveTo(np.array([0., 0., 0]))
+# Define input data for measured strain and intensity
+# 3-column text format with scan position, value and error
+strain = 'eps_SS_rad.dat'
+intensity='int_SS_rad.dat'
 
-# Assign shape
-sam.shape = shape
+# Define scan geometry
+# Scan direction in sample coordinates (where the gauge moves)
+scandir=[0., 0., -1.]
+# Sample orientation (Euler angles YXY) in deg
+angles=[135, 0, 0]
+# Scan origin (encoder = 0) in sample coordinates
+scanorig=[0, 0, 0]
+# Sample rotation centre (sample coordinates)
+rotctr=[0, 0, 0]
 
-# Define beam attenuation coefficient. Uncomment one of the two options: 
-# Option 1: Set attenuation as a table (wavelength, mu), [1/cm]. The file must be in the input directory.
-exttab = np.loadtxt('tables/Fe_mu.dat')
-sam.setExtinction(table=exttab)  # lookup table
+# Define material attenuation, either of:
+# File name: A table with 2 columns: wavelength [A], attenuation [1/cm]
+# Float number: attenuation [1/cm]:
+att = 'Fe_mu.dat'
 
-# Option 2: Set attenuation as a single coefficient [1/cm]:
-# sam.setExtinction(mu=1.96) # single value
+# file with the sampling points  
+sampling_file = 'events_S_1mm.dat' 
+# number of sampling points to load from the file
+nev_load = 3000
+# number of sampling points to plot
+nev_plot = 3000
+# number of sampling points to use in concolution
+nev_use = 3000
 
-# define ki and kf vectors in laboratory frame
-ki = np.array([0., 0., 1.])  # default for SIMRES simulations
-kf = sam.rotate(ki, 1, take_off) # rotation of ki by the take-off angle
+# 2D plot of experiment geometry:
+# scene width,height in [mm]
+scene_range = [16, 16]  
+# projection plane (zy=0, xz=1, xy=2)
+scene_projection = 1 
+
+
+# ## Initialization commands
+
+# In[ ]:
+
+
+
+
+# Load the data and save it in the scan variable with all meta-data. 
+scan = comm.load_input(strain, intensity=intensity,scandir=scandir,
+                       scanorig=scanorig, rotctr=rotctr, angles=angles)
+
+# Load and set sampling distribution
+sampling = comm.load_sampling(sampling_file, path=sampling_path, maxn=nev_load)
+sampling.print_properties()
+comm.set_sampling(sampling)
+
+# Set beam attenuation
+comm.set_attenuation(att)    
+
+# Set sample shape
+comm.set_shape(shape)
+
+# Set experiment geometry 
+comm.set_scan(scan)   
 
 
 # ## Sampling distribution
-# Load Monte Carlo events representing the sampling distribution from a text file.
-# The event table contains neutron coordinates, weights and dhkl values.  You need to specify column numbers for position, ki and kf vectors, weights and dhkl.
 # 
-# Imported MC events are defined in the laboratory frame, with the origin at the centre of the instrumental gauge volume. Sample and orientation thus defines zero scan position and scan direction in the sample.
+# The following command plots the sample and sampling events in requested projection. The <b>red arrow defines the scan direction</b> (where the events move in the sample during the scan). The color scale shows pseudo-strains associated with each event.
 
 # In[ ]:
 
-# load sampling points
-gpath = r'./input/'
-data = np.loadtxt(gpath + "events_S_1mm.dat")
-columns = [1, 4, 7, 10, 11]  # index of r[0], ki[0], kf[0], weight and dhkl (column indexing starts from 0)
-nrec = data.shape[0]
 
-# Set the events to the sample component
-sam.setSamplingEvents(data, columns)
-
-# Calculate centre of mass of the distribution 
-P = data[:,columns[3]]/np.sum(data[:,columns[3]])
-ctr = np.zeros(3)
-for i in range(3):
-	ctr[i] = data[:, columns[0] + i].dot(P)
-dmean = data[:, columns[4]].dot(P)
-print('Loaded event list with {:d} records'.format(nrec))    
-print('Gauge centre: [{:g}, {:g}, {:g}] '.format(*ctr))
-print('d0 = {:g}\n'.format(dmean))
-
-# Set the events to the sample component
-sam.setSamplingEvents(data, columns, ctr=ctr)
-
-
-# ## Scan definition
-# Define scan steps, direction and calculate corresponding depth scale. At the end, the diffraction geometry is plotted together with the sampling points. <b>The red arrow shows the direction of sample motion.</b>  Color scale of the sampling points shows the associated pseudo-strains.
-
-# In[ ]:
-
-# Scan direction (local coordinates)
-sdir = [0., 0., -1.]
-# number of sampling events to use for convolution
-nev = 2000    
-
-# plot the situation
-nd = nev  # number of events to show
-rang = [13, 13]  # plot range in [mm]
-proj = 1  # projection plane (zy=0, xz=1, xy=2)
-outpng = outpath + 'scene.png'
-gr.plotScene(rang, proj, shape, ki, kf, sdir, sam.getSampling(nev) , save = True, file = outpng)
-
-
-# ## Input data
-# Load integral peak intensities and strains measured as a function of scan depth in two separate arrays with three columns: depth [mm], intensity [any unit] or strain [$\mu\epsilon = 10^{-6}$] and error (std. deviation).
-
-# In[ ]:
-
-# intensities, file name
-intfile = 'int_SS_hoop.dat'
-
-# intensities, file name
-epsfile = 'eps_SS_hoop.dat'
-
-# load data
-intdata = np.loadtxt(inpath + intfile)
-epsdata = np.loadtxt(inpath + epsfile)
+comm.plot_scene(nev_plot, scan=scan['epsfile'], rang=scene_range, proj=scene_projection)
 
 
 # ## Fit intensities
 # Fitting of intensities allows to determine the variation of scattering probability and extinction with scan depth. It can also help to correct for any missfit between the encoder positions (stored in the data file) and true surface position. Note that sometimes these effects can't be distinguished from each other. With a strong variation of scattering probability (e.g. due to a greadient in texture or composition near the surface), it is not possible to reliably determine the surface position and extinction just from the intensity variation. Then some of the parameters must be determined independently and fixed for fitting. On the other hand, it is the product of extinction and scattering probability distributions which affects pseudo-strains, therefore they do not need to be exactly distinguished.
 # 
 # NOTE:<br/>
-# Scattering probability and strain distributions are defined on depth scale, where depth is the shortest distance to the front sample surface. Definition of the <i>front surface</i> depends on the sample shape. For plates, it is the distance to the upper surface (in local coordinates of the sample). For sphers and cylinders, it is the distance from the curved surface (the outer one in the case of hollow shapes).
+# Scattering probability and strain distributions are defined on the depth scale. Definition of the <i>depth</i> depends on the sample shape. For plates, it is the distance to the upper surface (in local coordinates of the sample). For sphers and cylinders, it is the distance from the curved surface (the outer one in the case of hollow shapes). For complex samples like ETubes, the 'depth' is a position inside the sample projected on the scan direction.
 # 
 # ### Define initial values
 # 
 # The depth distributions are modelled as a set of points interpolated by splines of selected order (1 to 3). Define below a minimum number of depth and intensity values which gives a satisfactory estimate of the intensity variation. Obviously, the intensity values should be kept constant for homogeneous materials.
+# 
+# <b>Provide the fit model settings below:</b>
 
 # In[ ]:
 
-# MODEL PARAMETERS
+
+# USER INPUT for intensity fit 
+#--------------------------------------------------------------------
 # Give initial values, followed by flags (0|1), fx=1 means a free variable, 0 for fixed. 
 
 # depth values [mm]
@@ -236,35 +255,39 @@ fA = 1
 fB = 0
 
 # zero encoder position = position of the front surface in encoder scale
-# = where is the surcae position in the data table ...
+# = where is the surface position in the data table ...
 zc = 0.05
 # fixed (0) or free (1):
 fzc = 1
 
-#--------------------------------------------
-# Initialize model
-# nev = number of neutrons to use
-# xdir = the scan direction (defined above)
-ifit = mc.Ifit(nev=2000, xdir = sdir, ftol=1.e-3, epsfcn=0.1)
+# Define fit options
+# Maximum number of iterations
+maxiter = 100
+# Use bootstrap method for estimation of confidence limits?
+bootstrap = False
+# Set loops for the number of bootstrap cycles.
+loops = 3
+# regularization
+areg = 1e-3
+# Set False to skip intensity fit
+runIFit = True
 
-# assign exp. data to the model
-ifit.data = intdata
+#---------------------------------------------------------------------
+# Guess fit
+# If necessary, adjust the above parameters to improve the initial model.
+#----------------------------------------------------------------------
+ifit = comm.define_ifit(scan, [x,y,fx,fy], nev_use)
 
-# define the intensity distribution, dim=number of points for interpolation 
-ifit.defDistribution([x, y], [fx, fy], ndim=200)
 # define scaling (background, amplitude and depth shift). minval,maxval=limits of these parameters.
 ifit.defScaling([A, B, zc], [fA, fB, fzc], minval=[0., 0., -np.inf])
 # set the interpolation method
 ifit.setInterpModel(interpolation)
 
-# Guess fit (optional)
-# It makes a fast first estimate.  
-# Set maxiter=0 if you don't want to fit, just plot the initial model.
-mc.runFit(ifit, maxiter=0, guess=True)
-
-# show plots
-# Add file=name parameter if you want to save the result.
-ifit.reportFit()
+# Run guess fit with given parameters (see docs for run_fit_guess)
+if runIFit:
+    print('Check the fit estimate and iprove the model if necessary:')
+    comm.run_fit_guess(ifit, maxiter=100, areg=areg)
+    
 
 
 # ### Run fit
@@ -272,24 +295,11 @@ ifit.reportFit()
 
 # In[ ]:
 
-# Use bootstrap method for estimation of confidence limits?
-bootstrap = False
-# Set loops for the number of bootstrap cycles.
-loops = 3
-# regularization
-areg = 1e-3
-# Set True to run intensity fit
-runIFit = True
 
 if runIFit:
-    res = mc.runFit(ifit, maxiter=100, areg=areg, bootstrap=bootstrap, loops=loops)
-
-
-# ### Plot and save results
-
-# In[ ]:
-
-ifit.reportFit(outpath=outpath, file=intfile, plotSampling=True)
+    comm.run_fit(ifit, maxiter=maxiter, areg=areg, bootstrap=bootstrap, 
+                 loops=loops)
+    comm.report_fit(ifit, scan['intfile'], plotSampling=True)
 
 
 # ## Fit strain distribution
@@ -298,15 +308,19 @@ ifit.reportFit(outpath=outpath, file=intfile, plotSampling=True)
 # ### Define initial values
 # 
 # The depth distributions are modelled as a set of points [depth, $\epsilon$(depth)] interpolated by splines of selected order (1 to 3). Define below a minimum number of depth and strain values which gives a satisfactory estimate of the strain distribution. 
+# 
+# <b>Provide the fit model settings below:</b>
 
 # In[ ]:
 
-# Define strain depth distribution  
-# Give initial values, followed by flags (0|1), fx=1 means a free variable, 0 for fixed.  
 
+# USER INPUT for strain fit 
+#--------------------------------------------------------------------
+# Give initial values, followed by flags (0|1), fx=1 means a free variable, 0 for fixed. 
 # initial depth values [mm]
-x =  [0., 1., 2.0 , 2.5, 3.0 ,  3.5  , 3.7  ,   4.]
+x =  [0., 1., 2.0 , 2.5, 3.0 , 3.5 , 3.7 ,  4.]
 fx = len(x)*[1]
+fx[0] = 0
 fx[-1] = 0
 
 # initial strain values [1e-6]
@@ -314,170 +328,88 @@ y =  len(x)*[0.]
 fy = len(y)*[1]
 fy[0]=0
 
-
 # Set the method for interpolation between the nodes.
 # Use one of 'natural','clamped', 'PCHIP', 'Akima'
 # PCHIP = Piecewise cubic Hermitian interpolation polynomial
-interpolation = 'natural' 
-
-# Calculate d0 correction from the bulk strain values?
-d0auto = False
-if d0auto:
-    # Define data range to be used for calculation of eps0:
-    n = epsdata.shape[0]  # total number of rows in the input data
-    # n1, n2: point index in 0 .. n-1 range
-    n1 = int(0.5*n) - 2  # 1st range point 
-    n2 = int(0.5*n) + 2  # last range point 
-    # python range convention: epsdata.shape[0]-1 is the last row index.
-else:
-    # give value of eps0 in strain units:
-    eps0  = 0.    
+interpolation = 'natural'  
 
 # Define a constraint function (optional)
 def constraint(params):
+    """Constraint function."""
     # constraint example: keeps surface strain at 0 with 50ue tolerance
     dist = mc.params2dist(params)
     y=dist[1,1]
     return (y-0.)/50. 
-# set True to actually apply the above constraint
-use_constraint=False
+# Assign constraint to constFnc in order to use it:
+# constFnc=constraint
+constFnc=None
 
-
-# ### Make fit estimate
-# 
-# Run the code below. There is rarely a need to edit anything there, but you can still change some details such as number of sampling events, tolerance, number of iterations, ...
-# 
-
-# In[ ]:
-
-# use surface position from intensity fit
-zc = ifit.params['xc'].value
-print('Using surface position: {:g}\n'.format(zc))
-
-#--------------------------------------------
-# Calculate dependences
- 
-if d0auto:
-    # calculate pseudo-strain
-    y0 = np.zeros(len(y))
-    sfit = mc.Sfit(nev=2000, xdir=sdir, ftol=1.e-3)
-    sfit.defDistribution([x, y0*y], [y0*fx, y0*fy], ndim=100)
-    tmp = sfit.getSmearedFnc(epsdata[:,0])
-    eps1 = np.average(tmp[0][n1:n2+1])
-    # get the average measured strain from selected range
-    eps2 = np.average(epsdata[n1:n2+1,1])
-    # subtract pseudo-strain
-    eps0 = eps2 - eps1
-    """ NOTE: we must subtract pseudo-strain since it is taken into account 
-    by the convolution procedure. eps0 includes only an intrinsic d0 shift
-    or an instrumental effect other than the pseudo-strain (e.g. misalignment)
-    """
-    fmt = 'd0 calculated form points {:d} to {:d}:\neps0 = {:g}'
-    print(fmt.format(n1, n2, eps0))
-    # exclude n1 .. n2 range from fitting
-    tofit = np.concatenate((epsdata[0:n1,:],epsdata[n2:,:]), axis=0)
-else:
-    tofit = epsdata
-    
-# Initialize model
-sfit = mc.Sfit(nev=3000, xdir=sdir, ftol=1.e-3)
-
-# data to be fitted
-sfit.data = tofit
-
-# choose randomly a subset of sampling events
-sam.shuffleEvents()
-
-# define strain distribution, dim=number of points for interpolation 
-# par = nodes [x,y] values
-# vary = corresponding flags for fixed (0) or free(1) variables.
-sfit.defDistribution(par=[x, y], vary=[fx, fy], ndim=100, scaled=True)
-
-# define function scaling (amplitude, strain offset, depth-shift) 
-sfit.defScaling(par=[1., eps0, zc], vary=[0, 0, 0])
-
-# define interpolation method
-sfit.setInterpModel(interpolation)
-
-# define depth range to calculate integrated strain
-sfit.avgrange = [0., max(x)]
-
-
-# set use_constraint=false if you don't want to use the above defined constraint function:
-if (use_constraint):
-    sfit.constraint = constraint
-
-# Guess fit - the same as for intensity fitting
-mc.runFit(sfit, maxiter=300, areg=1e-7, bootstrap=False, loops=False, guess=True)
-sfit.reportFit()
-
-
-# ## Run fit
-# 
-# Is the above estimate good? Then you can edit the fit parameters below and execute the following box.
-# It can run a bootstrap cycle to estimate confidence limit. 
-# 
-# It can also scan through the defined range of regularization coefficients (areg) to optimize the smoothing term.
-# 
-# Set runReg=False below if you want to skip this step.
-
-# In[ ]:
-
+# Define fit options
 # Use bootstrap method for estimation of confidence limits?
 bootstrap = True
 # Set loops for the number of bootstrap cycles.
 loops = 5
+# Define a list of regularization factors:
+aregs = [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4]
+# maximum iterations for guess fit
+maxguess = 100
+# maximum iterations for fit
+maxiter=200
 # Run regularization loop?
 runReg = False
-# Define a list of regularization factors:
-areg = [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4]
-# Set to True to run strain fit
+# Run strain fit?
 runSFit = True
-# maximum iterations
-maxit=300
 
-#------------------------------
-# keep following as is
-reglog = None
-if runSFit and runReg:
-    na = len(areg)
-    reglog = np.zeros((na,3))
-    for ia in range(na):    
-        res = mc.runFit(sfit, maxiter=maxit, areg=areg[ia], bootstrap=False, loops=loops)
-        reglog[ia] = [areg[ia], sfit.chi, sfit.reg]
-        ss = '[areg, chi2, reg] = {:g}\t{:g}\t{:g}\n'.format(*reglog[ia,:])
-        print(ss)
-        sfx = 'a{:g}_'.format(areg[ia])
-        sfit.reportFit(outpath=outpath, file=sfx+epsfile, reglog=reglog) 
+#---------------------------------------------------------------------
+# Guess fit
+# If necessary, adjust the above parameters to improve the initial model.
+#----------------------------------------------------------------------
+# use surface position from intensity fit
+zc = ifit.params['xc'].value
+print('Using surface position: {:g}\n'.format(zc))
 
+sfit = comm.define_sfit(scan, [x,y,fx,fy], nev_use, z0=zc, constFnc=constFnc)
 
-# In[ ]:
+# define interpolation method
+sfit.setInterpModel(interpolation)
 
-# report the table with regularization progress:
-if runSFit and runReg:
-    ss = 'areg\tchi2\treg\n'
-    for ia in range(na):
-        ss += '{:g}\t{:g}\t{:g}\n'.format(*reglog[ia,:])
-    print(ss)
-
-
-# In[ ]:
-
-# choose the best areg value and run fit 
+# Run guess fit with given parameters (see docs for run_fit_guess)
 if runSFit:
-    areg = 1e-7
-    maxit=300
-    res = mc.runFit(sfit, maxiter=maxit, areg=areg, bootstrap=bootstrap, loops=loops)
+    comm.run_fit_guess(sfit, maxiter=maxguess, areg=areg)
 
 
-# ### Plot and save results
+# ## Run fit
+# 
+# Is the above estimate good? Then continue by running the whole fitting job. 
+# 
+# The setting provided above defines the process:
+# 
+# - A bootstrap cycle, if defined, is applied to estimate confidence limit.
+# - A regularization cycle for given number of are coefficients is executed if requested. 
 
 # In[ ]:
 
-sfit.reportFit(outpath=outpath, file=epsfile) 
+
+# Run fit with regularization
+if runSFit and runReg:
+    comm.run_fit_reg(sfit, maxiter=maxiter, areg=aregs, outname='')
+
+
+# ### Run the final fit
+# 
+# Choose the optimum value of <code>areg</code> (regularization coefficient) and run the command below.
+
+# In[ ]:
+
+
+areg = 1e-7
+if runSFit:
+    comm.run_fit(sfit, maxiter=maxiter, areg=areg, outname=scan['epsfile'], 
+                 bootstrap=bootstrap, loops=loops)
 
 
 # In[ ]:
+
 
 
 

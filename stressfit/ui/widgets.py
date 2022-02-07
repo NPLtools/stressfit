@@ -674,31 +674,35 @@ class SelectInput(BasicInput):
     """
     
     def __init__(self, name='',  options=[], label='', hint='', value=None, 
-                 index=0, width_label=150, width_drop=60, unit='px'):
+                 index=-1, width_label=150, width_drop=60, unit='px'):
         super().__init__(name, value)
-        self.options = options
+        self._options = options
         self.label = label
         self.hint = hint
-        self.index = index
+        
         x = [width_label,unit, width_drop, unit]
         self._tpl = '{}{} {}{} auto'.format(*x)
-        vini = None
-        if value is not None:
-            vini=value
-        elif index>-1 and len(options)>index:
-            if isinstance(options[index], (float, int, str)):
-                # options is list of strings
-                vini = options[index]
-            elif len(options[index])>1:
-                # options is list of (name, value)
-                vini = options[index][1]
-
         w = '{}{}'.format(width_drop,unit)
         layout = ipy.Layout(width=w)
-        self.input = ipy.Dropdown(description='', options=options, 
-                                      value=vini, layout=layout,
+        self.input = ipy.Dropdown(description='', options=self._options, 
+                                      layout=layout,
                                       continuous_update=False)
+        
+        if value is not None:
+            self.value = value
+        else:
+            self.index = index
         self.input.observe(self._on_change,'value', type='change')
+        
+    
+    @property
+    def options(self):
+        return self._options
+    
+    @options.setter
+    def options(self, value):
+        self._options = value
+        self.input.options = self._options
     
     @property
     def value(self):
@@ -715,17 +719,27 @@ class SelectInput(BasicInput):
         except  Exception as e:
             self._value = val
             raise e
-        
-    def set_index(self, index):
+       
+    @property
+    def index(self):
+        """Selected index."""
+        return self.input.index
+    
+    @index.setter
+    def index(self, index):
         """Set value by index to the widget."""
-        if index >= len(self.options):
-            msg = 'Index exceeds options length: {}>{}'
-            raise Exception(msg.format(index,len(self.options)))
-        try:
-            self._call_enabled = False
-            self.input.index = index 
-        finally:
-            self._call_enabled = True
+        if index>-1 and index<len(self._options):
+            i = index  
+        elif len(self._options)>0:
+            i = 0
+        else:
+            i = -1
+        if i>=0:
+            try:
+                self._call_enabled = False
+                self.input.index = i 
+            finally:
+                self._call_enabled = True
         
     def _update_widgets(self):
         """Set values to the widgets."""
@@ -739,9 +753,7 @@ class SelectInput(BasicInput):
             self._call_enabled = en
             raise Exception(msg.format(self._value,e))
 
-    def get_index(self):
-        """Get selected index."""
-        return self.input.index
+    
 
     def _on_change(self,change):
         """Value change - update value."""

@@ -34,6 +34,8 @@ import stressfit.shapes as shapes
 import stressfit.dataio as dataio
 import stressfit.graphs as gr
 
+
+
 def _has_keys(args, keys):
     """Verify that all args are in keys."""
     return all (k in args for k in keys)
@@ -72,6 +74,7 @@ class UI_base:
         # define layout parameters - subclasses should override it
         self._err = None # error output, can be defined by ui()
         self._msg = None # message output, can be defined by ui()
+        self._debug = False
         self.uiparam = {}
         self.uiparam['title'] = 'Title'
         self.uiparam['title_size'] = '+1'
@@ -120,6 +123,13 @@ class UI_base:
         UI_base._err_ni('_create_ui')
 
 # private methods
+
+    def _dbg_message(self, txt, clear=False):
+        if self._debug and self._msg:
+            if clear:
+                self._msg.clear_output()
+            with self._msg:
+                print(txt)
 
     def _check_keys(self,data):
         """Verify that data contains all required keys."""
@@ -187,6 +197,8 @@ class UI_base:
 
     def update_options(self, name, options):
         """Update the selection list."""
+        self._dbg_message('update_options: name={}'.format(name))
+        self._dbg_message('{}'.format(options))
         if not name in self._options:
             return
         if not name in self._widgets:
@@ -196,6 +208,7 @@ class UI_base:
         if options != self._options[name]:
             self._options[name].clear()
             self._options[name].update(options)
+            self._dbg_message('updated')
         
         # construct selection widget options
         select_options = []
@@ -205,6 +218,7 @@ class UI_base:
         # update widget    
         val = self._widgets[name].value   
         self._widgets[name].options = select_options
+        self._dbg_message('{}'.format(self._widgets[name].options))
         # try to restore previous selection
         
         try:
@@ -286,6 +300,8 @@ class UI_base_list(UI_base):
         self._hdr = list_hdr
         self._fmt = list_fmt
 
+
+
     def _init_values(self, **kwargs):
         """Initiate values within constructor.
          
@@ -353,6 +369,9 @@ class UI_base_list(UI_base):
         `on_change` is sent at the end with 'list' and 'data' arguments.
         """
         txt = self._name_inp.value
+        
+        self._dbg_message('Add {}'.format(txt), clear=True)
+        
         self.add_data(txt, update_table=True)
         self.notify()
 
@@ -386,8 +405,12 @@ class UI_base_list(UI_base):
 
         data = [hdr_inp]
         # collect rows of widgets for all defined orientations
+        self._dbg_message('_create_list')
         for key in self._values['list']:
             rec = self._get_display_record(key)
+            
+            self._dbg_message('\t{}'.format(rec))
+            
             b = SButton(description='',icon='trash',value=key,
                             layout=ipy.Layout(width='30px'), tooltip='Remove')
             b.on_click(self._on_del_click)
@@ -474,6 +497,8 @@ class UI_base_list(UI_base):
             self.set_values({'input':data})
         self._values['list'][name] = copy.deepcopy(self._values['input'])
         
+        self._dbg_message('UI_base_list.add_data: {}'.format(name))
+        self._dbg_message('{}'.format(self._values['list'][name]))
         if update_table:
             self._update_table()
         
@@ -935,9 +960,9 @@ class UI_shape(UI_base):
         for key in param:
             item = items[key]
             if isinstance(item, SelectInput):
-                items[key].set_index(param[key])
+                items[key].index = param[key]
             else:
-                items[key].value=param[key]          
+                items[key].value = param[key]          
         
     def update_values(self):
         """Update input data from widgets.
@@ -954,10 +979,9 @@ class UI_shape(UI_base):
             for key in items:
                 item = items[key]
                 if isinstance(item, SelectInput):
-                    value = item.get_index()
+                    param[key] = item.index
                 else:
-                    value = item.value
-                param[key] = value
+                    param[key] = item.value
             self._values['param'] = param
     
     def show(self, err=None, msg=None, **kwargs): 
@@ -1366,7 +1390,7 @@ class UI_plot_scene(UI_base):
     def _create_ui(self, **kwargs):
         # set selection options
         for key in self._options:
-            # calling on itself make sens: it will update widget state
+            # calling on itself makes sense: it will update widget state
             self.update_options(key, self._options[key])
         
         btn_replot = ipy.Button(description='Replot',
@@ -1401,11 +1425,17 @@ class UI_plot_scene(UI_base):
     def _on_replot(self,b):
         # Plot experiment geometry 
         # (red arrow shows motion of sampling points in stationary sample)
-        
+        self.message('')
+        self.error('')
         # read selected geometry
         self.update_values()
-        geometry = self._options['ori'][self._values['ori']]
-        sampling = self._options['sampling'][self._values['sampling']]
+        try:
+            geometry = self._options['ori'][self._values['ori']]
+            sampling = self._options['sampling'][self._values['sampling']]
+        except:
+            self._out.clear_output()
+            self.error('Orientation or sampling is not defined.')
+            return
         self._call_init(sampling=sampling, geometry=geometry)
 
        #  set_input(geometry, sampling)
@@ -1537,7 +1567,7 @@ class UI_resolution(UI_base):
     def _create_ui(self, **kwargs):
         # set selection options
         for key in self._options:
-            # calling on itself make sens: it will update widget state
+            # calling on itself makes sense: it will update widget state
             self.update_options(key, self._options[key])
         
         btn_run = ipy.Button(description='Run',
@@ -1581,12 +1611,19 @@ class UI_resolution(UI_base):
         return fname
     
     def _on_replot(self,b):
+        self.message('')
+        self.error('')
         # Calculate and plot results
         self.update_values()
-        # read selected geometry
-        geometry = self._options['ori'][self._values['ori']]
-        # read selected sampling
-        sampling = self._options['sampling'][self._values['sampling']]
+        try:
+            # read selected geometry
+            geometry = self._options['ori'][self._values['ori']]
+            # read selected sampling
+            sampling = self._options['sampling'][self._values['sampling']]
+        except:
+            self._out.clear_output()
+            self.error('Orientation or sampling is not defined.')
+            return
         # call init function if defined
         self._call_init(sampling=sampling, geometry=geometry)
 
@@ -1688,7 +1725,7 @@ class UI_data(UI_base_list):
                        fileonly=True,
                        label='Strain',
                        tooltip='File with strain data.',
-                       width_label=130)
+                       width_label=80)
         self._widgets['strain'] = fi
         fi = FileInput(name='intensity', 
                        file='int_SS_rad.dat', 
@@ -1696,8 +1733,9 @@ class UI_data(UI_base_list):
                        fileonly=True,
                        label='Intensity',
                        tooltip='File with intensity data.',
-                       width_label=130)
+                       width_label=80)
         self._widgets['intensity'] = fi
+        """
         # sampling selection
         wdg = create_select(name='sampling', label='Sampling', 
                             options=[], 
@@ -1708,6 +1746,16 @@ class UI_data(UI_base_list):
                              options=[], 
                              width_label=80, width_drop=100)
         self._widgets['ori'] = wdg  
+        """
+        # sampling selection
+        wdg =  SelectInput(name='sampling', label='Sampling', width_label=80, 
+                           width_drop=100)
+        self._widgets['sampling'] = wdg
+        # geometry selection
+        wdg =  SelectInput(name='ori', label='Orientation', width_label=80, 
+                           width_drop=100)
+        self._widgets['ori'] = wdg
+        
         # number of events to plot
         wdg = create_input_int(name='nrec', label='Events',
                                value=self._values['nrec'], 
@@ -1718,7 +1766,7 @@ class UI_data(UI_base_list):
     def _create_ui(self, **kwargs):
         # set selection options
         for key in self._options:
-            # calling on itself make sens: it will update widget state
+            # calling on itself makes sense: it will update widget state
             self.update_options(key, self._options[key])
         
         btn_run = ipy.Button(description='Show',
@@ -1729,9 +1777,9 @@ class UI_data(UI_base_list):
         self._buttons.append(self._widgets['nrec'])
         layout = ipy.Layout(margin='10px 5px 5px 10px')
         box = ipy.VBox([self._widgets['strain'].ui(),
-                         self._widgets['intensity'].ui(),
-                         self._widgets['sampling'], 
-                         self._widgets['ori']],
+                        self._widgets['intensity'].ui(),
+                        self._widgets['sampling'].ui(),
+                        self._widgets['ori'].ui()],
                          layout=layout)               
         return box
 
@@ -1814,11 +1862,14 @@ class UI_data(UI_base_list):
         update_table : bool
             If True, call self._update_table() to redraw the table content.
         """
+
         try:
             assert self._is_unique(name)
-            super().add_data(name, data=data, update_table=update_table)
+            self._dbg_message('UI_data.add_data data: {}'.format(data))
+
+            super().add_data(name, data=data, update_table=False)
             vals = copy.deepcopy(self._values['list'][name])
-            #print('UI_data.add_data: {}'.format(vals))
+            self._dbg_message('UI_data.add_data values: {}'.format(vals))
             ori = vals['ori']
             sam = vals['sampling']
             ifile = vals['intensity'].strip()
@@ -1826,9 +1877,13 @@ class UI_data(UI_base_list):
             #print('add_data '+ifile)
             if not ifile or ifile=='.':
                 ifile = None
-            
-            geom = self._options['ori'][ori]
-            sampling = self._options['sampling'][sam]
+            try:
+                geom = self._options['ori'][ori]
+                sampling = self._options['sampling'][sam]
+            except:
+                self._outgr.clear_output()
+                self.error('Cannot associate orientation or sampling with the data.')
+                return
             content = comm.load_input(sfile, intensity=ifile,
                                       path=None, 
                                       angles=geom['angles'],
@@ -1837,7 +1892,10 @@ class UI_data(UI_base_list):
                                       scanorig=geom['scanorig'],
                                       sampling=sampling, 
                                       verbose=False)
+            self._dbg_message('UI_data.add_data content: {}'.format(content))
             self._data[name] = content
+            if update_table:
+                self._update_table()
         except Exception as e:
             self._delete(name)
             raise(e)
@@ -1919,6 +1977,8 @@ class UI_data(UI_base_list):
         """Plot data with simulated pseudo-strains and pseudo-intensities."""
         expdata = {}
         simdata = {}
+        self.message('')
+        self.error('')
         for name in self._data:
             data = self._data[name]
             x = data['eps'][:,0]        
@@ -1933,13 +1993,13 @@ class UI_data(UI_base_list):
             sampling = data['sampling']
             # call init function if defined
             self._call_init(sampling=sampling, geometry=geometry)
-    
-            res = comm.report_pseudo_strains(scan_range, fname, 
-                                             nev=nev,
-                                             intensity=True,
-                                             inline=True,
-                                             plot=False, 
-                                             save=save)
+            with self._msg:
+                res = comm.report_pseudo_strains(scan_range, fname, 
+                                                 nev=nev,
+                                                 intensity=True,
+                                                 inline=True,
+                                                 plot=False, 
+                                                 save=save)
             expdata[name] = data
             simdata[name] = res
         # clear output
