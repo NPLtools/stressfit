@@ -134,7 +134,116 @@ def plot_scene(nev, scan=None, filename='', rang=[30, 30], proj=1, save=True):
     gr.plotScene(rang, proj, sam.shape, ki, kf, _geom.scandir, sampling,  
                  save=save, file=outpng)
 
+def cal_smeared_strain(scan_range, eps=None, intensity=None, nev=3000):
+    """Calculate smeared strain and intensity distributions.     
+    
+    Parameters
+    ----------
+    scan_range : [min, max, n]
+        Scan range [mm] given as min, max and number of positions. 
+        Positions are relative to the scan centre provided in sample geometry.
+    eps : dict
+        Intrinsic strain distribution [1e-6].
+        The dictionary should contain two keys: 'x', 'y' with corresponding
+        values to initiate strain distribution in :class:`stressfit.mcfit.Sfit`.
+        If None, assume zero intrinsic strain. 
+    intensity : dict
+        Intrinsic intensity distribution.
+        The dictionary should contain two keys: 'x', 'y' with corresponding
+        values to initiate strain distribution in :class:`stressfit.mcfit.Ifit`.
+        If None, assume uniform intrinsic intensity distribution.
+    nev : int, optional
+        Number of events to be used for convolution.
 
+        
+    Returns
+    -------
+    dict
+        Results as dict with keys `strain`, `intensity`.
+        Each of them contains a dict with results, including:
+            title, xlabel, ylabel, x, y, pos, ctr
+        Strain data also include yerr.
+        
+        The meaning is:
+            - x, y, yerr - strain or intensity function with error
+            - pos - centre of gravity position along scan
+            - ctr - centre of gravity xyz coordinates
+    """
+    # Initialize model
+    sfit = mc.Sfit(nev=nev, xdir=_geom.scandir)
+    ifit = mc.Ifit(nev=nev, xdir=_geom.scandir)
+    
+    
+    # define strain distribution model
+    xmin = min(scan_range[0],  scan_range[1]) - 20
+    xmax = max(scan_range[0],  scan_range[1]) + 20
+    
+    if eps is None:
+        sx = np.linspace(xmin, xmax, num=3)
+        sy = np.zeros(len(sx))
+    else:
+        sx = eps['x']
+        sy = eps['y']
+    fsx = len(sx)*[0]
+    fsy = len(sx)*[0]
+    
+    if intensity is not None:
+        ix = intensity['x']
+        iy = intensity['y']
+        fix = len(ix)*[0]
+        fiy = len(ix)*[0]
+        ifit.defDistribution(par=[ix, iy], vary=[fix, fiy], ndim=100)
+        ifit.updateDistribution()
+        ifit.fitFinal()
+    else:
+        mc.intClear()
+    
+    sfit.defDistribution(par=[sx, sy], vary=[fsx, fsy], ndim=100)
+    sfit.updateDistribution()
+    sfit.fitFinal()
+    
+    # choose randomly a subset of sampling events
+    sam.shuffleEvents()
+    
+    # define steps
+    x = np.linspace(scan_range[0],  scan_range[1], num=scan_range[2])
+    # calculate pseudo-strains and pseudo-intensities
+    sfit.calInfoDepth(x, use_int=True)
+    data = sfit.infodepth
+    
+    # strain was provided?
+    if eps is not None:
+        # yes, do extra convolution for strain function
+        [eps, eeps, pos] = sfit.getSmearedFnc(x)
+    else:
+        # no, only pseudostrain is reported
+        [eps, eeps, pos] = [data[:,4], data[:,8], data[:,1]]
+        
+    
+    result = {}
+    sres = {}
+    ires = {}
+    # strain
+    sres['title'] = 'Smeared strain'
+    sres['xlabel'] = 'Scan position, mm'
+    sres['ylabel'] = 'Strain,  1e-6'
+    sres['pos'] = pos
+    ires['ctr'] = data[:,5:8]
+    sres['x'] = x
+    sres['y'] = eps
+    sres['yerr'] = eeps
+    result['strain'] = sres
+    # intensity
+    ires['title'] = 'Smeared intensity'
+    ires['xlabel'] = 'Scan position, mm'
+    ires['ylabel'] = 'Intensity, rel. units'
+    sres['pos'] = data[:,1]
+    ires['ctr'] = data[:,5:8]
+    ires['x'] = x
+    ires['y'] = data[:,3]
+    result['intensity'] = ires
+    return result
+        
 
 def cal_pseudo_strains(scan_range, nev=3000, use_int=False):
     """Calculate pseudo-strains and pseudo-intensities.
@@ -165,12 +274,16 @@ def cal_pseudo_strains(scan_range, nev=3000, use_int=False):
     sam.shuffleEvents()
     
     # define strain distribution model
-    x = np.linspace(scan_range[0],  scan_range[1], num=scan_range[2])
+    xd = np.linspace(scan_range[0],  scan_range[1], num=scan_range[2])
+    
+    xmin = min(scan_range[0],  scan_range[1]) - 20
+    xmax = max(scan_range[0],  scan_range[1]) + 20
+    x = np.linspace(xmin,  xmax, num=3)
     y = np.zeros(len(x))
     fx = len(x)*[1]
     fy = len(x)*[1]
     model.defDistribution(par=[x, y], vary=[fx, fy], ndim=100, scaled=True)
-    model.calInfoDepth(x, use_int=use_int)
+    model.calInfoDepth(xd, use_int=use_int)
     data = model.infodepth
     result = {}
     sres = {}

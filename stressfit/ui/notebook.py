@@ -738,25 +738,30 @@ class UI_workspace(UI_base):
             self.update_workspace()
             self.wk.validate_paths()
             self.wk.save()
-            with self._out:
-                wkp = self.wk.get_paths(keys=['work'])
-                msg = 'Workspace configuration saved in {}/{}.'
-                self.message(msg.format(wkp['work'],dataio.Workspace.cfg_name))
+            self.message('Workspace configuration saved.')
+            #with self._out:
+            #    wkp = self.wk.get_paths(keys=['work'])
+            #    msg = 'Workspace configuration saved in {}/{}.'
+            #    self.message(msg.format(wkp['work'],dataio.Workspace.cfg_name))
         except Exception as e:
             print(e)
     
     def _on_load(self, b):
         """Re-load workspace configuration from workspace root directory."""
-        with self._out:
-            if self.wk.load():
-                data = self.wk.get_paths()
-                self.update_widgets(data)
-                self.update_values()
-                self.message('Workspace configuration reloaded.')
-            else:
-                wkp = self.wk.get_paths(keys=['work'])
-                msg = 'Workspace configuration file {} not found in {}'
-                self.error(msg.format(dataio.Workspace.cfg_name, wkp['work']))     
+        self._out.clear_output()
+        try:
+            with self._out:
+                if self.wk.load():
+                    data = self.wk.get_paths()
+                    self.update_widgets(data)
+                    self.update_values()
+                    self.message('Workspace configuration reloaded.')
+        except Exception as e:
+            print(e)
+            #else:
+            #    wkp = self.wk.get_paths(keys=['work'])
+            #    msg = 'Workspace configuration file {} not found in {}'
+            #    self.error(msg.format(dataio.Workspace.cfg_name, wkp['work']))     
        
     def update_workspace(self):
         """Update workspace configuration according to the widget values."""
@@ -2256,9 +2261,16 @@ class UI():
             for key in self.ui:
                 if key in inp['ui']:
                     #print('updating {}'.format(key))
-                    self.ui[key].set_values(inp['ui'][key])
-                    self.ui[key].update_widgets() 
-                    self.ui[key].notify()
+                    try:
+                        self.ui[key].set_values(inp['ui'][key])
+                        self.ui[key].update_widgets() 
+                        self.ui[key].notify()
+                    except Exception as e:
+                        with self._err:
+                            print('Problem with settig value {}:'.format(key))
+                            print('{}:'.format(inp['ui'][key]))
+                            print(e)
+                        raise e
             self.ui['workspace'].validate_workspace()
         except Exception as e:
             with self._err:

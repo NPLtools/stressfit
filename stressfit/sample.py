@@ -428,19 +428,23 @@ def convGauge(x, xdir, iext, nev, ifunc=None):
     Returns
     -------
     array:
-        [x, pos, width, cnts, eps]
+        [x, pos, width, cnts, eps, ctr, err]
     
     Where:
        -  x : scan positions [mm]
        -  pos : information depth
        -  width : information width (FWHM) 
        -  cnts : intensity (=sampling volume)
-       -  eps :  pseudo-strain (NOT converted to 10^-6 units!)   
+       -  eps :  pseudo-strains [1e-6] 
+       -  ctr : xyz coordinates of the sampling centre of gravity
+       -  err : errors of pseudo-strain [1e-6] 
+       
     """
     global shape, _sampling
     # initialize local variables
     nx = x.shape[0]
     yc = np.zeros(nx)
+    yc2 = np.zeros(nx)
     yd = np.zeros(nx)
     yi = np.zeros(nx)
     yd2 = np.zeros(nx)
@@ -459,6 +463,7 @@ def convGauge(x, xdir, iext, nev, ifunc=None):
     # loop through sampling events to make convolution
     sumw = 0.
     sump = 0.
+    sumn = 0
     for ir in rnd:
         rn = _sampling.sdata[ir, jr:jr+3] - _sampling.sctr
         r0 = shape.getLocalPos(rn)
@@ -486,25 +491,38 @@ def convGauge(x, xdir, iext, nev, ifunc=None):
         wd = w*d
         weps = w*eps
         sumw += w
+        sumn += ins
         yi += w
         yc += weps
+        yc2 += weps*eps
         yd += wd
         yd2 += wd*d
+        
+        #if ir/30 - int(ir/30)  == 0:
+        #    fmt = 6*'{:g}\t'
+        #    print(fmt.format(w[0], eps*1e6, weps[0]*1e6, sumw[0], 
+        #                     yc[0]*1e6, yc[0]/sumw[0]*1e6))
+        
         for j in range(3):
             rc[:,j] += w*r[:,j]
     # This will avoid division by zero warnings:
-    sg = np.array( (sumw > 0) , dtype=int)
-    yc += (1-sg)*1.
+        
+    sg = np.array((sumn > 0) & (sumw > 0) & (sump > 0), dtype=int)
+    sumn += (1-sg)*1
+    sump += (1-sg)*1.
     sumw += (1-sg)*1
     cnts = sg*yi/sump
     eps = sg*yc/sumw
+    err = sg*yc2/sumw
     pos = sg*yd/sumw
     epos = sg*yd2/sumw
     ctr = np.zeros((nx,3))
     for j in range(3):
         ctr[:,j] = sg*rc[:,j]/sumw
     width = 2.3548*sg*np.sqrt(np.absolute(epos - pos**2))
-    return np.array([x, pos, width, cnts, 1e6*eps, ctr[:,0], ctr[:,1], ctr[:,2]]).T
+    err = sg*np.sqrt(np.absolute(err - eps**2)/sumn) + (1-sg)*np.average(eps)
+    return np.array([x, pos, width, cnts, 1e6*eps, 
+                     ctr[:,0], ctr[:,1], ctr[:,2], 1e6*err]).T
 
 def convIntensity(x, model, iext=0):
     """Convolution of the scattering intensity distribution

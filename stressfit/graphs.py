@@ -197,6 +197,7 @@ def plot_resolution(model,
              plotInfoDepth(model, ax=axx[i], save=save, file=file)
         if what[i]=='cog':
              plotCOG(model, ax=axx[i], save=save, file=file)
+    fig.tight_layout()
     fn = str(file)
     if (save and fn):
         plt.savefig(fn, bbox_inches='tight')
