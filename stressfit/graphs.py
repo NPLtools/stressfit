@@ -499,6 +499,10 @@ def plot_results(data, ax=None, save=False, file=''):
     ax1.grid()
     if 'legend' in data:
         ax1.legend(loc='best', frameon=True)
+    if 'xlim' in data:
+        ax1.set_xlim(data['xlim'])
+    if 'ylim' in data:
+        ax1.set_ylim(data['ylim'])
     if ax is None:
         fn = str(file)
         if (save and fn):
