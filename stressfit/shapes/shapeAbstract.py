@@ -26,7 +26,7 @@ class ShapeAbstract:
         self._isRot = False
         self._pos = np.zeros(3)
         self._sdir = np.array([0., 0., 1.])
-        self._sctr = np.zeros(3)
+        self._sctr = np.zeros(3) # not used 
 
     ### Abstract methods to be overriden
 

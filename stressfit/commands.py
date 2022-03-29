@@ -444,6 +444,7 @@ def set_geometry(geometry):
     sam.shape.reset()
     sam.shape.rotate(*list(_geom.angles))
     sam.shape.moveTo(-_geom.scanorig)
+    sam.shape.set_scan(_geom.scandir, np.zeros(3))
 
 def set_scan(scan):
     """Set scan parameters."""
@@ -563,6 +564,7 @@ def set_shape(shape, **kwargs):
         sam.shape.reset()
         sam.shape.rotate(*list(_geom.angles))
         sam.shape.moveTo(_geom.scanorig)
+        sam.shape.set_scan(_geom.scandir, np.zeros(3))
 
 
 def set_workspace(workdir):
@@ -949,7 +951,7 @@ def run_fit_reg(model, maxiter=100, areg=[1e-4, 1e-3], outname=None, guess=True)
     maxiter : int, optional
         Maximum number of iterations. 
     areg : array of float
-        Regularization parametesr.The length of the aray defines the number of
+        Regularization parameters.The length of the aray defines the number of
         fits. 
     outname: str, optional
         Filename for output data. A prefix 'a(n)_' will be aded for yeach loop.

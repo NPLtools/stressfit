@@ -959,7 +959,11 @@ class UI_shape(UI_base):
     def update_widgets(self):
         """Update parameter input widgets from data."""
         if self._values['shape'] != self.select:
+            # NOTE: change_shape resets parameers to default
+            # we have to restore them to current values
+            param = copy.deepcopy(self._values['param'])
             self._on_change_shape({'name':'value', 'new':self._values['shape']})
+            self._values['param'] = param
         param = self._values['param']
         items = self._widgets['param']
         for key in param:
@@ -1692,7 +1696,7 @@ class UI_data(UI_base_list):
     def __init__(self, name, workspace, samplings, geometries, options, header='Input data'):
         self.wk = workspace
         super().__init__(name,  
-                         ['strain', 'intensity', 'ori', 'sampling','nrec'],
+                         ['strain', 'intensity', 'ori', 'sampling'],
                          list_template='80px auto auto repeat(2,100px)',
                          list_hdr=['ID','strain', 'intensity',  
                                    'orientation','sampling'],
@@ -2262,9 +2266,13 @@ class UI():
                 if key in inp['ui']:
                     #print('updating {}'.format(key))
                     try:
+                        #if key=='shape':
+                        #    print(inp['ui'][key])
                         self.ui[key].set_values(inp['ui'][key])
                         self.ui[key].update_widgets() 
+                        #print('updating {}'.format(key))
                         self.ui[key].notify()
+                        #print('done {}'.format(key))
                     except Exception as e:
                         with self._err:
                             print('Problem with settig value {}:'.format(key))

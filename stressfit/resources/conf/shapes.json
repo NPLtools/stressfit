@@ -50,5 +50,16 @@
 			"rho1": {"label":"rho 1","value":[0.02,0.0],"unit":"1/mm","hint":"Curvatures of the front surface (x,y)"},
 			"rho2": {"label":"rho 2","value":[0.02,0.0],"unit":"1/mm","hint":"Curvatures of the rear surface (x,y)"}
 		}
+	},
+  	"PolygonBar": {
+  		"name":"Polygonal bar",
+  		"hint":"A bar with polygonal footprint, axis along y",
+  		"param": {
+  			"num": {"label":"num","value":6,"unit":"mm","hint":"Number of sides"},
+  			"side": {"label":"side","value":10.0,"unit":"mm","hint":"Side length"},
+  			"height": {"label":"height","value":15.0,"unit":"mm","hint":"Dimension along y-axis"},
+  			"angle": {"label":"angle","value":0.0,"unit":"deg","hint":"Rotation angle of the polygon"}
+
+  		}
 	}
 }

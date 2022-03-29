@@ -48,16 +48,16 @@ class ShapePolygonBar(ShapeAbstract):
     def __init__(self, num=6, side=10.0, height=50.0, angle=0.0, edges=None,
                  sdir=[0,0,1], sctr=[0,0,0]):
         super().__init__()
-        self.num = num
+        self.num = int(num)
         self.side = side
         self.height = height
         self.angle = angle
         self.edges = edges
         self.set_scan(sdir, sctr)
-        self._define_edges(edges)
+        self._define_edges(edges=edges)
     
         
-    def _define_edges(self, edges):
+    def _define_edges(self, edges=None):
         """Calculate edges coordinates from input parameters."""
         if edges is not None:
             self.num = len(self.edges)
@@ -101,20 +101,21 @@ class ShapePolygonBar(ShapeAbstract):
     def update(self, **kwargs):
         """Update parameters."""
         if 'num' in kwargs:
-            self.num = kwargs['num']
+            self.num = int(kwargs['num'])
         if 'side' in kwargs:
             self.side = kwargs['side']
         if 'height' in kwargs:
             self.height = kwargs['height']
         if 'angle' in kwargs:
             self.angle = kwargs['angle']
-        if 'edges' in kwargs:
-            self.edges = kwargs['edges']
         if 'sdir' in kwargs:
             self.set_scan(kwargs['sdir'], self._sctr)
         if 'sctr' in kwargs:
             self.set_scan(self._sdir, kwargs['sctr'])            
-        self._define_edges()
+        if 'edges' in kwargs:
+            self._define_edges(edges=kwargs['edges'])
+        else:
+            self._define_edges()
             
     def depthLocal(self, r):
         """Calculate depths under the surfaces.
