@@ -169,7 +169,7 @@ class ShapeTubes(ShapeAbstract):
     def plotContours(self, ax, proj, color, linestyle):
         gray = (0.2, 0.2, 0.2, 0.15)
         white = (1., 1., 1., 1.)
-        # projection plane: 0: (z, y); 1: (x, y); 2: (x, z)
+        # projection plane: 0: (z, y); 1: (x, z); 2: (x, y)
         if ((proj == 0) or (proj == 2)):
             if proj==0:
                 dx = self.ctr[:,2]

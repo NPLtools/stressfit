@@ -508,7 +508,68 @@ def plot_results(data, ax=None, save=False, file=''):
         if (save and fn):
             plt.savefig(fn, bbox_inches='tight')
         plt.show()
-            
+
+def plotShape(rang, proj, shape, arrows=True, file=''): 
+    """ Plot sample in 2D projection.
+    
+    Parameters
+    ----------
+        rang: touple[2]
+            plot area in mm
+        proj: int
+            projection plane: 0: (z, y); 1: (x, z); 2: (x, y)
+        shape: Shape
+            Shape object with sample geometry etc.
+        file: string
+            file name for the PNG output (leave empty to suppress file saving)
+    
+    """    
+    projections = [[2,1], [0,2], [0,1]]
+    [ix,iy] = projections[proj]
+    # centre in local coord.
+    rc = shape.getLocalPos([0., 0., 0.])
+    # plot range
+    xmin = -0.5*rang[0] + rc[ix]
+    xmax = +0.5*rang[0] + rc[ix]
+    ymin = -0.5*rang[1] + rc[iy]
+    ymax = +0.5*rang[1] + rc[iy]
+    
+    # make space for color legend
+    wleg = 0.0
+    wfig = 5  # size of the figure
+    if (rang[0] >= rang[1]):
+        size = (wleg + wfig, wfig*rang[1]/rang[0])
+    else:
+        size = (wleg+ wfig*rang[0]/rang[1], wfig)
+    
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=size)
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    lbl = ["x", "y", "z"]
+    ax.set_xlabel(lbl[ix]+", mm")
+    ax.set_ylabel(lbl[iy]+", mm")
+    
+    # plot shape
+    shape.plotContours(ax, proj, "#444444", "dashed")
+    
+    # plot ki, kf arrows and scan direction
+    if (arrows):
+        arrow_len = 0.25*rang[0]
+        arrw = 0.02*rang[0]
+        # scan arrow shows motion of the events w.r.t. sample shape !!!
+        xd = arrow_len*np.array(shape._sdir)/norm(shape._sdir)
+        # scan direction
+        ax.arrow(rc[ix], rc[iy], xd[ix], xd[iy],
+                 head_width=arrw, head_length=arrw, fc='r', ec='r')
+    plt.title("Sample shape {}".format(shape.shape_type))
+    if proj<2:
+        ax.invert_xaxis()
+    fn = str(file)
+    if fn:
+        plt.savefig(fn, bbox_inches='tight')
+    plt.show()
+    if fn:
+        print('Figure saved in {}.'.format(fn))
         
 def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False, 
               file='scene.png', arrows=True):

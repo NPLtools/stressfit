@@ -34,6 +34,70 @@ def get_metric_ell2D(a, b, angle):
     gm = R.dot(dia.dot(R.T))
     return gm
 
+
+def crossPolygon(r, k, height, sides, centres, normals, axes):
+    """Calculate cross-times with a polygon.
+    
+    Polygon walls are defined by the normal vectors aiming inside.
+    No check is made if the walls form a complete object.
+    
+    Recipe:
+    
+        1. Calculate flight times to the walls.
+        2. The signs of the time and r.dot(normal) decides if it is an 
+           entry or exit.
+        3. Entry is the maximum of entry times.
+        4. Exit is the minimum of exit times.
+
+    Parameters
+    ----------
+    r : array(:,3)
+        position vectors
+    k : array(3)
+        velocity vectors
+    height ; float
+        Height of the object
+    sides : array
+        side lengths of teh walls
+    centres : list of array[3]
+        centres of the walls
+    normals : list of array[3]
+        normals to the walls
+
+    Returns
+    -------
+    list [tin, tout]
+        where tin, tout are arrays of entry and exit times (tin < tout)
+    """
+    tin = -_inf*np.ones(r.shape[0])
+    tout = _inf*np.ones(r.shape[0])
+    for i in range(len(normals)):
+        d = (r-centres[i]).dot(normals[i])
+        vn = k.dot(normals[i])
+        sgn = np.sign(vn)
+        if abs(vn) > _eps:
+            t = -d/vn
+            kt = np.kron(t,k).reshape((-1,3))
+            xw = (r + kt - centres[i]).dot(axes[i]) 
+            yh = np.abs(r[:,1])
+            ins = np.array((xw<0.5*sides[i]) & (yh<0.5*height), dtype=int)
+            if sgn > 0:
+                # directs inside the object
+                tt = t*ins + _inf*(ins-1)
+                tin = np.maximum(tin,tt)
+            else:
+                # directs outside the object
+                tt = t*ins - _inf*(ins-1)
+                tout = np.minimum(tout,tt)
+            
+    # inspect cross-section with top/bottom walls
+    if abs(k[1]) > _eps:
+        [ty1, ty2] = crossLayer(height, r, k, 1)
+        tin = np.maximum(tin,ty1)
+        tout = np.minimum(tout,ty2)
+    return [tin, tout]
+            
+            
 def crossLayer(w, r, k, ix):
     """Calculate cross-times with plane parallel layer.
 
@@ -436,3 +500,6 @@ def crossPaths(cm):
     if (ic < 0):  # r must be behind the last layer
         ic = n[0]
     return [inside, ic, p1, p2]
+
+
+#%% test

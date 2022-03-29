@@ -42,6 +42,7 @@ from .shapeTube import ShapeTube
 from .shapeSph import ShapeSph
 from .shapeTubes import ShapeTubes
 from .shapeETubes import ShapeETubes
+from .shapePolygonBar import ShapePolygonBar
 
 # constants for shape identification
 Plate = 'Plate'
@@ -52,6 +53,7 @@ Sphere = 'Sphere'
 Shell = 'Shell'
 Tubes = 'Tubes'
 ETubes = 'ETubes'
+PolygonBar = 'PolygonBar'
 
 def create(shape, **kwargs):
     """Create an instance of a shape class.
@@ -69,6 +71,7 @@ def create(shape, **kwargs):
      - stressfit.shapes.Shell
      - stressfit.shapes.Tubes
      - stressfit.shapes.ETubes
+     - stressfit.shapes.PolygonBar
     
      **kwargs:
      Named arguments to the shape constructor.
@@ -93,6 +96,8 @@ def create(shape, **kwargs):
             comp = ShapeTubes(**kwargs)
        elif shape==ETubes:
             comp = ShapeETubes(**kwargs)
+       elif shape==PolygonBar:
+            comp = ShapePolygonBar(**kwargs)
        else:
            raise Exception('Undefined shape: {}'.format(shape))
     except Exception as e:
@@ -120,6 +125,10 @@ def help():
     print(ShapeShell.__doc__)
     print(fmt.format('Tubes'))
     print(ShapeTubes.__doc__)
+    print(fmt.format('ETubes'))
+    print(ShapeETubes.__doc__)
+    print(fmt.format('PolygonBar'))
+    print(ShapePolygonBar.__doc__)    
 
 def test():
     import stressfit.shapes as shapes
