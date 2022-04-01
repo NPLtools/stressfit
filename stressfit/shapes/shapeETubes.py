@@ -54,9 +54,19 @@ class ShapeETubes(ShapeAbstract):
         self.b = b
         self.angle = angle*np.pi/180    
         self.height = height
+        self.holes = holes
         self._set_holes(holes)
         self.set_scan(sdir, sctr) 
         
+    def get_param(self):
+        out = {}
+        out['a'] = self.a
+        out['b'] = self.b
+        out['height'] = self.height
+        out['angle'] = self.angle*180/np.pi
+        out['holes'] = self.holes
+        return out
+    
     def _set_holes(self, holes):
         """Set parameters of holes.
         
@@ -69,7 +79,8 @@ class ShapeETubes(ShapeAbstract):
                 - a, b : ellipse semi-axes
                 - angle : angle of the semi-axis a with respect to x [deg].
         """
-        self.holes = holes.copy()
+        if self.holes != holes:
+            self.holes = holes.copy()
         self.nh = len(self.holes)
         self.ctr = np.zeros((self.nh+1,3))
         self.gm = (self.nh+1)*[0]
@@ -80,21 +91,27 @@ class ShapeETubes(ShapeAbstract):
             self.gm[i+1] = tr.get_metric_ell2D(h['a'],h['b'],h['angle']*np.pi/180) 
                     
     def update(self, **kwargs):
-        """Update parameters."""        
+        """Update parameters."""    
+        _calc = False
         if 'a' in kwargs:
             self.a = kwargs['a']
+            _calc = True
         if 'b' in kwargs:
             self.b = kwargs['b']
+            _calc = True
         if 'angle' in kwargs:
             self.angle = kwargs['angle']*np.pi/180
+            _calc = True
         if 'height' in kwargs:
             self.height = kwargs['height']
-        if 'holes' in kwargs:
-            self._set_holes(kwargs['holes'])
         if 'sdir' in kwargs:
             self.set_scan(kwargs['sdir'], self._sctr)
         if 'sctr' in kwargs:
             self.set_scan(self._sdir, kwargs['sctr'])
+        if 'holes' in kwargs:
+            self._set_holes(kwargs['holes'])
+        elif _calc:
+            self._set_holes(self.holes)                 
 
     def depthLocal(self, r):
         """Calculate depths under the surfaces.

@@ -29,6 +29,11 @@ class ShapePlate(ShapeAbstract):
         super().__init__()
         self.t = thickness
 
+    def get_param(self):
+        out = {}
+        out['thickness'] = self.t
+        return out
+
     def update(self, **kwargs):
         """Update parameters."""
         if 'thickness' in kwargs:

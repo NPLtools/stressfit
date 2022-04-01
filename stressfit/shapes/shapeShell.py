@@ -30,6 +30,12 @@ class ShapeShell(ShapeAbstract):
         self.R1 = Rin
         self.R2 = Rout
 
+    def get_param(self):
+        out = {}
+        out['Rin'] = self.R1
+        out['Rout'] = self.R2
+        return out
+    
     def update(self, **kwargs):
         """Update parameters."""
         if 'Rin' in kwargs:

@@ -11,8 +11,15 @@ import abc
 import numpy as np
 from numpy.linalg import norm
 from . import tracing as tr
+import json
 # from numpy.linalg import norm
 
+
+
+
+def err_non_implemented(name):
+    msg = 'Subclass must implement abstract method: {}'
+    raise NotImplementedError(msg.format(name))
 
 class ShapeAbstract:
     """
@@ -31,9 +38,14 @@ class ShapeAbstract:
     ### Abstract methods to be overriden
 
     @abc.abstractmethod
+    def get_param(self):
+        """Get parameters as dict. """
+        err_non_implemented('get_param')
+
+    @abc.abstractmethod
     def update(self, **kwargs):
         """Update parameters."""
-        raise NotImplementedError("Subclass must implement abstract method")
+        err_non_implemented('update')
 
     @abc.abstractmethod
     def depthLocal(self, r):
@@ -55,7 +67,7 @@ class ShapeAbstract:
         
         """
         
-        raise NotImplementedError("Subclass must implement abstract method")
+        err_non_implemented('depthLocal')
 
     @abc.abstractmethod
     def cross(self, r, k):
@@ -77,7 +89,7 @@ class ShapeAbstract:
             The times must be sorted (t11 < t12 < t21 < t22 ...).
         """
         
-        raise NotImplementedError("Subclass must implement abstract method")
+        err_non_implemented('cross')
 
     @abc.abstractmethod    
     def rayPaths(self, r, ki, kf):
@@ -100,11 +112,38 @@ class ShapeAbstract:
             Arrays with input and output paths for each position.
         """
         
-        raise NotImplementedError("Subclass must implement abstract method")
+        err_non_implemented('rayPaths')
 
-    ### Class methods which should work for all descendants
+    ### Methods which should work for all descendants
 
+    def save(self, filename):
+        """Save the shape parameters in JSON fomat.
+        
+        The parameters are encapsulated in a dictionary as 
+        dict['stressfit']['shape']['param']. Apart of the parameters, 
+        the 'shape' item includes also:
+            'class' : the class name
+            'name' : the descriptive name of the shape
 
+        Parameters
+        ----------
+        filename : str
+            Output file name.
+
+        """
+        param = self.get_param()
+        out = {'shape': 
+               {'class':type(self).__name__, 
+                'name':self.shape_type,
+                'param': param}
+               }
+        txt = json.dumps({'stressfit':out},indent=4)
+        
+        with open(filename, 'w') as f:
+            f.write(txt)
+        
+
+        
     def set_scan(self, sdir, sctr):
         """Set scan direction and centre.
 

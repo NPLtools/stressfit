@@ -47,8 +47,18 @@ class ShapeTube(ShapeAbstract):
         i2 = [1, 0] # i2[self.sref] = index of the non-reference surface
         self.sref = sref
         self.uref = i2[self.sref]
+        
         self._set_ctr(ctr)
 
+    def get_param(self):
+        out = {}
+        out['Rin'] = self.R1
+        out['Rout'] = self.R2
+        out['height'] = self.height
+        out['ctr'] = self._input_ctr
+        out['sref'] = self.sref
+        return out
+    
     def _set_sref(self, sref):
         i2 = [1, 0] # i2[self.sref] = index of the non-reference surface
         old_sref = self.sref
@@ -69,6 +79,7 @@ class ShapeTube(ShapeAbstract):
         
         The reference surface is considered centered in the local frame.
         """
+        self._input_ctr = ctr
         self.ctr = np.zeros((2,3))
         sg = [-1, 1] # move relative to the reference circle
         i2 = [1, 0] # i2[self.sref] = index of the non-reference surface

@@ -27,6 +27,12 @@ class ShapeSph(ShapeAbstract):
         super().__init__()
         self.rad = radius
 
+    def get_param(self):
+        out = {}
+        out['radius'] = self.rad
+        
+        return out
+
     def update(self, **kwargs):
         """Update parameters."""
         if 'radius' in kwargs:

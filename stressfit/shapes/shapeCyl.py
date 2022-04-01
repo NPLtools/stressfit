@@ -30,6 +30,12 @@ class ShapeCyl(ShapeAbstract):
         self.rad = radius
         self.height = height
 
+    def get_param(self):
+        out = {}
+        out['radius'] = self.rad
+        out['height'] = self.height
+        return out
+
     def update(self, **kwargs):
         """Update parameters."""
         if 'radius' in kwargs:

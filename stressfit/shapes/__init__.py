@@ -43,13 +43,15 @@ from .shapeSph import ShapeSph
 from .shapeTubes import ShapeTubes
 from .shapeETubes import ShapeETubes
 from .shapePolygonBar import ShapePolygonBar
+import json
 
 # constants for shape identification
+# The strings should match the class names without the 'Shape' prefix
 Plate = 'Plate'
 PlateCurved = 'PlateCurved'
-Cylinder = 'Cylinder'
+Cylinder = 'Cyl'
 Tube = 'Tube'
-Sphere = 'Sphere'
+Sphere = 'Sph'
 Shell = 'Shell'
 Tubes = 'Tubes'
 ETubes = 'ETubes'
@@ -105,7 +107,38 @@ def create(shape, **kwargs):
         print(e)
     return comp
 
+def from_file(filename):
+    """Create a shape instance form a file in JSON format. 
+    
+    The file structure should correspond to the output of the 
+    :meth:`save` method of given class.
+    
 
+    Parameters
+    ----------
+    filename : str
+        Input file in JSON format.
+
+    Returns
+    -------
+    Instance of a shape class (descendant of ShapeAbstract)
+
+    """
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+    inp = json.loads('\n'.join(lines))
+    if 'stressfit' not in inp:
+        raise Exception('Not a Stressfit file.')
+    if 'shape' not in inp['stressfit']:
+        raise Exception('No shape defined in the input file.')
+    data = inp['stressfit']['shape']
+    clsname = data['class']
+    if clsname.startswith('Shape'):
+        clsname = clsname[5:]
+    param =  data['param']  
+    obj = create(clsname,**param)     
+    return obj
+    
 def help():
     print('Call create(shape, **kwargs) to create an instance of sample shape.')
     fmt = '\n'+50*'-'+'\n'+'stressfit.shapes.{}\n'+50*'-'+'\n'
@@ -130,29 +163,8 @@ def help():
     print(fmt.format('PolygonBar'))
     print(ShapePolygonBar.__doc__)    
 
-def test():
-    import stressfit.shapes as shapes
-#Infinite plate:
-    assert shapes.create(shapes.Plate,thickness=10)
-#Cylinder:
-    assert shapes.create(shapes.Cylinder, radius=10)
-#Sphere:
-    assert shapes.create(shapes.Sphere, radius=12)
-#Tube:
-    assert shapes.create(shapes.Tube, Rin=4, Rout=12, height=30, ctr=[0,0], 
-                         sref=0)
-#Hollow sphere:
-    assert shapes.create(shapes.Shell, Rin=4, Rout=12)
-#Curved plate:
-    assert shapes.create(shapes.PlateCurved, rho1=[0.03, 0.0], 
-                         rho2=[0.03, 0.0])
-#Tubes:
-    assert shapes.create(shapes.Tubes, Rout=7, height=30, 
-                         Rin=[3, 2], 
-                         ctr=[[-4, 0],[3, 0]], 
-                         sdir=[0,0,1],
-                         sctr=[0,0,0])    
-    # print('stressfit.shapes.test OK')
+
+    
 
 
 

@@ -43,6 +43,15 @@ class ShapePlateCurved(ShapeAbstract):
 
 # overriden abstract methods:
 
+    def get_param(self):
+        out = {}
+        out['thickness'] = self.t
+        out['length'] = self.size[0]
+        out['height'] = self.size[1]
+        out['rho1'] = self.rho1.tolist()
+        out['rho2'] = self.rho2.tolist() 
+        return out
+    
     def update(self, **kwargs):
         """Update parameters."""
         if 'thickness' in kwargs:

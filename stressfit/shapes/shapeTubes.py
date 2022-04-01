@@ -53,12 +53,21 @@ class ShapeTubes(ShapeAbstract):
         if not qry:
             raise Exception('Number of centers must equal the number of Rin values plus one.')
         self._set_ctr(ctr)
-        
+    
+    def get_param(self):
+        out = {}
+        out['Rin'] = self.R1
+        out['Rout'] = self.R2
+        out['height'] = self.height
+        out['ctr'] = self._input_ctr
+        return out
+    
     def _set_ctr(self, ctr):
         """Set centre of the non-reference surface.
         
         The reference surface is considered centered in the local frame.
         """
+        self._input_ctr = ctr
         nc = len(ctr)
         self.ctr = np.zeros((nc+1,3))
         for i in range(1,nc+1):

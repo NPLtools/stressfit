@@ -52,19 +52,20 @@ class ShapePolygonBar(ShapeAbstract):
         self.side = side
         self.height = height
         self.angle = angle
-        self.edges = edges
         self.set_scan(sdir, sctr)
         self._define_edges(edges=edges)
     
         
     def _define_edges(self, edges=None):
         """Calculate edges coordinates from input parameters."""
+        self._input_edges = edges
         if edges is not None:
-            self.num = len(self.edges)
+            self.num = len(edges)
             self.angle = 0.0
             self.edges = []
             for i in range(self.num):
-                self.edges[i] = [edges[i][0], 0, edges[i][1]]
+                self.edges.append([edges[i][0], 0, edges[i][1]])
+            self._def_by_edges = True
         else:
             deg = np.pi/180
             a = 360/self.num
@@ -75,6 +76,7 @@ class ShapePolygonBar(ShapeAbstract):
                 x = R*np.sin(ang*deg)
                 z = R*np.cos(ang*deg)
                 self.edges.append([x, 0, z])
+            self._def_by_edges = None
         # calculate sides, centres and normals and side axes of the walls 
         self.sides = []
         self.centres = []
@@ -96,7 +98,16 @@ class ShapePolygonBar(ShapeAbstract):
             self.centres.append(wctr)
             self.normals.append(wnorm)
             self.axes.append(rs)
-            
+    
+    def get_param(self):
+        out = {'height': self.height}
+        if self._def_by_edges:
+            out['edges'] = self._input_edges
+        else:
+            out['num'] = int(self.num)
+            out['side'] = self.side
+            out['angle'] = self.angle
+        return out
 
     def update(self, **kwargs):
         """Update parameters."""
