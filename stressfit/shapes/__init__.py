@@ -100,6 +100,8 @@ def create(shape, **kwargs):
             comp = ShapeETubes(**kwargs)
        elif shape==PolygonBar:
             comp = ShapePolygonBar(**kwargs)
+       elif shape=='File':
+            comp = from_file(**kwargs)
        else:
            raise Exception('Undefined shape: {}'.format(shape))
     except Exception as e:
@@ -107,7 +109,7 @@ def create(shape, **kwargs):
         print(e)
     return comp
 
-def from_file(filename):
+def from_file(filename=''):
     """Create a shape instance form a file in JSON format. 
     
     The file structure should correspond to the output of the 
@@ -124,6 +126,8 @@ def from_file(filename):
     Instance of a shape class (descendant of ShapeAbstract)
 
     """
+    if not filename:
+        return None
     with open(filename, 'r') as f:
         lines = f.readlines()
     inp = json.loads('\n'.join(lines))

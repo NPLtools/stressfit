@@ -6,7 +6,7 @@
 			"thickness": {"label":"thickness","value":10.0,"unit":"mm","hint":"Dimension along z-axis"}
 		}
 	},
-    "Cylinder": {
+    "Cyl": {
 		"name":"Cylinder",
 		"hint": "A rod with axis = y.",
 		"param": {
@@ -14,7 +14,7 @@
 			"height": {"label":"height","value":50.0,"unit":"mm","hint":""}
 		}
 	},
-    "Sphere": {
+    "Sph": {
 		"name":"Sphere",
 		"hint": "",
 		"param": {
@@ -31,6 +31,16 @@
 			"ctr": {"label":"hole centre","value":[0.0,0.0],"unit":"mm","hint":"x,z coordinates of the hole centre"},
 			"sref": {"label":"reference surface","value":["inner", "outer"],"unit":"","hint":"Select reference surface for depth calculation"}
 		}
+	},
+  	"ETubes": {
+  		"name":"ETubes",
+  		"hint":"An elliptic cylinder with coaxial elliptic holes",
+  		"param": {
+  			"a": {"label":"a","value":15.0,"unit":"mm","hint":"Major semi-axis"},
+  			"b": {"label":"b","value":10.0,"unit":"mm","hint":"Minor semi-axis"},
+  			"height": {"label":"height","value":25.0,"unit":"mm","hint":"Dimension along y-axis"},
+  			"angle": {"label":"angle","value":0.0,"unit":"deg","hint":"Angle of the semi-axis a with respect to x"}
+  		}
 	},
     "Shell": {
 		"name":"Hollow sphere", 
@@ -50,7 +60,7 @@
 			"rho1": {"label":"rho 1","value":[0.02,0.0],"unit":"1/mm","hint":"Curvatures of the front surface (x,y)"},
 			"rho2": {"label":"rho 2","value":[0.02,0.0],"unit":"1/mm","hint":"Curvatures of the rear surface (x,y)"}
 		}
-	},
+	},	
   	"PolygonBar": {
   		"name":"Polygonal bar",
   		"hint":"A bar with polygonal footprint, axis along y",
@@ -60,6 +70,13 @@
   			"height": {"label":"height","value":15.0,"unit":"mm","hint":"Dimension along y-axis"},
   			"angle": {"label":"angle","value":0.0,"unit":"deg","hint":"Rotation angle of the polygon"}
 
+  		}
+	},
+	"File": {
+  		"name":"File",
+  		"hint":"A shape loaded from a file",
+  		"param": {
+  			"filename": {"label":"File name","value":"shape_polygon.json","unit":"","hint":"Choose file with shape definition (JSON format)"}
   		}
 	}
 }

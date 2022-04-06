@@ -372,18 +372,20 @@ class FileInput(BasicInput):
     """
     
     def __init__(self,  name='', file='',path='', label='', fileonly=False,
-                 tooltip='', width_label=150, width_button=50):
+                 filetypes=None,
+                 tooltip='', width='100%', width_label=150, width_button=50):
         
         super().__init__(name, '.')
         self._path = path
         self._fileonly = fileonly
+        self._filetypes = filetypes
         self._set_file(file)
         self.label = label
         self.tooltip = tooltip
         w_lbl = '{}px'.format(width_label)
         w_btn = '{}px'.format(width_button)
         self.lbl = ipy.Label(self.label, layout=ipy.Layout(min_width=w_lbl))
-        self.txt = ipy.Text(self._file,layout=ipy.Layout(width='100%'),
+        self.txt = ipy.Text(self._file,layout=ipy.Layout(width=width),
                             continuous_update=False)
         self.btn = ipy.Button(description='',  
                                layout=ipy.Layout(width=w_btn),
@@ -482,7 +484,8 @@ class FileInput(BasicInput):
     def _on_button(self,ex):
         """Open path dialog and save result."""
         s = choose_file(initialdir=self._fullname.parent.as_posix(), 
-                        initialfile=self._fullname.name)
+                        initialfile=self._fullname.name,
+                        filetypes=self._filetypes)
         if s:
             try:
                 self._set_file(s)
@@ -494,7 +497,7 @@ class FileInput(BasicInput):
         """Text change - update value."""
         if change['name']=='value':
             s = change['new']
-            if s is not None:
+            if s is not None and s != "":
                 try:
                     self._set_file(s)
                     self._call_observe()

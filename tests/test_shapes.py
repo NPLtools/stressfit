@@ -96,7 +96,7 @@ def test_shapes():
     assert _deep_comp(obj.get_param(), obj2.get_param())
     print('stressfit.shapes.test OK')
     
-def test_polygon(verbose=False):
+def test_polygon(verbose=False, outfile='tmp.json'):
     _eps = 1e-10
     deg = np.pi/180
     sdir = [np.cos(60*deg), 0, np.sin(60*deg)]
@@ -116,6 +116,8 @@ def test_polygon(verbose=False):
         [0, 10.0]
         ]
     shape = shapes.create('PolygonBar', edges=edges, height=20, sdir=sdir) 
+    fn = dataio.get_output_file(outfile)
+    shape.save(fn)
     
     ki = np.array([0,0,1])
     kf = np.array([np.cos(30*deg), 0, np.sin(30*deg)])

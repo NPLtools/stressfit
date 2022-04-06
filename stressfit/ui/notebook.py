@@ -245,9 +245,12 @@ class UI_base:
             if clear:
                 self._err.clear_output()
             with self._err:
-                s = "<font color='red'>{}</font>".format(txt)
-                t = ipy.HTML(value=s)
-                display(t)
+                if isinstance(txt, Exception):
+                    print(txt)
+                else:
+                    s = "<font color='red'>{}</font>".format(txt)
+                    t = ipy.HTML(value=s)
+                    display(t)
         else:
             print(txt)
 
@@ -493,7 +496,7 @@ class UI_base_list(UI_base):
             try:
                 self._check_keys(data)
             except Exception as e:
-                print(e)
+                self.error(e)
             self.set_values({'input':data})
         self._values['list'][name] = copy.deepcopy(self._values['input'])
         
@@ -744,7 +747,7 @@ class UI_workspace(UI_base):
             #    msg = 'Workspace configuration saved in {}/{}.'
             #    self.message(msg.format(wkp['work'],dataio.Workspace.cfg_name))
         except Exception as e:
-            print(e)
+            self.error(e)
     
     def _on_load(self, b):
         """Re-load workspace configuration from workspace root directory."""
@@ -757,7 +760,7 @@ class UI_workspace(UI_base):
                     self.update_values()
                     self.message('Workspace configuration reloaded.')
         except Exception as e:
-            print(e)
+            self.error(e)
             #else:
             #    wkp = self.wk.get_paths(keys=['work'])
             #    msg = 'Workspace configuration file {} not found in {}'
@@ -859,6 +862,7 @@ class UI_shape(UI_base):
         super().__init__(name, ['shape', 'param'])        
         self.uiparam['title'] = 'Sample shape'
         self._out = ipy.Output(layout=ipy.Layout(border='1px solid'))
+        self._shape_info = None
 
     def _init_values(self, **kwargs):
         self._values['shape'] = self.select
@@ -888,9 +892,59 @@ class UI_shape(UI_base):
         self._values['param'].clear()
         self._values['param'].update(param)
         
+    def _on_load(self, obj):
+        try:
+            self.update_values()
+            fn = self._values['param']['filename']
+            fullname = dataio.get_input_file(fn['file'], path=fn['path'])
+            obj = shapes.create(self._values['shape'],filename=fullname)
+            comm.set_shape(obj)
+            
+            # print info about loaded shape
+            if self._shape_info is not None:
+                self._shape_info.clear_output()
+                with self._shape_info:
+                    print(type(obj).__name__)
+                    print(obj.get_param())
+                
+        except Exception as e:
+            self.error(e)
+        
+    def _reset_widgets_file(self):
+        """Create widgets for file input, if select = File."""
+        # param = self.shapes[self.select]['param']
+        param = self._values['param']
+        self._widgets['shape'].value = self.select
+        items = {}
+        for key in param:
+            p = param[key]
+            value =p['value'] 
+            desc = p['label']
+            hint = p['hint']
+            if isinstance(value, str):
+                wgt = FileInput(name=key, 
+                       file=value, 
+                       path=dataio.workspace().path('data'),
+                       #fileonly=True,
+                       filetypes=(('Setup files','*.json')),
+                       label=desc,
+                       tooltip=hint,
+                       width='50%',
+                       width_label=130)
+            else:
+                raise Exception('Unknown parameter type: {}'.format(value))
+            wgt.observe(self._on_change_param)
+            items[key] = wgt
+        self._widgets['param'].clear()
+        self._widgets['param'].update(items)
+        self.update_values()
+        
     def _reset_widgets(self):
         """Re-fill self._widgets with input widgets for selected shape."""
         # param = self.shapes[self.select]['param']
+        if self.select == 'File':
+            self._reset_widgets_file()
+            return
         param = self._values['param']
         self._widgets['shape'].value = self.select
         items = {}
@@ -903,7 +957,8 @@ class UI_shape(UI_base):
             if uni:
                 hint = ' [{}]'.format(uni) + ' ' + hint
             if isinstance(value, float) or isinstance(value, int):
-                wgt = ArrayInput(name=key, value=value, label=desc, hint=hint)
+                wgt = ArrayInput(name=key, value=value, label=desc, hint=hint,
+                                 isInt = isinstance(value, int))
             elif isinstance(value, list):
                 if isinstance(value[0],float):
                     wgt = ArrayInput(name=key, value=value, label=desc, hint=hint)
@@ -924,6 +979,8 @@ class UI_shape(UI_base):
         Calls `self._call_change(shape=select)`.
         """
         self._call_change(**{'shape':self.select})
+        if self.select == 'File':
+            self._on_load(None)
 
     def _on_change_param(self, inp):
         key = inp['name']
@@ -949,6 +1006,18 @@ class UI_shape(UI_base):
             wdg = []
             for w in self._widgets['param'].values():
                 wdg.append(w.ui())
+                
+            if self.select == 'File':
+                appl = ipy.Button(description='Load',
+                          tooltip='Load shape from the file.',
+                          layout=ipy.Layout(width='10%'))
+                appl.on_click(self._on_load)
+                wdg.append(appl)
+                self._shape_info = ipy.Output(layout=ipy.Layout(border='none'))
+                wdg.append(self._shape_info)
+            else:
+                self._shape_info = None
+                
             box = ipy.VBox(wdg, layout=layout)
             self._out.clear_output()
             with self._out:
@@ -1001,6 +1070,8 @@ class UI_shape(UI_base):
     def create_shape(self):
         """Create selected shape instance from stressfit.shapes."""
         self.update_values()
+        #print('create_shape: '+self._values['shape'])
+        #print(self._values['param'])
         comp = shapes.create(self._values['shape'],**self._values['param'])
         return comp
 
@@ -1198,7 +1269,7 @@ class UI_sampling(UI_base_list):
             self._data[name] = sampling
         except Exception as e:
             self._delete(name)
-            raise(e)
+            self.error(e)
         if update_table:
             self._update_table()        
         
@@ -1907,7 +1978,7 @@ class UI_data(UI_base_list):
                 self._update_table()
         except Exception as e:
             self._delete(name)
-            raise(e)
+            self.error(e)
     
     def _plot_comparison(self, simdata, expdata):
         
@@ -2186,11 +2257,13 @@ class UI():
         if obj.name == 'shape':
             if 'shape' in kwargs:
                 data.update(**obj.get_values())
-                comp = self.ui['shape'].create_shape()
-                comm.set_shape(comp)
+                if self.ui['shape'].select != 'File':
+                    comp = self.ui['shape'].create_shape()
+                    comm.set_shape(comp)
             else:
                 data['param'].update(**kwargs)
-                comm.set_shape(None,**kwargs)
+                if self.ui['shape'].select != 'File':
+                    comm.set_shape(None,**kwargs)
         elif obj.name == 'workspace':
             if 'work' in kwargs:
                 data.update(**obj.get_values())
