@@ -15,6 +15,7 @@ _compl = None
 _setup = {}
 
 def validate_workspace(verbose=True):
+    """Check that all worsoace paths are valid."""
     try:
         dataio.workspace().validate_paths()
         if verbose:
@@ -135,7 +136,7 @@ def plot_scene(nev, scan=None, filename='', rang=[30, 30], proj=1, save=True):
                  save=save, file=outpng)
 
 def cal_smeared_strain(scan_range, eps=None, intensity=None, nev=3000):
-    """Calculate smeared strain and intensity distributions.     
+    """Calculate smeared strain and intensity distributions.
     
     Parameters
     ----------
@@ -334,8 +335,7 @@ def report_pseudo_strains(scan_range, file,
     use_int : bool
         Use previously fitted intensity distribution in calculation 
         of pseudo-strain.
-    """
-    
+    """   
     data, model = cal_pseudo_strains(scan_range, nev=nev, use_int=use_int)
     if not intensity and 'intensity' in data:
         del data['intensity']                          
@@ -452,8 +452,7 @@ def set_scan(scan):
     if sam.shape is None:
         raise Exception('Sample shape not defined. Use set_shape().')
     
-    keys =  ['scandir','scanorig','angles','rotctr']
-    scan_geometry = {key: scan[key] for key in keys}
+    scan_geometry = {key: scan[key] for key in Geometry.input_keys}
     set_geometry(scan_geometry)
     
     # Make sure the scan has sampling points defined.
@@ -729,20 +728,22 @@ def report_fit(model, filename, **kwargs):
         fn = ''
     model.reportFit(file=str(fn), **kwargs)
     
-def define_ifit(scan, nodes, nev, **kwargs):
+def define_ifit(scan, nodes, nev, ndim=200, **kwargs):
     """Define model for fitting intensity scan.
 
     Parameters
     ----------
     scan : dict
         Scan properties, as returned by :func:`~stressfit.commands.load_input`.
-    nodes : list(4) or array
-        [x,y,fx,fy], where x,y are the node coordinates and fx,fy 
+    nodes : list(4) or array or dict
+        [x,y,fitx,fity], where x,y are the node coordinates and fitx,fity 
         are flags (0|1) marking corresponding free parameters. 
     nev : int
         Number of sampling events to be used for convolution.
+    ndim : int
+        Number of points for interpolated distribution function.
     **kwargs : 
-        Other arguments pased to Ifit constructor.
+        Other arguments passed to Ifit constructor.
 
     Returns
     -------
@@ -750,12 +751,15 @@ def define_ifit(scan, nodes, nev, **kwargs):
         Instance of :class:`~stressfit.mccfit.Ifit`
 
     """
-    [x,y,fx,fy] = nodes
+    if isinstance(nodes, dict):
+        [x,y,fx,fy] = [nodes[k] for k in ['x', 'y', 'fitx', 'fity']]
+    else:
+        [x,y,fx,fy] = nodes
     set_geometry(scan)
     ifit = mc.Ifit(nev=nev, xdir=_geom.scandir, **kwargs)
     ifit.data = scan['int']
-    # define the intensity distribution, dim=number of points for interpolation 
-    ifit.defDistribution([x, y], [fx, fy], ndim=200)
+    # define the intensity distribution, dim=number of points for interpolation     
+    ifit.defDistribution([x, y], [fx, fy], ndim=ndim)
     return ifit
 
 

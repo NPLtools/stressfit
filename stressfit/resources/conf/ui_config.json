@@ -1,0 +1,64 @@
+{
+    "uiconfig": {
+        "workspace": {
+            "work": "",
+            "data": "",
+            "tables": "",
+            "instruments": "",
+            "output": ""
+        },
+        "options": {
+            "prefix": "",
+            "save": true
+        },
+        "scene": {
+            "nrec": 3000,
+            "proj": 1,
+            "rang": 16,
+            "sampling": "1x1x5mm",
+            "geometry": "radial"
+        },
+        "resolution": {
+            "sampling": "1x1x5mm",
+            "geometry": "radial",
+            "nrec": 3000,
+            "strain": true,
+            "resolution": true,
+            "rang": [-10,10],
+            "steps": 21
+        },
+        "data": {
+            "nrec": 3000     
+        },
+        "fit_idist": {
+            "data": "radial",
+			"dist": "radial",
+			"nrec": 3000,
+			"npts": 100,
+			"fit": {
+				"maxiter": 100,
+				"guess": true,
+				"loops": 1,
+				"areg": 1e-3
+			}	
+        },
+		"fit_edist": {
+            "data": "radial",
+			"dist": "radial",
+			"nrec": 3000,
+			"npts": 100,
+			"fit": {
+				"maxiter": 200,
+				"guess": true,
+				"loops": 3,
+				"areg": 1e-7
+			},
+			"reg": {
+				"amin": 1e-9,
+				"amax": 1e-4,
+				"steps": 6
+            }
+
+        }   
+    }
+}

@@ -1,0 +1,51 @@
+{
+    "uinput": {
+        "geometry": {
+            "angles": [135,0,0],
+            "rotctr": [0,0,0],
+            "scandir": [0,0,-1],
+            "scanorig": [0,0,0]
+        },
+        "sampling": {
+            "file": {
+                "file": "events_S_1mm.dat",
+                "path": ""
+            },
+            "nrec": 3000
+        },
+        "data": {
+            "strain": "eps_SS_rad.dat",
+            "intensity": "int_SS_rad.dat",
+            "geometry": "radial",
+            "sampling": "1x1x5mm"   
+        },
+        "idist": {
+            "dist": {
+                "x": [0.0,0.5,1.0,2.0,3.0,4.0],
+                "fitx": [0,0,0,0,0,0],
+                "y": [1.0,1.0,1.0,1.0,1.0,1.0],
+                "fity": [1,1,1,1,1,1]
+            },
+			"scale": {
+                "keys": ["y-scale","y0","x0"],
+                "values": [1e4,0.0,0.0],
+                "fit": [0,0,0]
+            },
+            "interp": "natural"
+        },
+        "edist": {
+            "dist": {
+                "x": [0.0,2.0,4.0,6.0,8.0,10.0],
+                "fitx": [0,1,1,1,1,0],
+				"y": [0.0,0.0,0.0,0.0,0.0,0.0],
+				"fity": [1,1,1,1,1,1]
+			},
+			"scale": {
+				"keys": ["y-scale","y0","x0"],
+				"values": [1.0,0.0,0.0],
+				"fit": [0,0,0]
+			},
+			"interp": "natural"
+        }        
+    }
+}

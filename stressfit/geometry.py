@@ -41,6 +41,8 @@ class Geometry:
             Rotation matrix (transform vectors to sample frame)
     """
     
+    input_keys = ['scandir', 'scanorig', 'angles', 'rotctr']
+    
     def __init__(self, **kwargs):
         """Create Geometry object with default settings.
         

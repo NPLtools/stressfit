@@ -230,7 +230,10 @@ def create_text(name='', label='Text',value='', indent=False,
 #%% Single-value input containers
 
 class BasicInput():
-    """Basic input class with name and callback on value change."""
+    """Basic input class with name and callback on value change.
+    
+    Do not use directly, implement own descendant classes.
+    """
     
     def __init__(self, name, value):
         self.name = name
@@ -256,6 +259,100 @@ class BasicInput():
     def value(self, value):
         """Value setter."""
         self._value = value
+
+    def ui(self):
+        """Return the input widget container."""
+        return None
+
+
+class ComposedInput(BasicInput):
+    """An input composed of multiple widgets for a set of values.
+       
+    Use the property 'value' to set or retrieve fit configuration data. 
+    
+    This is a base class which does nothing. Descendants should implement
+    at least _create_values and _create_widgets methods.
+    
+    Parameters
+    ----------
+    name: str
+        Name of this component. 
+    value : dict
+        Initial values.
+    align : str
+        vertical or horizontal alignment
+    layout : obj
+        Layout object to be passed to the flex container (either VBox or HBox)
+    """
+    
+    def __init__(self, name='', value=None, align='vertical', 
+                 layout = None):
+        super().__init__(name, {})
+        self._widgets = {}
+        self.align = align
+        if layout:
+            self.layout = layout
+        else:
+            self.layout = ipy.Layout()
+        self._create_values()
+        if isinstance(value, dict):
+            self.value = value
+    
+    @property
+    def value(self):
+        """Value getter."""
+        self._update_values()        
+        return self._value
+    
+    @value.setter
+    def value(self, value):
+        """Value setter."""
+        for key in value:
+            if key in self._value:
+                self._value[key] = value[key]
+        self._update_widgets()
+                
+    def _create_values(self):
+        """Define initial input data, one per widget.
+        
+        Called by constructor.
+        """
+        pass
+    
+    def _create_widgets(self):
+        """Create widgets, one per value.
+        
+        Called by :meth:`ui` when creating the widgets. 
+        """
+        pass
+    
+    def _update_values(self):
+        """Update values from widgets."""
+        for key in self._widgets:
+            if key in self._value:
+                self._value[key] = self._widgets[key].value    
+                
+    
+    def _update_widgets(self):
+        """Update widgets from values."""
+        for key in self._widgets:
+            if key in self._value:
+                self._widgets[key].value = self._value[key]
+
+    def ui(self):
+        """Return the input widgets."""
+        self._create_widgets()
+        wdg = []
+        for key in self._widgets:
+            if isinstance(self._widgets[key], BasicInput):
+                wdg.append(self._widgets[key].ui())
+            else:
+                wdg.append(self._widgets[key])
+        if self.align == 'vertical':
+            out = ipy.VBox(wdg, layout=self.layout)       
+        else:
+            out = ipy.HBox(wdg, layout=self.layout)
+        return out
 
 
 class DirInput(BasicInput):
@@ -301,17 +398,8 @@ class DirInput(BasicInput):
         self.btn.on_click(self._on_button)
         self.txt.observe(self._on_text,'value', type='change')
 
-
-    def observe(self, func):
-        """Define callback function invoked when value changes."""
-        self._observe = func
-
-    @property
-    def value(self):
-        """Value getter."""
-        return self._value
     
-    @value.setter
+    @BasicInput.value.setter
     def value(self, value):
         """Value setter."""
         # temporary switch off calling of observe.
@@ -690,7 +778,6 @@ class SelectInput(BasicInput):
         self.input = ipy.Dropdown(description='', options=self._options, 
                                       layout=layout,
                                       continuous_update=False)
-        
         if value is not None:
             self.value = value
         else:
@@ -700,19 +787,27 @@ class SelectInput(BasicInput):
     
     @property
     def options(self):
+        """Get options."""
         return self._options
     
     @options.setter
     def options(self, value):
         self._options = value
+        val = self._value # remember old value
         self.input.options = self._options
-    
-    @property
-    def value(self):
-        """Get selected value."""
-        return self._value
-    
-    @value.setter
+        # try to restore old value if possible
+        if len(self._options)==0:
+            return
+        # get list of values from options
+        if isinstance(self._options[0],str):
+            values = list(self._options)
+        else:
+            values = list(dict(self._options).values())
+        if val != self.input.value and val in values:
+            self.input.value = val
+        
+        
+    @BasicInput.value.setter
     def value(self, value):
         """Set value to the widget."""
         val = self._value
@@ -725,7 +820,7 @@ class SelectInput(BasicInput):
        
     @property
     def index(self):
-        """Selected index."""
+        """Return selected index."""
         return self.input.index
     
     @index.setter
@@ -782,9 +877,9 @@ class SelectInput(BasicInput):
 class DistTable(BasicInput):
     """Table with xy nodes describing a free function.
     
-    Beased in ipysheet, https://github.com/QuantStack/ipysheet/.
+    Based on ipysheet, https://github.com/QuantStack/ipysheet/.
     
-    Displays and handles a list of x,y coordinates and fix attributes. 
+    Displays and handles a list of x,y coordinates and fit attributes. 
     It serves to describe a free distribution functions for fitting.
     
     To display the widget, call display(ui()), and then call redraw() 
@@ -797,7 +892,7 @@ class DistTable(BasicInput):
     name: str
         Name of this component. 
     value : dict
-        x, y, fix_x amd fix_y lists. 
+        x, y, fitx amd fity lists. 
         x,y are lists of float numbers. dix_x,y are boolean values.
     nx: int
         Number of nodes for default table.
@@ -806,24 +901,23 @@ class DistTable(BasicInput):
         
     """
     
-    _headers = ['x','fix_x','y','fix_y']   
+    _headers = ['x','fitx','y','fity']   
     def __init__(self, name='', value=None, nx=6, x_range=[0.0, 10.0],
-                 border='1px solid', width='auto'):
+                 border='1px solid', label='distribution'):
         super().__init__(name, value)
         self.num_format = '0.0'
         self._cells = {}
         self._row_select = []      
         self._data = {}
         self._border = border
-        self._width = width
+        self._label = label
         
         self._set_default_data(nx=nx, x_range=x_range)
         if isinstance(value, dict):
             self.import_data(value)
         self._data_orig = self._copy_data()
-        layout = ipy.Layout(min_width=self._width, height='auto', 
-                            border='none', 
-                            margin='0px 0px 0px 0px')
+        layout = ipy.Layout(width='100%', height='auto', border='none', 
+                            padding='0px')
         self._out = ipy.Output(layout=layout)
     
     @property
@@ -840,9 +934,9 @@ class DistTable(BasicInput):
     def _set_default_data(self, nx=6, x_range=[0.0, 10.0]):
         [x1, x2] = x_range
         self._data['x'] = list(np.linspace(x1, x2, num=nx))
-        self._data['fix_x'] = nx*[True]
+        self._data['fitx'] = nx*[1]
         self._data['y'] = list(np.zeros(nx))
-        self._data['fix_y'] = nx*[False]
+        self._data['fity'] = nx*[0]
         self._data_orig = self._copy_data()
     
     def _copy_data(self):
@@ -862,7 +956,7 @@ class DistTable(BasicInput):
     
     def _render_readonly(self, value):
         out = {}
-        print(value)
+        #print(value)
         if value.read_only:
             out = {'backgroundColor' : "#EEEEEE"}
         return out
@@ -870,46 +964,80 @@ class DistTable(BasicInput):
     def _create_sheet(self):
         """Create ipysheet from table data (self._data)."""
         nr = len(self._data['x'])  
-        layout = ipy.Layout(min_width='auto', height='auto', 
+        layout = ipy.Layout(width='auto', height='auto', 
                             border='none', 
-                            margin='0px 0px 0px 0px')
-        sheet = ipysheet.sheet(rows=nr, columns=len(DistTable._headers)+1,
+                            margin='0px', padding='0px')
+        sheet = ipysheet.sheet(rows=nr, 
+                               columns=len(DistTable._headers)+1,
                                row_headers = False,
                                column_headers = [' ']+DistTable._headers,
                                stretch_headers='none', layout=layout)
-               
+        sheet.column_width = [50] + len(DistTable._headers)*[50]
         stl = {'textAlign':'center'}
         gbcg = "#EEEEEE"
         
-        # other data cells
+        # convert int to to bool
+        fitx = list(map(bool,self._data['fitx']))
+        fity = list(map(bool,self._data['fity']))
+        
+        # fill table cells, treat 1st and last columns separately
         self._cells.clear()
-        self._cells['x'] = ipysheet.column(1, self._data['x'][1:nr-1], 
-                                                row_start=1, numeric_format=self.num_format)
-        self._cells['fix_x'] = ipysheet.column(2, self._data['fix_x'][1:nr-1], 
-                                                    row_start=1, type='checkbox', style=stl)
-        self._cells['y'] = ipysheet.column(3, self._data['y'][1:nr-1], 
-                                                row_start=1, numeric_format=self.num_format)
-        self._cells['fix_y'] = ipysheet.column(4, self._data['fix_y'][1:nr-1], 
-                                                    row_start=1, type='checkbox', style=stl)
+        
+        self._cells['x'] = ipysheet.column(1, 
+                                           self._data['x'][1:nr-1], 
+                                           row_start=1, 
+                                           numeric_format=self.num_format)
+        self._cells['fitx'] = ipysheet.column(2, 
+                                               fitx[1:nr-1], 
+                                               row_start=1, 
+                                               type='checkbox', 
+                                               style=stl)
+        self._cells['y'] = ipysheet.column(3, 
+                                           self._data['y'][1:nr-1], 
+                                           row_start=1, 
+                                           numeric_format=self.num_format)
+        self._cells['fity'] = ipysheet.column(4, 
+                                               fity[1:nr-1], 
+                                               row_start=1, 
+                                               type='checkbox', 
+                                               style=stl)
 
-        # x[0] and x[-1] must be always a fixed parameter        
-        self._cells['00'] = ipysheet.cell(0,1, self._data['x'][0], type='numeric',
-                                              numeric_format=self.num_format)
-        ipysheet.cell(0,2, [None], read_only=True, background_color=gbcg);
-        self._cells['02'] = ipysheet.cell(0,3, self._data['y'][0], type='numeric',
-                                              numeric_format=self.num_format)
-        self._cells['03'] = ipysheet.cell(0,4, self._data['fix_y'][0], type='checkbox', 
-                                               style=stl, background_color="white")
-
-        self._cells['10'] = ipysheet.cell(nr-1,1, self._data['x'][nr-1], type='numeric',
-                                              numeric_format=self.num_format)
+        # 1st row
+        # 1st x must be always a fixed parameter        
+        self._cells['00'] = ipysheet.cell(0, 1, 
+                                          self._data['x'][0], 
+                                          type='numeric',
+                                          numeric_format=self.num_format)
+        ipysheet.cell(0,2, [None], read_only=True, background_color=gbcg);        
+        self._cells['02'] = ipysheet.cell(0, 3, 
+                                          self._data['y'][0], 
+                                          type='numeric',
+                                          numeric_format=self.num_format)
+        self._cells['03'] = ipysheet.cell(0, 4, 
+                                          fity[0], 
+                                          type='checkbox', 
+                                          style=stl, 
+                                          background_color="white")
+        
+        # last row
+        # last x must be always a fixed parameter  
+        self._cells['10'] = ipysheet.cell(nr-1, 1, 
+                                          self._data['x'][nr-1], 
+                                          type='numeric',
+                                          numeric_format=self.num_format)
         ipysheet.cell(nr-1,2, [None], read_only=True, background_color=gbcg);
-        self._cells['12'] = ipysheet.cell(nr-1,3, self._data['y'][nr-1], type='numeric',
-                                              numeric_format=self.num_format)
-        self._cells['13'] = ipysheet.cell(nr-1,4, self._data['fix_y'][nr-1], type='checkbox', 
-                                               style=stl, background_color="white")
+        self._cells['12'] = ipysheet.cell(nr-1, 3, 
+                                          self._data['y'][nr-1], 
+                                          type='numeric',
+                                          numeric_format=self.num_format)
+        self._cells['13'] = ipysheet.cell(nr-1, 4, 
+                                          fity[nr-1], 
+                                          type='checkbox', 
+                                          style=stl, 
+                                          background_color="white")
         
         # 1st column: check boxes for row selection
+        # 1st and last row cannot be selected
         ipysheet.cell(0, 0, [None], read_only=True, background_color=gbcg);
         self._row_select = ipysheet.column(0, (nr-2)*[False], row_start=1, 
                                            style=stl,
@@ -925,9 +1053,12 @@ class DistTable(BasicInput):
             raise Exception('DistTable: no sheet data.')
         data = {}
         data['x'] = [self._cells['00'].value] + self._cells['x'].value + [self._cells['10'].value]
-        data['fix_x'] = [True] + self._cells['fix_x'].value + [True]
         data['y'] = [self._cells['02'].value] + self._cells['y'].value + [self._cells['12'].value]
-        data['fix_y'] = [self._cells['03'].value] + self._cells['fix_y'].value + [self._cells['13'].value]
+        # convert bool to int
+        fit = [False] + self._cells['fitx'].value + [False]   
+        data['fitx'] = list(map(int,fit))
+        fit = [self._cells['03'].value] + self._cells['fity'].value + [self._cells['13'].value]
+        data['fity'] = list(map(int,fit))
         self._data = data
 
     def _delete_rows(self):
@@ -935,11 +1066,13 @@ class DistTable(BasicInput):
         try:
             self._sheet_to_data()
             sel = self._row_select.value
+            # must have at least 3 nodes
+            lensel = min(len(sel), len(self._data['x']) - 3)
             # collect data items to be deleted
             delc = {}
             for k in self._data:
                 delc[k] = []
-            for i in range(len(sel)):
+            for i in range(lensel):
                 if sel[i]:
                     for k in self._data:
                         delc[k].append(self._data[k][i+1])
@@ -974,8 +1107,8 @@ class DistTable(BasicInput):
                 y = 0.5*(d0['y'][i-1] + d0['y'][i])
                 self._data['x'].insert(j,x)
                 self._data['y'].insert(j,y)
-                self._data['fix_x'].insert(j,d0['fix_x'][i])
-                self._data['fix_y'].insert(j,d0['fix_y'][i])
+                self._data['fitx'].insert(j,d0['fitx'][i])
+                self._data['fity'].insert(j,d0['fity'][i])
                 di += 1
             self.redraw()
         except Exception as e:
@@ -1011,38 +1144,69 @@ class DistTable(BasicInput):
         dict
             - x :  x-coordinates an array of float
             - y :  y-values an array of float
-            - fix_x : fix flags for x values as an array of int
-            - fix_y : fix flags for y values as an array of int
+            - fitx : fit flags for x values as an array of int
+            - fity : fit flags for y values as an array of int
         """
         self._sheet_to_data()
         return {'x': np.array(self._data['x']), 
                 'y': np.array(self._data['y']),
-                'fix_x':np.array(np.array(self._data['fix_x']),dtype=int),
-                'fix_y':np.array(np.array(self._data['fix_xy']),dtype=int)}
+                'fitx':np.array(self._data['fitx'],dtype=int),
+                'fity':np.array(self._data['fity'],dtype=int)}
             
     def redraw(self):
         """Redraw the input table."""
-        self._create_sheet()
+        with ipysheet.hold_cells():
+            self._create_sheet()
         self._out.clear_output()
         with self._out:
             display(self.sheet)
     
     def ui(self):
         """Return the input container."""
+        btn_padd = '0px, 5px, 0px, 5px'
         del_btn = ipy.Button(description='delete', 
-                             layout=ipy.Layout(width='60px'), 
+                             layout=ipy.Layout(width='auto', padding=btn_padd), 
                              tooltip='delete row')
         del_btn.on_click(self._on_del_button)
         add_btn = ipy.Button(description='insert', 
-                             layout=ipy.Layout(width='60px'), 
+                             layout=ipy.Layout(width='auto', padding=btn_padd), 
                              tooltip='insert row')
         add_btn.on_click(self._on_add_button)
         #lbl = ipy.Label('Rows: ')
-        layout = ipy.Layout(width=self._width, border=self._border, 
-                            margin='0px 0px 0px 0px')
-        hb = ipy.HBox([del_btn, add_btn])
+        main_layout = ipy.Layout(display='flex',
+                            width='28em', 
+                            border=self._border, 
+                            margin='0px')
+        
+        dist_layout = ipy.Layout(display='flex',
+                            border='none', 
+                            padding='0px')
+        
+        btn_layout = ipy.Layout(display='flex', 
+                                padding='0.4em')
+
+        
         self._create_sheet()
-        out = ipy.VBox([hb, self._out],layout=layout)
+        
+        btn_pos = 'left'
+        if btn_pos =='left':
+            btn_layout.width = '7em'
+            hb = ipy.VBox([del_btn, add_btn], layout=btn_layout)
+            dist = ipy.HBox([hb, self._out], layout=dist_layout)
+        elif btn_pos =='right':
+            btn_layout.width = '7em'
+            hb = ipy.VBox([del_btn, add_btn], layout=btn_layout)
+            dist = ipy.HBox([self._out, hb], layout=dist_layout)
+        else:
+            btn_layout.width = '15em'
+            hb = ipy.HBox([del_btn, add_btn], layout=btn_layout)
+            dist = ipy.VBox([hb,self._out], layout=dist_layout)            
+        
+        if self._label:
+            lb = create_header(self._label, size='+0')
+            out = ipy.VBox([lb, dist],layout=main_layout)
+        else:
+            out = ipy.VBox([dist], layout=main_layout)
         return out
       
 
@@ -1050,7 +1214,7 @@ class DistTable(BasicInput):
 class ScaleTable(BasicInput):
     """Table with distribution scale parameters.
     
-    Beased in ipysheet, https://github.com/QuantStack/ipysheet/.
+    Based in ipysheet, https://github.com/QuantStack/ipysheet/.
        
     Use the property 'value' to set or retrieve table data as dict. 
     
@@ -1061,17 +1225,21 @@ class ScaleTable(BasicInput):
     value : dict
         - keys : names of the values as list 
         - value : y-scale, y-offset and x-offset as list
-        - fix : corresponding fix attributes as bool as list
+        - fit : corresponding fit attributes as bool as list
     """
     
-    _headers = ['keys','values','fix']
+    _headers = ['keys','values','fit']
     
-    def __init__(self, name='', value=None, fmt='0.00'):
+    def __init__(self, name='', value=None, fmt='0.00', label='scale'):
         super().__init__(name, value)
         self.num_format = fmt
         self._cells = {}
         self._data = {}
         self._set_default_data()
+        self._label = label
+        self._log_out = ipy.Output(layout=ipy.Layout(width='100%', 
+                                                 border='none'))
+        self.sheet = None
         if isinstance(value, dict):
             self.import_data(value)
     
@@ -1088,7 +1256,7 @@ class ScaleTable(BasicInput):
     def _set_default_data(self):
         self._data['keys'] = ['y-scale', 'y0', 'x0']
         self._data['values'] = [1.0, 0.0, 0.0]
-        self._data['fix'] = [True, True, True]
+        self._data['fit'] = [1, 1, 1]
         self._data_orig = self._copy_data()
     
         
@@ -1102,35 +1270,58 @@ class ScaleTable(BasicInput):
                 
     def _create_sheet(self):
         """Create ipysheet from table data (self._data)."""
-        layout=ipy.Layout(width='auto', height='auto', border='none', 
-                          margin='0px 0px 0px 0px')
-        sheet = ipysheet.sheet(rows=3, columns=2,
+        layout=ipy.Layout(width='14em', height='15ex', 
+                          border='none', 
+                          margin='0px', padding='0px')
+        sheet = ipysheet.sheet(key=self.name, rows=3, columns=2,
                                row_headers = self._data['keys'],
-                               column_headers = ['value', 'fixed'],
-                               stretch_headers='none', layout=layout)
+                               column_headers = ['value', 'fit'],
+                               stretch_headers='all', layout=layout)
+        #sheet.column_width = [70, 70, 70]
         stl = {'textAlign':'center'}
         vals = self._data['values']
-        fixes = self._data['fix']
+        fixes = list(map(bool,self._data['fit']))
+        
         self._cells.clear()
         self._cells['values'] = ipysheet.column(0, vals, row_start=0, 
                                                numeric_format=self.num_format)
-        self._cells['fix'] = ipysheet.column(1, fixes, row_start=0, 
+        self._cells['fit'] = ipysheet.column(1, fixes, row_start=0, 
                                              type='checkbox', style=stl)
         self.sheet = sheet
+        
+        #self._log('_create_sheet:\n{}'.format(self._data))
+        #self._log('_cells[fit]:\n{}'.format(self._cells['fit']))
+        
     
     def _sheet_to_data(self):
         """Retrieve self._data from the sheet."""
         for key in self._cells:
-            self._data[key] = self._cells[key].value
-    
+            if key=='fit':
+                # convert bool to int ...
+                self._data[key] = list(map(int,self._cells[key].value))
+            else:
+                self._data[key] = self._cells[key].value
+                
     def _data_to_sheet(self):
         """Set self._data to the sheet."""
-        for key in self._cells:
-            if key in self._data:
-                self._cells[key].value = self._data[key]
-        self.sheet.row_headers = self._data['keys']
-        for c in self._cells:
-            self._cells[c].send_state()
+        if self.sheet:
+            #self._log('_data_to_sheet:\n{}'.format(self._data))
+            #with ipysheet.hold_cells():
+            for key in self._cells:
+                if key in self._data:
+                    if key=='fit':
+                        # convert int to bool ...
+                        self._cells[key].value = list(map(bool,self._data[key]))
+                    else:
+                        self._cells[key].value = self._data[key]
+                    
+            self.sheet.row_headers = self._data['keys']
+            for c in self._cells:
+                self._cells[c].send_state()
+
+    def _log(self, msg):
+        with self._log_out:
+            print(msg)
 
     def reset(self):
         """Reset to original value."""
@@ -1138,6 +1329,8 @@ class ScaleTable(BasicInput):
     
     def import_data(self,data, set_as_orig=False):
         """Import new data."""
+        #self._log('import_data:\n{}'.format(data))
+        
         if not all(k in data.keys() for k in ScaleTable._headers):
             raise Exception('Invalid import data: missing keys.')
         nr = len(data['values'])
@@ -1161,12 +1354,12 @@ class ScaleTable(BasicInput):
         -------
         dict
             - value : scale, y0 and x0 as an array of float
-            - fix : fix flags as an array of int
+            - fit : fit flags as an array of int
         """
         self._sheet_to_data()
         vals = self._data['values']
-        fixes = self._data['fix']
-        return {'values': np.array(vals), 'fix':np.array(fixes,dtype=int)}
+        fixes = self._data['fit']
+        return {'values': np.array(vals), 'fit':np.array(fixes,dtype=int)}
     
     def redraw(self):
         """Update table after manual change of parameters."""
@@ -1175,4 +1368,76 @@ class ScaleTable(BasicInput):
     def ui(self):
         """Return the input widget."""
         self._create_sheet()
+        dist_layout = ipy.Layout(display='flex',
+                                 width='auto',
+                                 border='none', 
+                                 padding='0.4em',
+                                 margin='0px 0px 0px 10px')
+        if self._label:
+            #lb = create_header(self._label, size='+0')
+            lb = ipy.Label(value=self._label)
+            out = ipy.VBox([lb, self.sheet, self._log_out], layout=dist_layout)
+        else:
+            out = ipy.VBox([self.sheet, self._log_out], layout=dist_layout)
+        return out
+        
+        
         return self.sheet
+
+
+class FitControl(ComposedInput):
+    """Control fit settings.
+       
+    Use the property 'value' to set or retrieve fit configuration data. 
+    
+    Parameters
+    ----------
+    name: str
+        Name of this component. 
+    value : dict
+        - maxiter : int, maximum iterations
+        - loops :int,  maximum number of bootstrap loops
+        - areg : float, regularization parameter
+    """
+    
+    def __init__(self, name='', value=None, layout = None):
+        super().__init__(name, value, 
+                         align='vertical',
+                         layout=layout)
+                
+    def _create_values(self):
+        self._value['maxiter'] = 200
+        self._value['guess'] = True
+        self._value['loops'] = 1
+        self._value['areg'] = 1e-7
+    
+    def _create_widgets(self):
+        """Create value widgets."""
+        maxiter = ArrayInput(name='maxiter', 
+                             label='Iterations', 
+                             hint='',
+                             value=self._value['maxiter'],
+                             isInt=True, step=10, lmin=1, lmax=1000,
+                             width_label=80)
+        loops = ArrayInput(name='loops', 
+                           label='Loops', 
+                           hint='Number of bootstrap loops',
+                           value=self._value['loops'],
+                           isInt=True, step=1, lmin=1, lmax=10,
+                           width_label=80)
+        areg = ArrayInput(name='areg', 
+                           label='A_reg', 
+                           hint='Regularization parameter',
+                           value=self._value['areg'],
+                           width_label=80)     
+        guess = create_checkbox(name='guess', 
+                                label='Guess',
+                                value=self._value['guess'], 
+                                indent=False,
+                                width_label=80, width_box=80,  
+                                tooltip='Quick approximation before fit')
+        self._widgets['maxiter'] = maxiter
+        self._widgets['loops'] = loops
+        self._widgets['areg'] = areg
+        self._widgets['guess'] = guess
+

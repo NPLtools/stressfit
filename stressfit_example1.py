@@ -84,25 +84,27 @@ comm.validate_workspace()
 # ### Sample shape
 # Sample dimensions depend on the selected shape. Choose one of the classes defined in the Shapes folder of the package:
 # 
-# <code> S.create('Plate', thickness=10.0) </code> <br />
+# <code>import stressfit.shapes as S</code><br />
+#
+# <code> S.create(S.Plate, thickness=10.0) </code> <br />
 # An infinitely large flat plate of given thickness.
 # 
-# <code> S.create('PlateCurved',thickness=5.0, length=50.0, height=15.0, rho1=[0.02, 0.0], rho2=[0.02, 0.0]) </code><br />
+# <code> S.create(S.PlateCurved,thickness=5.0, length=50.0, height=15.0, rho1=[0.02, 0.0], rho2=[0.02, 0.0]) </code><br />
 # A curved plate of given thickness (z), length (x) and height (y). <code>rho1</code> are curvature radii along x and y of the front surcae (z>0). <code>rho2</code> are the radii for the rear surface.
 # 
-# <code> S.create('Cylinder', radius=4.0, height=30.0) </code><br />
+# <code> S.create(S.Cylinder, radius=4.0, height=30.0) </code><br />
 # A cylindrical shape with axis along y-axis.
 # 
-# <code> S.create('Tube', Rin=4.0, Rout=8.0, height=30.0, ctr=[0,0], sref=1) </code><br /> 
+# <code> S.create(S.Tube, Rin=4.0, Rout=8.0, height=30.0, ctr=[0,0], sref=1) </code><br /> 
 # A hollow cylinder with axis along y-axis. 
 # - Rin, Rout are the inner and outer radii.
 # - ctr is the x,z position of the hole centre
 # - sref defines the reference surface for depth calculation (0/1 for the inner/outer surface)
 # 
-# <code> S.create('Sphere', radius=8.0) </code> <br />
+# <code> S.create(S.Sphere, radius=8.0) </code> <br />
 # A spherical sample.
 # 
-# <code> S.create('ETubes', a=8.0, b=8.0, angle=0.0, height=30.0, holes=[], sdir=[0,0,1], sctr=[0,0,0]) </code><br />
+# <code> S.create(S.ETubes, a=8.0, b=8.0, angle=0.0, height=30.0, holes=[], sdir=[0,0,1], sctr=[0,0,0]) </code><br />
 # A cylinder with axis || y and multiple coaxial elliptic holes.
 # 
 #     a : float
@@ -124,6 +126,10 @@ comm.validate_workspace()
 #     sctr : array_like
 #         Scan origin in local coordinates. 
 # 
+# For complete help on sample shapes, use
+#
+# <code>S.help()</code>
+#
 # ### Input data
 # The input experimental data are integral peak intensities and strains measured as a function of scan depth. They are provided as text files with three columns: depth [mm], intensity [any unit] or strain [$\mu\epsilon = 10^{-6}$], and error (std. deviation). 
 # 
@@ -142,7 +148,7 @@ comm.validate_workspace()
 radius1 = 4.
 radius2 = 8
 height = 50.0
-shape = S.create('Tube', Rin=4.0, Rout=8.0, height=50.0)
+shape = S.create(S.Tube, Rin=4.0, Rout=8.0, height=50.0)
 
 # Define input data for measured strain and intensity
 # 3-column text format with scan position, value and error
@@ -194,7 +200,8 @@ scan = comm.load_input(strain, intensity=intensity,scandir=scandir,
 # Load and set sampling distribution
 sampling = comm.load_sampling(sampling_file, path=sampling_path, maxn=nev_load)
 sampling.print_properties()
-comm.set_sampling(sampling)
+scan['sampling'] = sampling
+# comm.set_sampling(sampling)
 
 # Set beam attenuation
 comm.set_attenuation(att)    

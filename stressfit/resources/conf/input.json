@@ -7,11 +7,15 @@
             "instruments": "d:/saroun/git/stressfit/stressfit/resources/instruments",
             "output": "C:/Users/saroun/Documents"
         },
+        "options": {
+            "prefix": "",
+            "save": true
+        },
         "shape": {
             "shape": "Tube",
             "param": {
-                "Rin": 5.0,
-                "Rout": 9.0,
+                "Rin": 4.0,
+                "Rout": 8.0,
                 "height": 50.0,
                 "ctr": [
                     0.0,
@@ -21,28 +25,6 @@
             }
         },
         "geometry": {
-            "input": {
-                "angles": [
-                    135,
-                    0,
-                    0
-                ],
-                "scandir": [
-                    0,
-                    0,
-                    1
-                ],
-                "rotctr": [
-                    0,
-                    0,
-                    0
-                ],
-                "scanorig": [
-                    0,
-                    0,
-                    0
-                ]
-            },
             "list": {
                 "radial": {
                     "angles": [
@@ -50,15 +32,15 @@
                         0,
                         0
                     ],
-                    "scandir": [
-                        0,
-                        0,
-                        1
-                    ],
                     "rotctr": [
                         0,
                         0,
                         0
+                    ],
+                    "scandir": [
+                        0,
+                        0,
+                        -1
                     ],
                     "scanorig": [
                         0,
@@ -66,20 +48,46 @@
                         0
                     ]
                 }
+            },
+            "input": {
+                "angles": [
+                    135,
+                    0,
+                    0
+                ],
+                "rotctr": [
+                    0,
+                    0,
+                    0
+                ],
+                "scandir": [
+                    0,
+                    0,
+                    -1
+                ],
+                "scanorig": [
+                    0,
+                    0,
+                    0
+                ]
             }
         },
         "sampling": {
-            "input": {
-                "file": "events_S_1mm.dat",
-                "path": "d:/saroun/git/stressfit/stressfit/resources/data",
-                "nev": 3000
-            },
             "list": {
                 "1x1x5mm": {
-                    "path": "d:/saroun/git/stressfit/stressfit/resources/data",
-                    "file": "events_S_1mm.dat",
+                    "file": {
+                        "file": "events_S_1mm.dat",
+                        "path": "d:/saroun/git/stressfit/stressfit/resources/data"
+                    },
                     "nev": 3000
                 }
+            },
+            "input": {
+                "file": {
+                    "path": "d:/saroun/git/stressfit/stressfit/resources/data",
+                    "file": "events_S_1mm.dat"
+                },
+                "nev": 3000
             }
         },
         "attenuation": {
@@ -89,6 +97,96 @@
             },
             "value": 1.1,
             "type": "table"
+        },
+        "scene": {
+            "nrec": 3000,
+            "proj": 1,
+            "rang": 16,
+            "sampling": "1x1x5mm",
+            "ori": "radial"
+        },
+        "resolution": {
+            "sampling": "1x1x5mm",
+            "ori": "radial",
+            "nrec": 3000,
+            "strain": true,
+            "resolution": true,
+            "rang": [
+                -10,
+                10
+            ],
+            "steps": 21
+        },
+        "data": {
+            "list": {
+                "radial": {
+                    "strain": "eps_SS_rad.dat",
+                    "intensity": "int_SS_rad.dat",
+                    "ori": "radial",
+                    "sampling": "1x1x5mm"
+                }
+            },
+            "input": {
+                "strain": "eps_SS_rad.dat",
+                "intensity": "int_SS_rad.dat",
+                "ori": "radial",
+                "sampling": "1x1x5mm"
+            },
+            "nrec": 3000
+        },
+        "idist": {
+            "dist": {
+                "x": [
+                    0.0,
+                    2.0,
+                    4.0,
+                    6.0,
+                    8.0,
+                    10.0
+                ],
+                "fix_x": [
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                    true
+                ],
+                "y": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "fix_y": [
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false
+                ]
+            },
+            "scale": {
+                "keys": [
+                    "y-scale",
+                    "y0",
+                    "x0"
+                ],
+                "values": [
+                    1.0,
+                    0.0,
+                    0.0
+                ],
+                "fix": [
+                    true,
+                    true,
+                    true
+                ]
+            },
+            "interp": "natural"
         }
     }
 }
