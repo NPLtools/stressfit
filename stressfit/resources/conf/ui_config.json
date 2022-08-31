@@ -1,12 +1,5 @@
 {
     "uiconfig": {
-        "workspace": {
-            "work": "",
-            "data": "",
-            "tables": "",
-            "instruments": "",
-            "output": ""
-        },
         "options": {
             "prefix": "",
             "save": true
@@ -30,9 +23,9 @@
         "data": {
             "nrec": 3000     
         },
-        "fit_idist": {
+        "fit_imodel": {
             "data": "radial",
-			"dist": "radial",
+			"model": "radial",
 			"nrec": 3000,
 			"npts": 100,
 			"fit": {
@@ -42,9 +35,9 @@
 				"areg": 1e-3
 			}	
         },
-		"fit_edist": {
+		"fit_emodel": {
             "data": "radial",
-			"dist": "radial",
+			"model": "radial",
 			"nrec": 3000,
 			"npts": 100,
 			"fit": {

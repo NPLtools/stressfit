@@ -19,7 +19,7 @@
             "geometry": "radial",
             "sampling": "1x1x5mm"   
         },
-        "idist": {
+        "imodel": {
             "dist": {
                 "x": [0.0,0.5,1.0,2.0,3.0,4.0],
                 "fitx": [0,0,0,0,0,0],
@@ -33,7 +33,7 @@
             },
             "interp": "natural"
         },
-        "edist": {
+        "emodel": {
             "dist": {
                 "x": [0.0,2.0,4.0,6.0,8.0,10.0],
                 "fitx": [0,1,1,1,1,0],

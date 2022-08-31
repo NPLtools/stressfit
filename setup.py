@@ -17,9 +17,12 @@ other_data = ['stressfit_example1.py',
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
+with open("VERSION", "r") as fh:
+    version_string = fh.readlines()[0]
+
 setup(
     name='stressfit',
-    version='1.0.0',
+    version=version_string,
     description='Fitting of residual stress distributions measured by neutron diffraction.',
     long_description = long_description,
     long_description_content_type='text/markdown',

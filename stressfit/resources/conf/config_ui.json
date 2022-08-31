@@ -1,0 +1,195 @@
+{
+    "udata": {
+        "shape": {
+            "shape": "Tube",
+            "param": {
+                "Rin": 4.0,
+                "Rout": 8.0,
+                "height": 50.0,
+                "ctr": [ 0.0, 0.0 ],
+                "sref": 0
+            }
+        },
+        "geometry": {
+            "list": {
+                "radial": {
+                    "angles": [ 135, 0, 0 ],
+                    "rotctr": [ 0, 0, 0 ],
+                    "scandir": [ 0, 0, -1 ],
+                    "scanorig": [ 0, 0, 0 ]
+                }
+            }
+        },
+        "sampling": {
+            "list": {
+                "1x1x5mm": {
+                    "file": {
+                        "file": "events_S_1mm.dat",
+                        "path": ""
+                    },
+                    "nrec": 3000,
+                    "fdata": null
+                }
+            }
+        },
+        "attenuation": {
+            "table": {
+                "path": "",
+                "file": "Fe_mu.dat",
+                "fdata": null
+            },
+            "value": 1.1,
+            "type": "table"
+        },
+        "data": {
+            "list": {
+                "radial": {
+                    "strain": "eps_SS_rad.dat",
+                    "intensity": "int_SS_rad.dat",
+                    "geometry": "radial",
+                    "sampling": "1x1x5mm",
+                    "fdata": null
+                }
+            }
+        },
+        "imodel": {
+            "list": {
+                "radial": {
+                    "dist": {
+                        "x": [ 0.0, 0.5, 1.0, 2.0, 3.0, 4.0 ],
+                        "fitx": [ 0, 0, 0, 0, 0, 0 ],
+                        "y": [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 ],
+                        "fity": [ 1, 1, 1, 1, 1, 1 ]
+                    },
+                    "scale": {
+                        "keys": [ "y-scale", "y0", "x0" ],
+                        "values": [ 10000.0, 0.0, 0.0 ],
+                        "fit": [ 0, 0, 0 ]
+                    },
+                    "interp": "natural"
+                }
+            }
+        },
+        "emodel": {
+            "list": {
+                "radial": {
+                    "dist": {
+                        "x": [ 0.0, 2.0, 4.0, 6.0, 8.0, 10.0 ],
+                        "fitx": [ 0, 1, 1, 1, 1, 0 ],
+                        "y": [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ],
+                        "fity": [ 1, 1, 1, 1, 1, 1 ]
+                    },
+                    "scale": {
+                        "keys": [ "y-scale", "y0", "x0" ],
+                        "values": [ 1.0, 0.0, 0.0 ],
+                        "fit": [ 0, 0, 0 ]
+                    },
+                    "interp": "natural"
+                }
+            }
+        }
+    },
+    "uconfig": {
+        "options": {
+            "prefix": "",
+            "save": true
+        },
+        "scene": {
+            "nrec": 3000,
+            "proj": 1,
+            "rang": 16,
+            "sampling": "1x1x5mm",
+            "geometry": "radial"
+        },
+        "resolution": {
+            "sampling": "1x1x5mm",
+            "geometry": "radial",
+            "nrec": 3000,
+            "strain": true,
+            "resolution": true,
+            "rang": [ -10, 10 ],
+            "steps": 21
+        },
+        "data": {
+            "nrec": 3000
+        },
+        "fit_imodel": {
+            "data": "radial",
+            "model": "radial",
+            "nrec": 3000,
+            "npts": 100,
+            "fit": {
+                "maxiter": 10,
+                "guess": true,
+                "loops": 1,
+                "areg": 0.001
+            }
+        },
+        "fit_emodel": {
+            "data": "radial",
+            "model": "radial",
+            "nrec": 3000,
+            "npts": 100,
+            "fit": {
+                "maxiter": 200,
+                "guess": true,
+                "loops": 3,
+                "areg": 1e-07
+            },
+            "reg": {
+                "amin": 1e-09,
+                "amax": 0.0001,
+                "steps": 6
+            }
+        }
+    },
+    "uinput": {
+        "geometry": {
+            "angles": [ 135, 0, 0 ],
+            "rotctr": [ 0, 0, 0 ],
+            "scandir": [ 0, 0, -1 ],
+            "scanorig": [ 0, 0, 0 ]
+        },
+        "sampling": {
+            "file": {
+                "path": "",
+                "file": "events_S_1mm.dat"
+            },
+            "nrec": 3000
+        },
+        "data": {
+            "strain": "eps_SS_rad.dat",
+            "intensity": "int_SS_rad.dat",
+            "geometry": "radial",
+            "sampling": "1x1x5mm"
+        },
+        "imodel": {
+            "dist": {
+                "x": [ 0.0, 0.5, 1.0, 2.0, 3.0, 4.0 ],
+                "y": [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 ],
+                "fitx": [ 0, 0, 0, 0, 0, 0 ],
+                "fity": [ 1, 1, 1, 1, 1, 1 ]
+            },
+            "scale": {
+                "keys": [ "y-scale", "y0", "x0" ],
+                "values": [ 10000.0, 0.0, 0.0 ],
+                "fit": [ 0, 0, 0 ]
+            },
+            "interp": "natural"
+        },
+        "emodel": {
+            "dist": {
+                "x": [ 0.0, 2.0, 4.0, 6.0, 8.0, 10.0 ],
+                "fitx": [ 0, 1, 1, 1, 1, 0 ],
+                "y": [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ],
+                "fity": [ 1, 1, 1, 1, 1, 1 ]
+            },
+            "scale": {
+                "keys": [ "y-scale", "y0", "x0" ],
+                "values": [ 1.0, 0.0, 0.0 ],
+                "fit": [ 0, 0, 0 ]
+            },
+            "interp": "natural"
+        }
+    }
+}

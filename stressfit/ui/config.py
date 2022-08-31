@@ -13,6 +13,21 @@ import stressfit.dataio as dataio
 import stressfit.commands as comm
 from stressfit.geometry import Geometry
 import copy
+import re
+import json
+
+__config = None
+
+def uiconfig():
+    """Access UI_config object.
+    
+    UI_config is created when this function is called first time and persists
+    as a singleton in given kernel scope.
+    """
+    global __config
+    if __config is None:
+        __config = UI_config()
+    return __config
 
 class ScanData():
     """Encapsulate input (experimental) data.
@@ -95,7 +110,14 @@ class ScanData():
 class UI_data():
     """Container for user input data.
     
-    Initial content is loaded from resources (config/ui_data.json).   
+    Initial content is loaded from resources (config/config_ui.json).   
+    
+    Parameters
+    ----------
+    config : dict
+        Configuration parameters to get initial data from.
+        It must include the keys `udata` and `uinput` with corresponding
+        user data and user input.
     
     Data names
     ----------
@@ -111,10 +133,10 @@ class UI_data():
     data: list
         List of experimental data sets 
         (intensity, strain and associated geometry and sampling)
-    idist: list
-        List of intensity distributions
-    edist: list
-        List of strain distributions
+    imodel: list
+        List of intensity models
+    emodel: list
+        List of strain models
     
     
     Usage
@@ -139,13 +161,13 @@ class UI_data():
     """
     
     # all registered data sets
-    reg_keys = ['shape','geometry','sampling','attenuation','data','idist','edist']
+    reg_keys = ['shape','geometry','sampling','attenuation','data','imodel','emodel']
     # data lists
-    list_keys = ['geometry','sampling','data','idist','edist']
+    list_keys = ['geometry','sampling','data','imodel','emodel']
     # items which require other loaded from files
     load_keys = ['sampling','attenuation','data']
     
-    def __init__(self):
+    def __init__(self, config):
         # keys of listed data items
         self._keys = {}
         for key in UI_data.list_keys:
@@ -153,9 +175,9 @@ class UI_data():
         # flag for changed state
         self._reload_needed = {}
         # get initial listed data from resources
-        self._data = dataio.load_config('ui_data')['uidata']
+        self._data = config['udata']
         # get initial input data from resources
-        self._input = dataio.load_config('ui_input')['uinput']        
+        self._input = config['uinput']        
         # check consistency
         self._validate_keys()
         self._update_keys()
@@ -175,8 +197,8 @@ class UI_data():
             kin = self._input[name].keys()
             for item in self._data[name]['list']:
                 kdat = list(self._data[name]['list'][item].keys())
-                if 'data' in kdat:
-                    kdat.remove('data')
+                if 'fdata' in kdat:
+                    kdat.remove('fdata')
                 for k in kdat:
                     if not k in kin:
                         raise Exception('Data has undefined item: {}[{}].{}.'.format(name, item, k))
@@ -244,9 +266,9 @@ class UI_data():
         try:
             sdata = self._data['sampling']['list'][key]
             sampling = comm.load_sampling(**sdata)
-            sdata['data'] = sampling
+            sdata['fdata'] = sampling
         except Exception as e:
-            sdata['data'] = None
+            sdata['fdata'] = None
             raise Exception(e)
 
     def _load_att(self):
@@ -254,12 +276,12 @@ class UI_data():
         if self._data['attenuation']['type'] == 'table':
             att = self._data['attenuation']['table']
             try:
-                att['data'] = dataio.load_data(att['file'],
+                att['fdata'] = dataio.load_data(att['file'],
                                                path=att['path'],
                                                kind='tables',
                                                verbose=False)
             except Exception as e:
-                att['data'] = None
+                att['fdata'] = None
                 raise Exception(e)
 
     def _validate_scan(self, item):
@@ -281,10 +303,10 @@ class UI_data():
         if not item in dlist:
             msgs.append('Input data item not defined: {}'.format(item))         
         # data item is present
-        elif not 'data' in dlist[item]:
+        elif not 'fdata' in dlist[item]:
             msgs.append('No input data for "{}"'.format(item))
         # data is loaded
-        elif not isinstance(dlist[item]['data'], ScanData):
+        elif not isinstance(dlist[item]['fdata'], ScanData):
             msgs.append('Input data not loaded for "{}"'.format(item))          
         # check association with geometry and sampling
         if item in dlist:
@@ -316,15 +338,15 @@ class UI_data():
             ifile = None
         sfile = vals['strain'].strip()  
         if not sfile or sfile=='.':
-            vals['data'] = None
+            vals['fdata'] = None
             msg = 'No strain file specified for [{}]'.format(key)
             raise Exception(msg) 
         try:
             scandata = ScanData()
             scandata.load(sfile, fint=ifile)
-            vals['data'] = scandata
+            vals['fdata'] = scandata
         except Exception as e:
-            vals['data'] = None
+            vals['fdata'] = None
             msg = 'Cannot load data [{}].'.format(key)
             msg += str(e)
             raise Exception(msg)          
@@ -353,7 +375,7 @@ class UI_data():
                 out = out or qry
         return out
 
-    def import_inputs(self,value):
+    def input_from_dict(self,value):
         """Import input parameters from a dictionary."""
         if 'uinput' in value:
             lst = value['uinput']
@@ -363,10 +385,10 @@ class UI_data():
         else:
             print('No uinput data found.')        
 
-    def import_from_dict(self, value):
+    def data_from_dict(self, value):
         """Import input data from a dictionary."""
-        if 'uidata' in value:
-            lst = value['uidata']
+        if 'udata' in value:
+            lst = value['udata']
             for key in UI_data.reg_keys:
                 if key in lst:
                     self._data[key] = lst[key]
@@ -374,19 +396,19 @@ class UI_data():
             self._validate_keys()
             self._update_keys()
         else:
-            print('No uiconfig data found.')
+            print('No uconfig data found.')
 
-    def export_as_dict(self):
+    def data_to_dict(self):
         """Export input data as dict."""       
         out = copy.deepcopy(self._data)
         # remove file data content
         for what in UI_data.list_keys:
             lst = out[what]['list']
             for item in lst:
-                if 'data' in lst[item]:
-                    lst[item]['data'] = None 
-        out['attenuation']['table']['data'] = None
-        return {'uidata':out}
+                if 'fdata' in lst[item]:
+                    lst[item]['fdata'] = None 
+        out['attenuation']['table']['fdata'] = None
+        return {'udata':out}
 
     def load(self, what, item=None):
         """Reload file input for given data set.
@@ -463,9 +485,9 @@ class UI_data():
         """
         a = self._data['attenuation']
         if a['type'] == 'table':
-            if not 'data' in a['table']:
+            if not 'fdata' in a['table'] or a['table']['fdata'] is None:
                 self._load_att()
-            out = a['table']['data']
+            out = a['table']['fdata']
         else:
             out = a['value']
         return out
@@ -487,11 +509,11 @@ class UI_data():
         valid, msgs = self._validate_scan(name)
         if valid:
             dset = self._data['data']['list'][name]
-            sobj:ScanData = dset['data']
+            sobj:ScanData = dset['fdata']
             ori = dset['geometry']
             sam = dset['sampling'] 
             geom = self._data['geometry']['list'][ori]
-            sampling = self._data['sampling']['list'][sam]['data']
+            sampling = self._data['sampling']['list'][sam]['fdata']
             sobj.assign_geometry(geom)
             sobj.assign_sampling(sampling)
             return sobj.scan
@@ -619,12 +641,18 @@ class UI_data():
       
 
 class UI_config():
+    """Container for user configuration of stressfit.
+    
+    Contains all user input, user data and program configuration necessary to 
+    run stressfit commands. 
+    """
+    
     def __init__(self):
         # get initial configuretion from resources
-        self._config = dataio.load_config('ui_config')['uiconfig']
-        self._keys =  list(self._config.keys())
-        # create initial data from resources
-        self._uidata = UI_data()
+        self._config = dataio.load_config('config_ui')
+        self._uconfig = self._config['uconfig']
+        self._udata = UI_data(self._config)
+        self._keys =  list(self._uconfig.keys())
     
     @property
     def keys(self):
@@ -634,36 +662,74 @@ class UI_config():
     @property
     def data(self):
         """Return UI_data object."""
-        return self._uidata
+        return self._udata
 
     @property
     def config(self):
         """Return configuration parameters as dict."""
-        return {'uiconfig':self._config}
+        return {'uconfig':self._uconfig}
 
-    def export_all(self):
+    def export_dict(self):
         """Export all user input as a dictionary."""
         out = {}
-        out.update(self.data.export_as_dict())
+        out.update(self.data.data_to_dict())
         out.update(self.config)
         out.update({'uinput':self.data.inputs})
         return out
 
-    def import_all(self, inp):
-        """Import all user input from a dictionary."""
-        self.import_from_dict(inp) 
-        self.data.import_inputs(inp)
-        self.data.import_from_dict(inp)  
+    def export_json(self):
+        """Export all user input in json format."""
+        def clean(obj):
+            """Compact lists."""
+            s = ''
+            L = len(obj.groups())
+            if L>0:       
+                g = obj.groups()[0]
+                s = re.sub(r'\s{2,}',r' ',g)
+            return s
+        txt = self.export_dict()
+        txt1 = json.dumps(txt,indent=4)
+        out = re.sub(r'(\[[^]]*\])',clean,txt1)
+        return out
+        
+    def import_dict(self, inp, reload=False):
+        """Import all user input from a dictionary.
+        
+        Parameters
+        ----------
+        inp : dict
+            User input as dictionary
+        reload : boolean
+            Reload required file data.
+        """
+        self.config_from_dict(inp) 
+        self.data.input_from_dict(inp)
+        self.data.data_from_dict(inp) 
+        if reload:
+            self.reload_all(force=True)
 
-    def import_from_dict(self, value):
+    def import_json(self, lines, reload=False):
+        """Import all user input from a text in json format.
+        
+        Parameters
+        ----------
+        lines : list
+            List of text lines.
+        reload : boolean
+            Reload required file data.
+        """
+        inp = json.loads('\n'.join(lines)) 
+        self.import_dict(inp, reload=reload)
+
+    def config_from_dict(self, value):
         """Import configuration parameters from a dictionary."""
-        if 'uiconfig' in value:
-            lst = value['uiconfig']
-            for key in self._config:
+        if 'uconfig' in value:
+            lst = value['uconfig']
+            for key in self._uconfig:
                 if key in lst:
-                    self._config[key] = lst[key]
+                    self._uconfig[key] = lst[key]
         else:
-            print('No uiconfig data found.')
+            print('No uconfig data found.')
     
     def get(self, key):
         """Return requested config data.
@@ -680,8 +746,8 @@ class UI_config():
 
         """
         rec = None
-        if key in self._config:
-            rec = self._config[key]        
+        if key in self._uconfig:
+            rec = self._uconfig[key]        
         return rec
     
     def update(self, key, value):
@@ -695,8 +761,8 @@ class UI_config():
             Content of the input.
 
         """
-        if key in self._config:
-            self._config[key].update(value)
+        if key in self._uconfig:
+            self._uconfig[key].update(value)
     
     def validate(self, data:bool=True):
         """Check input consistency with UI data.
@@ -708,18 +774,18 @@ class UI_config():
         """
         out = True
         if data:
-            out = self._uidata.validate()
+            out = self._udata.validate()
             if not out:
                 print('Fix config data input.')
                 return out
         
         msgs = []
         # check that sampling and geometry values are define in the input data
-        for key in self._config:
+        for key in self._uconfig:
             for opt in ['sampling','geometry']:
-                if opt in self._config[key]:
-                    item = self._config[key][opt]
-                    dlist = self._uidata.get_item(opt)
+                if opt in self._uconfig[key]:
+                    item = self._uconfig[key][opt]
+                    dlist = self._udata.get_item(opt)
                     if not item in dlist:
                         out = False
                         msg = '{}: undefined {} [{}]'.format(key, opt, item)
@@ -731,24 +797,26 @@ class UI_config():
     
     def is_ready(self):
         """Check that all inpt is valid and ready for use."""
-        out1 = self._uidata.is_ready()
+        out1 = self._udata.is_ready()
         out2 = self.validate(data=False)
         return out1 and out2
 
     def reload_all(self, force=False):
         """Reload all file input."""
-        self._uidata.reload_all(force=force) 
+        self._udata.reload_all(force=force) 
         
     
 #%%
 def test():
+    """Basic module test."""
+    dataio.workspace().info()
     uiconf = UI_config()
     hoop = {
-            "strain": "eps_SS_rad.dat",
-            "intensity": "int_SS_rad.dat",
-            "geometry": "hoop",
+            "strain": "eps_SS_hoop.dat",
+            "intensity": "int_SS_hoop.dat",
+            "geometry": "radial",
             "sampling": "1x1x5mm",
-    		"data": None
+    		"fdata": None
             }
     uiconf.data.update('data', hoop, item='hoop')
     res = uiconf.is_ready()
@@ -760,3 +828,4 @@ def test():
     uiconf.data.update('geometry',ori,item='hoop')
     res = uiconf.is_ready()
     print(res)
+

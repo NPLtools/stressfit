@@ -5,7 +5,6 @@ Created on Tue Oct  5 11:38:15 2021
 """
 
 # TODO manage messages in widgets and config, define extra spaces for it in notebook
-# TODO exp. data input
 # TODO model definition - strain
 # TODO fit strain
 # TODO input - compliance
@@ -40,13 +39,12 @@ import stressfit.shapes as shapes
 import stressfit.dataio as dataio
 import stressfit.graphs as gr
 import stressfit.mccfit as mc
-import stressfit.ui.config as config
+from stressfit.ui.config import uiconfig
 from stressfit.geometry import Geometry
 
 
-# create ui configuration and data with default input values
-_uiconf = config.UI_config()
-
+# get ui configuration and data with default input values
+_uiconf = uiconfig()
 
 def _has_keys(args, keys):
     """Verify that all args are in keys."""
@@ -94,7 +92,7 @@ class UI_base:
         self._name = name # unique instance name
         self._keys = keys # list of allowed value keys
         self._widgets = {} # dict of input widgets
-        self._values = {} # dict of widget values
+        self._values = {} # dict of widget values links to _uiconf by assign
         self._buttons = [] # Command buttons next to the collection label 
         self._on_change = None
         self._options = {} # containes links to selection lists
@@ -174,7 +172,7 @@ class UI_base:
 
 # public methods
     def assign(self):
-        """Assign values to global data."""
+        """Assign pointers to configuration data to self._values."""
         self._values = _uiconf.get(self.name)
 
     def notify(self):
@@ -186,7 +184,7 @@ class UI_base:
     def set_values(self, values):
         """Set values.
         
-        Set internally stored data in `self._values`. 
+        Write values into configuration data (_uiconf). 
         To update widgets for the new values, call :meth:`update_widgets`.
         
         Parameters
@@ -216,11 +214,6 @@ class UI_base:
             if key in self._widgets:
                 vals[key] = self._widgets[key].value
         self.set_values(vals)
-        
-        
-        for key in self._keys:
-            if key in self._widgets:        
-                self._values[key] = copy.deepcopy(self._widgets[key].value)
 
     def update_options(self, name):
         """Update the selection list.
@@ -495,7 +488,7 @@ class UI_base_list(UI_base):
         if 'input' in values:
             vals = copy.deepcopy(values['input'])
             self._clean_keys(vals)
-            _uiconf.data.inputs[self.name].update(vals)            
+            _uiconf.data.inputs[self.name].update(vals) 
         elif 'list' in values: 
             vals = copy.deepcopy(values['list'])
             for k in vals:
@@ -518,16 +511,14 @@ class UI_base_list(UI_base):
             for key in self._keys_conf:
                 if key in self._widgets:
                     vals[key] = self._widgets[key].value
-        self.set_values({'conf':vals})
+            self.set_values({'conf':vals})
         
     def update_widgets(self):
         """Update input widgets from data."""
-        #if self.name=='idist':
+        #if self.name=='imodel':
         #    self.message('{} update_widgets'.format(self.name), clear=False)
         for key in self._keys:
             if key in self._widgets:
-                #if self.name=='idist':
-                #    self.message('{}\t{}'.format(key, self._values['input'][key]), clear=False)
                 self._widgets[key].value = copy.deepcopy(self._values['input'][key])
         self._redraw_table()
         for key in self._keys_conf:
@@ -700,23 +691,15 @@ class UI_workspace(UI_base):
     def __init__(self, name, exclude = ['instruments']):
         # NOTE: the keys list must match dataio.__path_keys
         self.wk = dataio.workspace()
-        super().__init__(name, dataio.Workspace.types, exclude=exclude)
+        super().__init__(name, self.wk.keys, exclude=exclude)
         self.uiparam['title'] = 'Workspace'
         self._out = ipy.Output(layout=ipy.Layout(width='100%'))     
         
     def _init_values(self, **kwargs):
-        # substitute for workspace paths from config data
-        super()._init_values()
-        paths_cfg = _uiconf.get('workspace')
-        for key in paths_cfg:
-            item = paths_cfg[key]
-            if item:
-                if key=='work':
-                    self.wk.change_workspace(item)
-                else:
-                    self.wk.set_paths(**{key:item})
-        # synchronize config data with workspace setting and widget values        
-        self._excluded_keys = kwargs['exclude']       
+        if 'exclude' in kwargs:
+            self._excluded_keys = kwargs['exclude'] 
+        else:
+            self._excluded_keys = []
         self._values.update(self.wk.get_paths())
     
     def _create_widgets(self, **kwargs):
@@ -730,14 +713,9 @@ class UI_workspace(UI_base):
                                tooltip=ttp)
                 inp.observe(self._on_path_change)
                 self._widgets[key] = inp
-        self._widgets['work'].txt.disabled=True
-        self._widgets['work'].callback = self._on_workspace_change       
+        self._widgets['work'].txt.disabled=True      
     
     def _create_ui(self, **kwargs):    
-        appl = ipy.Button(description='Apply',
-                          tooltip='Update and validate workspace paths.',
-                          layout=ipy.Layout(width='10%'))
-        appl.on_click(self._on_apply)
         rst = ipy.Button(description='Reset',
                          tooltip='Reset workspace configuration to package default.',
                          layout=ipy.Layout(width='10%'))
@@ -746,14 +724,14 @@ class UI_workspace(UI_base):
                           tooltip='Save workspace configuration.',
                           layout=ipy.Layout(width='10%'))
         save.on_click(self._on_save)
-        load = ipy.Button(description='Load',
-                          tooltip='Load workspace configuration.',
+        load = ipy.Button(description='Reload',
+                          tooltip='Re-load workspace configuration.',
                           layout=ipy.Layout(width='10%'))
-        load.on_click(self._on_load)
+        load.on_click(self._on_reload)
         
         layout = ipy.Layout(display='flex',flex_flow='row',
                                 border='none',width='100%')
-        appl_box = ipy.HBox([appl, save, load, rst], layout=layout)
+        appl_box = ipy.HBox([save, load, rst], layout=layout)
         
         lst = []
         for w in self._widgets:
@@ -761,39 +739,24 @@ class UI_workspace(UI_base):
         lst.append(appl_box)
         lst.append(self._out)
         return ipy.VBox(lst)
-    
-    def notify(self):
-        """Raise notification after change.
         
-        Calls `self._call_change(work=self.wk.get_paths())`.
-        """
-        data = self.wk.get_paths()
-        self._call_change(**{'work':data['work']})
-    
-
-    
     def set_from_wks(self):
         """Update UI with actual workspace settings."""
-        data = self.wk.get_paths()
-        self.update_widgets(data)
+        self._values.update(self.wk.get_paths())
+        self.update_widgets()
         self.update_values()
-    
-    def _on_workspace_change(self,s):
-        with self._out:
-            res = self.wk.change_workspace(self._values['work'])
-            self.set_from_wks()
-            if res:
-                self.message('Workspace configuration reloaded.')
-            self.notify()
     
     def _on_path_change(self, inp):
         key = inp['name']
         value = inp['value']
-        self._values[key] = value
-        self._call_change(**{key:value})
-        
-    def _on_apply(self, b):
-        self.update_workspace()
+        self._out.clear_output()
+        with self._out:
+            if key == 'work':
+                self.wk.change_workspace(root=value, create_tree=False, 
+                                         save=False, verbose=True)            
+            else:
+                self.wk.set_paths(**{key:value})
+            self.set_from_wks()
     
     def _on_reset(self, b):
         """Set workspace configuration to package default."""
@@ -803,27 +766,28 @@ class UI_workspace(UI_base):
         """Save workspace configuration in workspace root directory."""
         self._out.clear_output()
         try:
-            self.update_workspace(verbose=False)
-            self.wk.save()
-            self.message('Workspace configuration saved.')
-            #with self._out:
-            #    wkp = self.wk.get_paths(keys=['work'])
-            #    msg = 'Workspace configuration saved in {}/{}.'
-            #    self.message(msg.format(wkp['work'],dataio.Workspace.cfg_name))
+            with self._out:
+                self.wk.save()
+                self.wk.validate_paths()
+                print('Workspace configuration saved.')
         except Exception as e:
             self.error(e)
     
-    def _on_load(self, b):
+    def _on_reload(self, b):
         """Re-load workspace configuration from workspace root directory."""
-        self._out.clear_output()
+        inp = {'name':'work', 'value':self._values['work']}
         try:
-            with self._out:
-                if self.wk.load():
-                    self.set_from_wks()
-                    self.message('Workspace configuration reloaded.')
+            self._on_path_change(inp)
         except Exception as e:
-            self.error(e)           
-                
+            self.error(e)      
+                            
+    def assign(self):
+        """Do nothing.
+        
+        Workspace is not linked to ui_config data. 
+        """
+        pass
+        
     def update_workspace(self, validate=True, verbose=True):
         """Update workspace configuration according to _values.
         
@@ -832,11 +796,13 @@ class UI_workspace(UI_base):
         self._out.clear_output()
         with self._out:
             try:
-                self.wk.change_workspace(self._values['work'])
+                self.wk.change_workspace(root=self._values['work'], 
+                                         create_tree=False, 
+                                         save=False, 
+                                         verbose=verbose)
                 self.wk.set_paths(**self._values)
                 if validate:
                     self.wk.validate_paths()
-                _uiconf.update('workspace', self.wk.get_paths())
                 if verbose: 
                     print('Workspace OK')
             except Exception as e:
@@ -1013,7 +979,10 @@ class UI_shape(UI_base):
                 if isinstance(value[0],float):
                     wgt = ArrayInput(name=key, value=value, label=desc, hint=hint)
                 else:
-                    wgt = SelectInput(name=key, options=value, label=desc, hint=hint,
+                    wgt = SelectInput(name=key, options=value, 
+                                      index=0,
+                                      label=desc, 
+                                      hint=hint,
                                       width_drop=80)
             else:
                 raise Exception('Unknown parameter type: {}'.format(value))
@@ -1120,13 +1089,12 @@ class UI_shape(UI_base):
     def show(self, err=None, msg=None, **kwargs): 
         """Display the input collection."""
         super().show(err=err, msg=msg)
+        # trigger displaying of shape parameters
         self._on_change_shape({'name':'value', 'new':self.select})
     
     def create_shape(self):
         """Create selected shape instance from stressfit.shapes."""
         self.update_values()
-        #print('create_shape: '+self._values['shape'])
-        #print(self._values['param'])
         comp = shapes.create(self._values['shape'],**self._values['param'])
         return comp
 
@@ -1260,7 +1228,7 @@ class UI_sampling(UI_base_list):
     
     def _get_display_record(self, key):
         """Return a list of values to be shown on the list for given key."""
-        s = _uiconf.data.get_item('sampling', item=key)['data']
+        s = _uiconf.data.get_item('sampling', item=key)['fdata']
         try:
             rec = [key, s.file, s.src['nrec'], s.src['wav'], s.src['tth'],
                        s.src['dmean'], list(s.src['width'])]
@@ -1274,9 +1242,9 @@ class UI_sampling(UI_base_list):
         try:
             super().add_data(item, data=data, update_ui=False)
             vals = copy.deepcopy(self._values['list'][item])
-            self._values['input'].update(vals)
+            #self._values['input'].update(vals)
             _uiconf.data.load(self.name, item=item)
-            sampling = _uiconf.data.get_item(self.name, item=item)['data']
+            sampling = _uiconf.data.get_item(self.name, item=item)['fdata']
             s = sampling.src
             vals['file'] = {key: s[key] for key in ['file','path']}
             vals['nrec'] = s['nrec']
@@ -1434,11 +1402,13 @@ class UI_data(UI_base_list):
         # sampling selection
         wdg =  SelectInput(name='sampling', label='Sampling', 
                            options = self._options['sampling'],
+                           value = self._values['input']['sampling'],
                            width_label=80, width_drop=100)
         self._widgets['sampling'] = wdg
         # geometry selection
         wdg =  SelectInput(name='geometry', label='Orientation', 
                            options = self._options['geometry'],
+                           value = self._values['input']['geometry'],
                            width_label=80, width_drop=100)
         self._widgets['geometry'] = wdg
         
@@ -1473,7 +1443,7 @@ class UI_data(UI_base_list):
             ori = lst['geometry']
             sam = lst['sampling']
             try:
-                dt = lst['data'].scan
+                dt = lst['fdata'].scan
                 if dt['eps'] is not None:
                     epsfile = dt['epsfile']
                 else:
@@ -1657,15 +1627,15 @@ class UI_data(UI_base_list):
         
         
 class UI_distribution(UI_base_list):  
-    """Define a free distribution by a set of nodes and interpolation."""
+    """Define a free model distribution by a set of nodes and interpolation."""
     
-    _dtypes = {'idist': {'title': 'Intensity distribution'},
-               'edist': {'title': 'Strain distribution'}
+    _dtypes = {'imodel': {'title': 'Intensity model'},
+               'emodel': {'title': 'Strain model'}
                }
     
-    def __init__(self, dtype='idist'):
+    def __init__(self, dtype='imodel'):
         if not dtype in UI_distribution._dtypes:
-            raise Exception('Unkown distribution type: {}'.format(dtype))
+            raise Exception('Unkown model type: {}'.format(dtype))
         self.dtype = dtype
         super().__init__(dtype, ['dist','scale','interp'],
                          list_template='120px repeat(4,auto) ',
@@ -1680,7 +1650,7 @@ class UI_distribution(UI_base_list):
         self.uiparam['add_button_label'] = 'Add'
         self.uiparam['add_button_icon'] = None
         self.uiparam['add_button_width'] = '50px'
-        self.uiparam['add_label'] = 'Distribution name'
+        self.uiparam['add_label'] = 'Model name'
         self._was_displayed = False
         
     def _create_widgets(self, **kwargs): 
@@ -1734,7 +1704,7 @@ class UI_distribution(UI_base_list):
         return rec 
 
     def refresh(self):
-        """Redraw the distribution table."""
+        """Redraw the model table."""
         if not self._was_displayed:
             self._widgets['dist'].redraw()
             self._widgets['scale'].redraw()
@@ -1874,9 +1844,9 @@ class UI_plot_scene(UI_base):
             return      
         # set selected sampling and geometry  
         g = _uiconf.data.get_item('geometry',item=par['geometry'])
-        s = _uiconf.data.get_item('sampling',item=par['sampling'])
+        s = _uiconf.data.get_item('sampling',item=par['sampling'])['fdata']
         comm.set_geometry(g)
-        comm.set_sampling(s['data'])
+        comm.set_sampling(s)
         # do plot
         save = self.pgm_options['save']
         if save:
@@ -2049,9 +2019,9 @@ class UI_resolution(UI_base):
 
         # set selected sampling and geometry
         g = _uiconf.data.get_item('geometry',item=par['geometry'])
-        s = _uiconf.data.get_item('sampling',item=par['sampling'])
+        s = _uiconf.data.get_item('sampling',item=par['sampling'])['fdata']
         comm.set_geometry(g)
-        comm.set_sampling(s['data'])
+        comm.set_sampling(s)
         # set attenuation
         att = _uiconf.data.get_attenuation()
         comm.set_attenuation(att)
@@ -2081,8 +2051,8 @@ class UI_resolution(UI_base):
     
 
 
-class UI_fit_idist(UI_base):
-    """Fit intensity distribution.
+class UI_fit_imodel(UI_base):
+    """Fit intensity model.
     
     Parameters
     ----------
@@ -2105,15 +2075,15 @@ class UI_fit_idist(UI_base):
     
     def __init__(self, name):
         super().__init__(name, 
-                         ['data','dist','nrec','npts', 'fit']) 
+                         ['data','model','nrec','npts', 'fit']) 
         self.pgm_options = _uiconf.get('options')        
         # output area
         self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none'))         
         # select options
         self._options['data'] = _uiconf.data.listkeys('data')
-        self._options['dist'] = _uiconf.data.listkeys('idist')
+        self._options['model'] = _uiconf.data.listkeys('imodel')
         # title
-        self.uiparam['title'] = 'Fit intensity distribution'
+        self.uiparam['title'] = 'Fit intensity model'
 
     def _create_widgets(self, **kwargs): 
 
@@ -2124,14 +2094,14 @@ class UI_fit_idist(UI_base):
                           width_label=80, width_drop=100)
         self._widgets['data'] = wdg
         # oreiantation selection
-        wdg = SelectInput(name='dist', label='Distribution',
-                          options=self._options['dist'], 
-                          value=self._values['dist'],
+        wdg = SelectInput(name='model', label='Model',
+                          options=self._options['model'], 
+                          value=self._values['model'],
                           width_label=80, width_drop=100)
         #wdg =  create_select(name='geometry', label='Orientation', 
         #                     options=self._options['geometry'], 
         #                     width_label=80, width_drop=100)
-        self._widgets['dist'] = wdg
+        self._widgets['model'] = wdg
         # number of events to plot
         wdg = ArrayInput(name='nrec', label='Events',
                          value=self._values['nrec'], 
@@ -2139,7 +2109,7 @@ class UI_fit_idist(UI_base):
                          isInt=True, step=1000, lmin=1000,lmax=100000,
                          width_label=80, width_num=100)   
         self._widgets['nrec'] = wdg 
-        # number of points on distribution curve
+        # number of points on model curve
         wdg = ArrayInput(name='npts', label='Points',
                          value=self._values['npts'], 
                          hint='',
@@ -2170,7 +2140,7 @@ class UI_fit_idist(UI_base):
         
         layout = ipy.Layout(margin='10px 10px 5px 10px')
         box1 = ipy.VBox([self._widgets['data'].ui(), 
-                         self._widgets['dist'].ui(), 
+                         self._widgets['model'].ui(), 
                          self._widgets['nrec'].ui(),
                          self._widgets['npts'].ui()],
                          layout=layout)               
@@ -2195,9 +2165,9 @@ class UI_fit_idist(UI_base):
         dname = self._widgets['data'].value
         
         if pfx:
-            base = '{}_{}_idist'.format(pfx, dname)
+            base = '{}_{}_imodel'.format(pfx, dname)
         else:
-            base = '{}_idist'.format(dname)
+            base = '{}_imodel'.format(dname)
         if ext:
             fname = base + ext
         else:
@@ -2217,10 +2187,10 @@ class UI_fit_idist(UI_base):
         par = _uiconf.get(self.name)
         # selected scan data 
         scan = _uiconf.data.get_scan(par['data'])
-        # selected distribution
-        dist = _uiconf.data.get_item('idist',item=par['dist'])
+        # selected model
+        model = _uiconf.data.get_item('imodel',item=par['model'])
         # scale parameters
-        scale = dist['scale']
+        scale = model['scale']
         
         
         # set scan parameters and sampling
@@ -2229,12 +2199,12 @@ class UI_fit_idist(UI_base):
         att = _uiconf.data.get_attenuation()
         comm.set_attenuation(att)        
         # create ifit object
-        ifit = comm.define_ifit(scan, dist['dist'], par['nrec'], 
+        ifit = comm.define_ifit(scan, model['dist'], par['nrec'], 
                                 ndim=par['npts'])        
         # define scaling parameters and interpolation model
         ifit.defScaling(scale['values'], scale['fit'], 
                         minval=[0., 0., -np.inf])
-        ifit.setInterpModel(dist['interp'])
+        ifit.setInterpModel(model['interp'])
         return ifit
     
     def _on_replot(self,b):
@@ -2288,8 +2258,8 @@ class UI():
                       'scene',
                       'resolution',
                       'data',
-                      'idist',
-                      'fit_idist']
+                      'imodel',
+                      'fit_imodel']
     def __init__(self):    
         self._last_input_file = 'input.json'
         self.ui = {}
@@ -2308,16 +2278,15 @@ class UI():
         self._add_input_ui(UI_plot_scene('scene'))
         self._add_input_ui(UI_resolution('resolution')) 
         self._add_input_ui(UI_data('data'))
-        self._add_input_ui(UI_distribution('idist'))
-        self._add_input_ui(UI_fit_idist('fit_idist'))
+        self._add_input_ui(UI_distribution('imodel'))
+        self._add_input_ui(UI_fit_imodel('fit_imodel'))
         
         # set event handlers
-        self.ui['workspace'].set_on_change(self._change)
         self.ui['shape'].set_on_change(self._change)
         self.ui['geometry'].set_on_change(self._change)
         self.ui['sampling'].set_on_change(self._change)
         self.ui['data'].set_on_change(self._change)
-        self.ui['idist'].set_on_change(self._change)
+        self.ui['imodel'].set_on_change(self._change)
 
     
     def _add_input_ui(self, ui):
@@ -2330,7 +2299,7 @@ class UI():
     def _tab_observe(self, widget):
         idx = widget['new']
         if idx==6:
-            self.ui['idist'].refresh()
+            self.ui['imodel'].refresh()
         
     def display(self):
         """Display all input blocks."""
@@ -2353,9 +2322,9 @@ class UI():
                                   'ui':[self.ui['resolution']]}
         tabs_data['data'] = {'title':'Data',
                                   'ui':[self.ui['data']]}
-        tabs_data['idist'] = {'title':'Intensity',
-                                  'ui':[self.ui['idist'],
-                                        self.ui['fit_idist']]}
+        tabs_data['imodel'] = {'title':'Intensity',
+                                  'ui':[self.ui['imodel'],
+                                        self.ui['fit_imodel']]}
         # create tab container
         tab = ipy.Tab() 
         
@@ -2396,7 +2365,7 @@ class UI():
     def _on_save_input(self,b):
         s = choose_file_save(initialdir=self.wk.path('work').as_posix(), 
                         initialfile=self._last_input_file,
-                        filetypes=(('Setup files','*.json')))
+                        filetypes=(('Setup files','*.inp')))
         if s:
             self.save(filename=s)
             p = _Path(s)
@@ -2405,14 +2374,13 @@ class UI():
     def _on_load_input(self,b):
         s = choose_file(initialdir=self.wk.path('work').as_posix(), 
                         initialfile=self._last_input_file,
-                        filetypes=(('Setup files','*.json')))
+                        filetypes=(('Setup files','*.inp')))
         if s:
             self.load(filename=s)
             p = _Path(s)
             self._last_input_file = p.name
             
     def _change(self, obj, **kwargs):
-# TODO handle change of workspace here
         if obj.name == 'shape':
             if 'shape' in kwargs:
                 if self.ui['shape'].select != 'File':
@@ -2430,34 +2398,24 @@ class UI():
             for key in ['scene','resolution','data']:
                 self.ui[key].update_options(name)
         # update other selection lists
-        elif name == 'idist':
-            self.ui['fit_idist'].update_options('dist')
+        elif name == 'imodel':
+            self.ui['fit_imodel'].update_options('model')
         elif name == 'data':
-            self.ui['fit_idist'].update_options('data')
+            self.ui['fit_imodel'].update_options('data')
 
     def save(self, filename=''):
-        """Save input data in JSON format."""
-        def clean(obj):
-            """Compact lists."""
-            s = ''
-            L = len(obj.groups())
-            if L>0:       
-                g = obj.groups()[0]
-                s = re.sub(r'\s{2,}',r' ',g)
-            return s   
+        """Save input data in JSON format.""" 
         try:
             for key in self.ui: 
                 self.ui[key].update_values()
-            out = _uiconf.export_all()
-            txt1 = json.dumps(out,indent=4)
-            txt = re.sub(r'(\[[^]]*\])',clean,txt1)
+            out = _uiconf.export_json()
             if filename:
                 with open(filename, 'w') as f:
-                    f.write(txt)
+                    f.write(out)
                     f.close()
             else:
                 with self._msg:
-                    print(txt)
+                    print(out)
         except Exception as e:
             with self._err:
                 print(e)
@@ -2470,16 +2428,14 @@ class UI():
             with open(filename, 'r') as f:
                 lines=f.readlines()
                 f.close()
-            inp = json.loads('\n'.join(lines)) 
             # import into global input data
-            _uiconf.import_all(inp) 
-            _uiconf.reload_all(force=True)
+            _uiconf.import_json(lines, reload=True)
             if not _uiconf.is_ready():
                 print('Loading of program settings failed.')
                 return
             # Notification that data lists may have changed 
             # -> update dependent options
-            for key in ['geometry', 'sampling', 'data', 'idist']:
+            for key in ['geometry', 'sampling', 'data', 'imodel']:
                 self._update_options(key)
             # re-assign global input to the ui components
             for key in self.ui:
@@ -2492,7 +2448,6 @@ class UI():
                         print('Problem with settig value {}:'.format(key))
                         print(e)
                     raise e
-            self.ui['workspace'].update_workspace()
         except Exception as e:
             with self._err:
                 print(e)

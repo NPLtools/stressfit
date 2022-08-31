@@ -28,7 +28,7 @@
                         "path": ""
                     },
                     "nrec": 3000,
-					"data": null
+					"fdata": null
                 }
             }
         },
@@ -36,7 +36,7 @@
             "table": {
                 "path": "",
                 "file": "Fe_mu.dat",
-				"data": null
+				"fdata": null
             },
             "value": 1.1,
             "type": "table"
@@ -48,11 +48,11 @@
                     "intensity": "int_SS_rad.dat",
                     "geometry": "radial",
                     "sampling": "1x1x5mm",
-					"data": null
+					"fdata": null
                 }
 			}
         },		
-        "idist": {
+        "imodel": {
 			"list": {
 				"radial": {
                      "dist": {
@@ -70,7 +70,7 @@
             	}
 			}
 		},
-        "edist": {
+        "emodel": {
 			"list": {
 				"radial": {
 					"dist": {

@@ -66,10 +66,260 @@ import json
 from pathlib import Path as _Path
 import os
 from functools import wraps
-
+import copy
 
 __work = None
 
+__setup = None
+
+# allowed workspace directories
+_wks_keys = ['work', 'data', 'tables', 'instruments', 'output']
+# workspace directories without root
+_path_keys = _wks_keys.copy()
+_path_keys.remove('work')
+
+
+def _mk_path_relative(root, path):
+    """Try to make given path relative to the root path.
+    
+    If already relative or root is not its parent, return the path unchanged.
+    
+    Parameters
+    ----------
+    root : pathlib.Path
+        Parent path
+    path : pathlib.Path
+        Path to be converted.
+        
+    Return
+    ------
+    pathlib.Path:
+        If possible, path relative to root, or unchanged path. 
+    """
+    out = path
+    if path.is_absolute():
+        try:
+            out = path.relative_to(root)
+        except:
+            # print('cannot set relative:\n{}\n{}'.format(root,path))
+            out = path
+    return out
+
+
+def _workspace_to_str(wks, absolute=False, keys=None):
+    """Return workspace paths as dict of strings.
+    
+    Parameters
+    ----------
+    wks : dict
+        Workspace paths.
+    absolute : bool
+        Return as absolute paths.
+    keys : list
+        If defined, return only listed paths. Otherwise
+        return all workspace paths.
+    
+    Return
+    ------
+    dict
+        Keys are the path types defined for the workspace.
+        The values are path names returned by :func:`pahlib.Path.as_posix`.
+    """
+    env = {}
+    if keys is None:
+        keys = _wks_keys
+    for key in keys:
+        try:
+            if absolute:
+                if wks[key].is_absolute():
+                    p = wks[key]
+                else:
+                    p = wks['work'].joinpath(wks[key])
+            else:
+                p = wks[key]
+            env[key] = p.as_posix()
+        except KeyError:
+            print('Missing key in workspace data: {}'.format(key))
+    return env
+
+def _str_to_workspace(source):
+    """Convert dict of strings to a dict of pathlib.Path.
+    
+    Makes paths relative to workspace root if possible.
+    """
+    out = {}
+    for key in _wks_keys:
+        try:
+            out[key] = _Path(source[key])
+        except KeyError:
+            print('Missing required path in workspace: {}'.format(key))
+    for key in _path_keys:
+        out[key] = _mk_path_relative(out['work'], out[key])
+    return out
+            
+def _create_workspace_tree(wks):
+    """Create workspace directory tree.
+    
+    Creates directories only if they are childs of the workspace path.
+    
+    Parameters
+    ----------
+    wks : dict
+        Workspace paths info.
+    """
+    for key in _path_keys:
+        f = wks[key]
+        p = _mk_path_relative(wks['work'], wks[key])
+        # create only subdirectories
+        if not p.is_absolute():
+            f = wks['work'].joinpath(p)
+            if not f.exists():
+                f.mkdir(parents=True)
+            elif f.is_file():
+                msg = "File {} already exists.\nCannot create directory."
+                raise Exception(msg.format(f.as_posix()))
+
+def _setup():
+    """Access the instance of _Setup.
+    
+    _Setup handles application global settings and default values.
+    
+    Return
+    ------
+    Instance of :class:`dataio._Setup`
+    """
+    global __setup
+    if __setup is None:
+        __setup = _Setup()
+    return __setup
+
+class _Setup():
+    """
+    Class maintaining application settings and default values.
+    
+    Maintains a dict with version info, default paths, list of workspaces, etc.
+    Provides load/save functions.
+    
+    A singleton instance of _Setup is cretaed internally when the function 
+    _setup() is called for the first time.
+    
+    """
+    
+    _setup_dir = '.stressfit' # directory with workspace info
+    _setup_file = 'setup.json' # file with workspace info
+    
+    def __init__(self):
+        self._data = {}
+        self._create()
+    
+    @property
+    def content(self):
+        return self._data
+    
+    @property
+    def workspace(self):
+        return self._data['workspace']
+    
+    def _create(self):
+        """Create global configuration directories and files if needed."""
+        # find application data folder
+        ep = os.getenv('APPDATA')
+        if ep:
+            epath = _Path(ep).joinpath(_Setup._setup_dir)
+        else:
+            epath = _Path.home().joinpath(_Setup._setup_dir)
+        self._appdir = epath
+        # file with application setup info
+        self._appsetup = epath.joinpath(_Setup._setup_file)
+        # make sure the setup path exist
+        if not self._appdir.exists():
+            self._appdir.mkdir()
+        elif self._appdir.is_file():
+            self._appdir.unlink()
+            self._appdir.mkdir()
+        
+        # is there already the setup file?
+        if self._appsetup.exists():
+            # load setup file
+            with open(self._appsetup, 'r') as f:
+                lines = f.readlines() 
+            content = json.loads('\n'.join(lines))            
+            self.verify(content)
+            wks = _str_to_workspace(content['workspace'])
+            content.update({'workspace':wks})
+            self._data.update(content)
+        else:
+            # create content and save it
+            cont = load_config('setup.json') # this is a template in resources
+            self.verify(cont)
+            self._data.update(cont)
+            self.reset_paths()  # set paths to default (using resources)
+            self.save()
+    
+    def verify(self, cont):
+        """Verify setup file content."""
+        out = True
+        out = out and "workspace" in cont
+        out = out and "version" in cont
+        out = out and "license" in cont
+        if not out:
+            msg = "Invalid content of the application setup file ({}):\n{}"
+            raise Exception(_Setup._setup_file, msg.format(cont))
+        
+    def reset_paths(self):
+        """Reset workspace paths to package defaults.
+        
+        Define default paths for resource data and output folder.
+        
+        The default workspace is in user's Documents/stressfit folder. 
+        If there is no user's Documents folder, use the current directory 
+        as workspace.        
+        """
+        wks = self._data['workspace']
+        docs = _Path.home().joinpath('Documents')
+        if not docs.exists():
+            wks['work'] = _Path().cwd()  
+        else:
+            wks['work'] = docs.joinpath('stressfit')
+             
+        wks['data'] = get_resource_path('data')
+        wks['tables'] = get_resource_path('tables')
+        wks['instruments'] = get_resource_path('instruments')
+        wks['output']  = _Path('output') # relative to work
+
+
+    def save(self):
+        """Save application setup file."""
+        try:
+            wks = _workspace_to_str(self._data['workspace'])
+            content = copy.deepcopy(self._data)
+            content['workspace'].update(wks)
+            txt = json.dumps(content, indent=4)
+            with open(self._appsetup, 'w') as f:
+                f.write(txt)
+        except Exception as e:
+            print('Cannot save application setup file: {}'.format(self._appsetup))
+            print(e)
+
+    def load(self):
+        """Load application setup file."""
+        try:
+            with open(self._appsetup, 'r') as f:
+                lines = f.readlines() 
+            content = json.loads('\n'.join(lines))
+            self.verify(content)
+            wks = _str_to_workspace(content['workspace'])
+            content['workspace'].update(wks)
+            self._data.update(content)
+        except Exception as e:
+            print('Cannot load application setup file: {}'.format(self._appsetup))
+            print(e)
+            
+    def info(self):
+        fmt = '{}:\t{}'
+        for key in self._data:
+            print(fmt.format(key, self._data[key]))
+            
 def workspace():
     """Access Workspace object.
     
@@ -104,191 +354,204 @@ class Workspace():
     If the other directories are given as relative paths, they are interpreted
     relative to the main `work` directory.
     
-    The paths are internally saved as pathlib.Path objects.
+    The paths are internally stored as pathlib.Path objects.
     
     The workspace paths can be saved in the work directory in 
-    the file `.workspace` and loaded from it. The file is searched for when
-    switching to a new work directory and loaded if found. 
+    the file `.stressfit/workspace.json` and loaded from it. 
+    The file is searched for when switching to a new work directory 
+    and loaded if found. 
     
     By default, `data`, `tables` and `instruments` point to the package 
-    resources, `work` and `output` point to the user's Documents folder. 
+    resources, `work` and `output` point to the user's Documents folder.
+    
+    Usage
+    -----
+    
+    Use `change_workspace(root=newpath)` for switching to another root  
+    directory.
+    
+    Use `set_paths(new_paths)` to change the workspace paths except root.
     
     """
     
-    _wks_name = '.workspace'
-    _setup_name = '.setup'
-    types = ['work', 'data', 'tables', 'instruments', 'output']
+    _wks_dir = '.stressfit' # directory with workspace info
+    _wks_file = 'workspace.json' # file with workspace info
     def __init__(self):
-        self._path_keys = Workspace.types
-        self._paths = {} 
-        self.reset_paths()
-        self._create_app_dirs()
-            
-        if not self._appwks.exists():
-            self.save(default=True)
-        else:
-            # Let exceptions pass, at least the package default should work.
-            try:
-                self.load(default=True)
-            except:
-                pass
-        
-    @property
-    def appdir(self):
-        """Directory with global stressfit configuration data."""
-        return self._appdir
+        # set application default workspace
+        self.reset_paths(create_tree=True, save=True)
     
     @property
     def wksdir(self):
-        """Directory with stressfit configuration data for given workspace."""
-        return self._wksdir
+        """Directory with workspace configuration data."""
+        return self._paths['work']
     
     @property
-    def inputfile(self):
-        """File with application input data in the current workspace."""
-        return self._wksdir.joinpath(Workspace._setup_name_)
-    
-    def reset_paths(self):
-        """Reset paths to package defaults.
+    def keys(self):
+        """Names of the workspace folder types.
         
-        Define default paths for resource data and output folder.
-        These values can be overriden by set_path().
+        Example: 'work', 'data', 'tables', 'output', ...
+        
+        Used as the kind argument in various dataio functions.
         """
-        self._paths['data'] = get_resource_path('data')
-        self._paths['tables'] = get_resource_path('tables')
-        self._paths['instruments'] = get_resource_path('instruments')
-        self._paths['output']  = _Path.home().joinpath('Documents')
-        self._paths['work'] = self._paths['output']
-        if not self._paths['output'].exists():
-            self._paths['output'] = _Path().cwd()
-            self._paths['work'] = self._paths['output']
-  
-    def _create_app_dirs(self):
-        """Create global configuration directories and files."""
-        ep = os.getenv('APPDATA')
-        if ep:
-            epath = _Path(ep).joinpath('.stressfit')
-        else:
-            epath = _Path.home().joinpath('.stressfit')
-        if not epath.exists():
-            epath.mkdir()
-        elif epath.is_file():
-            epath.unlink()
-            epath.mkdir()
-        # application data folder
-        self._appdir = epath
-        # file with application default workspace info
-        self._appwks = epath.joinpath(Workspace._wks_name)
+        return _wks_keys
 
-    def _create_user_dirs(self):
-        """Create user configuration directories and files."""
+    def _get_workspace_file(self):
+        """Get workspace definition file.
+        
+        Create workspace definition folder if not present.
+        """
         ep = self._paths['work']
-        epath = _Path(ep).joinpath('.stressfit')
+        epath = _Path(ep).joinpath(Workspace._wks_dir)
         if not epath.exists():
             epath.mkdir(parents=True)
         elif epath.is_file():
             msg = 'Cannot create workspace folder. Remove file {} first.'
             raise Exception(msg.format(epath.as_posix()))
-        # application data folder
-        self._wksdir = epath
-        # file with application default workspace info
-        self._wksdata = epath.joinpath(Workspace._wks_name)
+        # file with workspace info
+        out = epath.joinpath(Workspace._wks_file)
+        return out
+
+    def _load(self):
+        """Load workspace paths from local configuration file.
         
-  
-    def keys(self):
-        """Return path eys as list."""
-        return self._path_keys
-  
+        Return
+        ------
+        dict
+            Workspace paths. Return None if not loaded correctly.
+        """
+        wks = None
+        try:
+            file = self._get_workspace_file()
+        except Exception as e:
+            print(e)
+            return None
+        if file.exists():
+            try:
+                with open(file, 'r') as f:
+                    lines = f.readlines() 
+                res = json.loads('\n'.join(lines))
+                if not 'workspace' in res:
+                    msg = 'Cannot find workspace info in {}'
+                    raise Exception(msg.format(file))
+                lst = res['workspace']
+                if not 'work' in lst:
+                    lst['work'] = self._paths['work']
+                wks = _str_to_workspace(lst)
+            except Exception as e:
+                print(e)
+        return wks
+        
+    def reset_paths(self, create_tree=False, save=False):
+        """Reset workspace paths to package defaults."""
+        stp = _setup()
+        self._paths = copy.deepcopy(stp.workspace)
+        self.change_workspace(root=self._paths['work'], 
+                              create_tree=create_tree,
+                              save=save,
+                              verbose=False)
+        
+    def change_workspace(self, root=None, create_tree=True, save=True, 
+                         verbose=True):
+        """Change workspace root directory.
+        
+        Process dependences:
+            - Set the new workspace root directory
+            - Try to load workspace.json from the workspace
+            - If not loaded/not found, then make sure that relative paths
+              exist in the new workspace. Save the workspace file. If not, 
+              convert them to absolute paths using the previous workspace.
+            - Create workspace tree if required
+
+        Parameters
+        ----------
+        root : str
+            The new workspace root directory.
+            Must be a full path or None. If None, use current directory.
+        create_tree : bool
+            Create workspace tree
+        save : bool
+            Save workspace file if there is no one yet.
+        verbose : bool
+            Print info about new workspace.
+            
+        """
+        err_msg = 'Cannot create a new workspace.'
+        
+        # set workspace path and verify
+        if root is None:
+            p = _Path.cwd()
+        else:
+            p = _Path(root)
+        if not p.is_absolute():
+            msg = 'Cannot use relative workspace directory: {}\n{}'
+            raise Exception(msg.format(root,err_msg))        
+        if (not p.exists()) or p.is_file():
+            msg = 'Directory does not exist: {}\n{}'
+            raise Exception(msg.format(root,err_msg))
+        self._paths['work'] = p
+        if verbose:
+            print('Workspace switched to {}'.format(self._paths['work']))        
+        # try to load workspace file
+        wks = self._load()
+        
+        # Cannot load workspace file?
+        if wks is None:
+            # make paths relative to the new workspace
+            for key in _path_keys:
+                p = self._paths[key]
+                self._paths[key] = _mk_path_relative(self._paths['work'], p)
+            # save workspace file
+            if save:
+                self.save()
+            # NOTE: save also creates tree
+            elif create_tree:
+                _create_workspace_tree(self._paths) 
+        # Workspace file loaded?
+        else:
+            if verbose:
+                fn = self._get_workspace_file()
+                print('Loaded workspace setting from {}'.format(fn))
+            self._paths.update(wks)
+        
+        # create subdirectories if needed
+        if create_tree:
+            _create_workspace_tree(self._paths) 
+        
+
     def full_path(self, key, as_posix=False):
         """Return full path for given directory key.
         
         Parameters
         ----------
         key: str
-            Directory key. One of the keys defined by `self._path_keys`.
+            Directory key. One of the keys defined by `self.keys`.
             
         as_posix: bool
             If True, return as string, otherwise return as a pathlib.Path.
         """
-        if key in self._path_keys:
-            if key=='work':
-                res = self._paths['work']
-            elif self._paths[key].is_absolute():
+        if key in self._paths:
+            if self._paths[key].is_absolute():
                 res = self._paths[key]
             else:
                 res = self._paths['work'].joinpath(self._paths[key])
         else:
             msg = 'Unknown directory key ({}). Use one of {}.'
-            raise Exception(msg,format(key, self._path_keys))
+            raise Exception(msg,format(key, self.keys))
         if as_posix:
             return res.as_posix()
         else:
             return res
     
-
-    def change_workspace(self, work_path):
-        """
-        Change workspace root directory.
-        
-        Process dependences:
-            
-            - Try to load the local .stressfit configuration file
-            - If not loded/not found, then make sure that relative paths
-              exist in the new workspace. 
-            - If not, convert them to absoluet paths.
-
-        Parameters
-        ----------
-        work_path : str
-            Must be a full path. If not, :meth:`pathlib.Path.absolute` is 
-            tried to derive absolute path.
-            If None, the current directory is used.
-        
-        Return
-        ------
-        bool
-            True if new workspace configuration was loaded. 
-        """
-        out = False
-        old_work = self._paths['work']
-        if work_path is None:
-            p = _Path.cwd()
-        else:
-            p = _Path(work_path)
-        if p.is_absolute():
-            self._paths['work'] = p
-        else:
-            try:
-                pp = p.absolute()
-                self._paths['work'] = pp                
-            except Exception:
-                msg = 'Cannot set relative work path: {}'
-                print(msg.format(work_path))
-        
-        # try to load configuration
-        out = self.load()
-        # if not loaded, check relative paths:
-        # - keep it relative if it exists in the new wrokspace
-        # - otherwise convert to absolute
-        if not out:
-            for key in self._paths.keys():
-                if key == 'work':
-                    pass
-                else:
-                    p = self._paths[key]
-                    if not p.is_absolute():
-                        pp = self._paths['work'].joinpath(p)
-                        if not pp.exists():
-                            self._paths[key] = old_work.joinpath(p)
-            #self.set_paths()
-        return out
-        
-    def path(self, key):
-        """Return path name for given key."""
+    def path(self, key=None, as_posix=False):
+        """Return path name for given key. Default is workspace root."""
         if key in self._paths:
-            return self._paths[key]
+            p = self._paths[key]
         else:
-            return self._paths['work']
+            p = self._paths['work']
+        if as_posix:
+            return p.as_posix()
+        else:
+            return p
             
     def set_paths(self, **kwargs):
         """
@@ -308,23 +571,14 @@ class Workspace():
             Output folder.
             
         If the given path is a subdirectory of the work path, then it is saved
-        as relative. 
-        
+        as relative.        
         """
         for key in kwargs:
-            if key == 'work':
-                pass
-            elif key in self._path_keys and kwargs[key] is not None:
-                p = _Path(kwargs[key])
-                # make absolute paths relative to work if possible
-                if p.is_absolute():
-                    try:
-                        p = p.relative_to(self._paths['work'])
-                    except:
-                        pass    
-                self._paths[key] = p
+            if key in _path_keys and kwargs[key] is not None:
+                self._paths[key] = _mk_path_relative(self._paths['work'], 
+                                                     _Path(kwargs[key]))
     
-    def get_paths(self, absolute=False, keys=None):
+    def get_paths(self, absolute=False, keys=None, as_posix=True):
         """Return current posix path names as dict.
         
         Parameters
@@ -334,89 +588,46 @@ class Workspace():
         keys: list
             If defined, return only listed directories. Otherwise
             return all workspace directories.
+        as_posix : bool
+            Return paths as strings
         
         Return
         ------
         dict
+            Workspace paths as pathlib.Path objects or strings.    
             Keys are the directory types defined for the workspace.
-            The values are path names returned by :func:`pahlib.Path.as_posix`.
         """
         env = {}
         if keys is None:
-            keys = self._path_keys
+            keys = self.keys
         for key in keys:
             p = self._paths[key]
             if absolute:
-                p = self.full_path(key, as_posix=True)
+                p = self.full_path(key, as_posix=as_posix)
             else:
-                p = self._paths[key].as_posix()
+                p = self._paths[key]
+                if as_posix:
+                    p = p.as_posix()
             env[key] = p
         return env
     
     def validate_paths(self):
         """Check that the workspace paths exist."""
         fmt = 'Path not found: {}'
-        for key in self._path_keys:
+        for key in self.keys:
             f = self.full_path(key, as_posix=False)
             if not f.exists():
                 raise Exception(fmt.format(f.as_posix()))
 
-    def load(self, default=False):
-        """Load workspace path names from local workspace configuration file.
-        
-        If successful, update workspace setting.
-        
-        Return
-        ------
-        bool
-            True if successfully loaded and workspace updated.
-        """
-        out = False
-        if default:
-            file = self._appwks
-        else:
-            self._create_user_dirs()
-            file = self._wksdata
-        if file.exists():
-            try:
-                with open(file, 'r') as f:
-                    lines = f.readlines() 
-                res = json.loads('\n'.join(lines))
-                if not 'workspace' in res:
-                    msg = 'Cannot find workspace info in {}'
-                    raise Exception(msg.format(file))
-                info = res['workspace']
-                if default and 'work' in info:
-                    # NOTE: change_workspace calls load(default=False)
-                    self.change_workspace(info['work'])
-                else:
-                    self.set_paths(**info)
-                out = True
-            except Exception as e:
-                print(e)
-        return out
 
-    def save(self, default=False):
-        """Save workspace path names in local workspace configuration file.
-        
-        Parameters
-        ----------
-        as_default : bool
-            If true, save to the user application data folder. Otherwise
-            save configuration under the current workspace directory and
-            exclude the 'work' item (workspace directory).
-        
-        """
-        if default:
-            file = self._appwks
-        else:
-            self._create_user_dirs()
-            file = self._wksdata
-        keys = self._path_keys.copy()
+
+    def save(self):
+        """Save workspace paths in local configuration file."""
+        file = self._get_workspace_file()
+        keys = _path_keys
         try:
-            if not default:
-                keys.remove('work')
-            lst = self.get_paths(absolute=False, keys=keys)
+            _create_workspace_tree(self._paths)
+            lst = _workspace_to_str(self._paths, keys=keys)
             out = {'workspace':lst}
             txt = json.dumps(out,indent=4)
             with open(file, 'w') as f:
@@ -424,10 +635,10 @@ class Workspace():
         except Exception as e:
             print(e)
 
-    def print_info(self, absolute=False):
+    def info(self, absolute=False):
         """Print ifnormation on workspace paths."""
         fmt = '{}: {}'
-        lst = self.get_paths(absolute=absolute)
+        lst = _workspace_to_str(self._paths, absolute=absolute)
         for key in lst:
             print(fmt.format(key,lst[key]))
             
@@ -695,7 +906,7 @@ def get_input_file(filename, kind='data', path=None, **kwargs):
         wks = workspace()
         if path:
             p = _Path(path)
-        elif kind in wks.keys():
+        elif kind in _wks_keys:
             p = wks.full_path(kind, as_posix=False)
         else:
             p = f.cwd()
@@ -1230,7 +1441,7 @@ def save_params(data, filename, comment="", source="", **kwargs):
     comment: :obj:`str` or :obj:`list` of :obj:`str`
         Header comments.
     source: str
-        Optionally, add id of the calling script to the coments.
+        Optionally, add id of the calling script to the comments.
         Use "``source=__file__``" to add the name of the calling script)
     **kwargs:
         Keyword parameters passed to :func:`~.save_text`. 
@@ -1257,10 +1468,15 @@ def save_params(data, filename, comment="", source="", **kwargs):
 
 def test():
     """Test unit."""
-   #  w = workspace()
-   #  w.print_info(absolute=True)
+    # wks = workspace()
+    # wks.info()
+    stp = _setup()
+    stp.info()
+    print()
+    wks = workspace()
+    wks.info()
     d = load_data('eps_B_axi.dat', kind='data')
     assert len(d)>10
 
     
-    
+
