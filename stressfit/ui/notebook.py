@@ -4,6 +4,7 @@ Created on Tue Oct  5 11:38:15 2021
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
 
+# TODO extract execution code to a top-level command handler
 # TODO manage messages in widgets and config, define extra spaces for it in notebook
 # TODO model definition - strain
 # TODO fit strain
@@ -11,17 +12,14 @@ Created on Tue Oct  5 11:38:15 2021
 # TODO model definition - stress
 # TODO fit stress
 # 
+# TODO clean usage of _err and _msg !!!!!!
 
-try:
-    from pygments import formatters, highlight, lexers
-    _has_pygments = True
-except ImportError:
-    _has_pygments = False
+
 
 #print('_has_pygments = {}'.format(_has_pygments))
 #import abc
 import re
-import traceback
+
 import abc
 import ipywidgets as ipy
 import json
@@ -34,6 +32,9 @@ from .widgets import SButton, SRadioButtons, DistTable, ScaleTable
 from .widgets import choose_file, choose_file_save
 from pathlib import Path as _Path
 import numpy as np
+import logging
+from colorama import Fore
+# stresssfit imports
 import stressfit.commands as comm
 import stressfit.shapes as shapes
 import stressfit.dataio as dataio
@@ -49,6 +50,33 @@ _uiconf = uiconfig()
 def _has_keys(args, keys):
     """Verify that all args are in keys."""
     return all (k in args for k in keys)
+
+
+class log_viewer(logging.Handler):
+    """Class to redistribute python logging data."""
+
+    def __init__(self, output, *args, **kwargs):
+         # Initialize the Handler
+         logging.Handler.__init__(self, *args)
+         self.out = output
+         # optional take format
+         # setFormatter function is derived from logging.Handler
+         for key, value in kwargs.items():
+             if "{}".format(key) == "format":
+                 self.setFormatter(value)
+
+    def emit(self, record):
+        """Overload of logging.Handler method."""
+        msg = self.format(record)
+        if record.levelno>=logging.ERROR:
+            fore = Fore.RED
+        elif record.levelno>=logging.WARNING:
+            fore = Fore.YELLOW
+        else:
+            fore = Fore.BLACK
+        new = {'name': 'stdout', 'output_type': 'stream', 'text': (fore + (msg + '\n'))}
+        self.out.outputs = (new,) + self.out.outputs
+
 
 #%% Base abstract classes for input collections
 
@@ -231,78 +259,54 @@ class UI_base:
         self._widgets[name].options = self._options[name]
 
     def message(self, txt, clear=True):
-        """Print message in the message output, if defined."""
-        if self._msg:
-            if clear:
-                self._msg.clear_output()
-            with self._msg:
-                print(txt)
+        """Print info to the logger, if defined."""
+        if self._logger:
+            self._logger.info(txt)           
         else:
             print(txt)
-                
-    def error_trace(self, clear=True):
-        """Format and print traceback from the last exception."""        
-        if self._err and clear:
-            self._err.clear_output()
-        tb_text = "".join(traceback.format_exc()) 
-        if _has_pygments:
-            lexer = lexers.get_lexer_by_name("pytb", stripall=True)
-            if self._err:
-                style = '<STYLE>\n'
-                style += '.highlight .gr { color: #FF0000 }\n'
-                style += '.highlight .o { color: #333333 }\n'
-                style += '.highlight .m { color: #6600EE; font-weight: bold }\n'
-                style += '.highlight .nb { color: #007020 }\n'
-                style += '.highlight .gt { color: #0044DD }\n'
-                style += '.highlight .s1 { background-color: #fff0f0 } \n'
-                style += '.highlight .bp { color: #902020 } \n'
-                style += '.highlight .k { color: #008800; font-weight: bold }\n'   
-                style += '</STYLE>\n'
-                formatter = formatters.get_formatter_by_name('html',style='colorful')
-                tb_colored = highlight(tb_text, lexer, formatter)
-                t = ipy.HTML(value=style+tb_colored)
-                with self._err:
-                    display(t)
-            else:
-                self.message('terminal16m')
-                formatter = formatters.get_formatter_by_name('terminal16m')
-                tb_colored = highlight(tb_text, lexer, formatter)
-                print(tb_colored)
-        elif self._err:
-            with self._err:
-                print(tb_text)
-        else:
-            self.message('no _err')
-            print(tb_text)
-        
-    def error(self, txt, clear=True, trace=True):
-        """Print error message in the error output, if defined."""
-        if clear and self._err:
-            self._err.clear_output()
-        if not txt:
-            return
-        if self._err:
-            with self._err:
-                if isinstance(txt, Exception):
-                    print(txt)
-                else:
-                    s1 = "<font color='red'>{}</font>".format(txt)
-                    s = re.sub(r'\n',r'<br/>',s1)
-                    t = ipy.HTML(value=s)
-                    display(t)
+
+    def warning(self, txt):
+        """Print warning to the logger, if defined."""
+        if self._logger:
+            self._logger.warning(txt)           
         else:
             print(txt)
-        if trace:
-            self.error_trace(clear=False)
+     
+    def error(self, txt):
+        """Print error to the logger, if defined."""
+        if self._logger:
+            self._logger.error(txt)           
+        else:
+            print(txt)        
+    
+    def exception(self, txt):
+        """Print exception to the logger, if defined."""
+        if self._logger:
+            self._logger.exception(txt)           
+        else:
+            print(txt) 
+
+    def progress(self, txt):
+        """Print progress to the logger, if defined."""
+        if self._logger:
+            self._logger.progress(txt)           
+        else:
+            print(txt)
+    
+    def clear(self, what):
+        """Clear output area specified as a string argument."""
+        if self._logger:
+            self._logger.clear(what=what)
 
     def set_on_change(self, on_change):
         """Set callback to be executed when the UI changes state."""
         self._on_change = on_change
               
-    def show(self, err=None, msg=None, **kwargs):
+    def show(self, err=None, msg=None, logger=None, **kwargs):
         """Display VBox container with all input widgets."""        
         self._err = err
         self._msg = msg
+        self._logger = logger
         self._create_widgets(**kwargs)
         ui = self._create_ui(**kwargs)
         hdr = create_header(self.uiparam['title'],
@@ -350,8 +354,7 @@ class UI_base_list(UI_base):
                         display(grid)                    
         except Exception:
             msg = 'Cannot redraw table.'
-            self.error(msg, trace=True, clear=False)
-            pass
+            self.exception(msg)
 
     def _delete(self, key):
         """Delete given item from the list.
@@ -547,7 +550,7 @@ class UI_base_list(UI_base):
             If True, call :meth:`update_widgets` to redraw the ui.
         """
         if item is None or not item.strip():
-            self.error('Give an ID string for the list item.')
+            self.warning('Give an ID string for the item to add.')
             return
         # no input data provided: get it from the widgets content
         if data is None:
@@ -557,8 +560,8 @@ class UI_base_list(UI_base):
             try:
                 self._check_keys(data)
                 self.set_values({'input':data})
-            except Exception as e:
-                self.error(e)
+            except Exception:
+                self.exception('Cannot add data to the list')
         # add or replace the named item on the list using input values
         new_input = {item: self._values['input']}
         
@@ -581,7 +584,7 @@ class UI_base_list(UI_base):
         """
         return self._values['list']
 
-    def show(self, err=None, msg=None, **kwargs):
+    def show(self, err=None, msg=None, logger=None, **kwargs):
         """Display VBox container with all input widgets.
         
         In addition to UI_base, display the table with the list
@@ -599,6 +602,7 @@ class UI_base_list(UI_base):
         """               
         self._err = err
         self._msg = msg
+        self._logger = logger
         
         # create value widgets and place them in vertical list
         self._create_widgets(**kwargs)
@@ -769,17 +773,17 @@ class UI_workspace(UI_base):
             with self._out:
                 self.wk.save()
                 self.wk.validate_paths()
-                print('Workspace configuration saved.')
-        except Exception as e:
-            self.error(e)
+                self.message('Workspace configuration saved.')
+        except Exception:
+            self.exception('Workspace save failed.')
     
     def _on_reload(self, b):
         """Re-load workspace configuration from workspace root directory."""
-        inp = {'name':'work', 'value':self._values['work']}
+        inp = {'name':'work', 'value':self._values['work']}       
         try:
             self._on_path_change(inp)
-        except Exception as e:
-            self.error(e)      
+        except Exception:
+            self.exception('Workspace reload failed.')      
                             
     def assign(self):
         """Do nothing.
@@ -804,9 +808,9 @@ class UI_workspace(UI_base):
                 if validate:
                     self.wk.validate_paths()
                 if verbose: 
-                    print('Workspace OK')
-            except Exception as e:
-                print(e)
+                    self.message('Workspace OK')
+            except Exception:
+                self.exception('Cannot update workspace')
 
     def reset_workspace(self):
         """Set workspace configuration to package default."""
@@ -923,8 +927,8 @@ class UI_shape(UI_base):
                     print(type(obj).__name__)
                     print(obj.get_param())
                 
-        except Exception as e:
-            self.error(e)
+        except Exception:
+            self.exception('Cannot load shape data')
         
     def _reset_widgets_file(self):
         """Create widgets for file input, if select = File."""
@@ -1086,9 +1090,9 @@ class UI_shape(UI_base):
                     param[key] = item.value
             self._values['param'] = param
     
-    def show(self, err=None, msg=None, **kwargs): 
+    def show(self, err=None, msg=None, logger=None, **kwargs): 
         """Display the input collection."""
-        super().show(err=err, msg=msg)
+        super().show(err=err, msg=msg, logger=logger)
         # trigger displaying of shape parameters
         self._on_change_shape({'name':'value', 'new':self.select})
     
@@ -1253,7 +1257,7 @@ class UI_sampling(UI_base_list):
         except Exception:
             if item in self._values['list']:
                 self._delete(item)
-            self.error_trace(clear=False)
+            self.exception('Cannot add sampling data.')
         if update_ui:
             self.update_widgets()        
         
@@ -1317,9 +1321,9 @@ class UI_attenuation(UI_base):
         """Assign values to global data."""
         self._values = _uiconf.data.get_item(self.name)
         
-    def show(self, err=None, msg=None, **kwargs): 
+    def show(self, err=None, msg=None, logger=None, **kwargs): 
         """Display the input collection."""
-        super().show(err=err, msg=msg, **kwargs)
+        super().show(err=err, msg=msg, logger=logger, **kwargs)
         self._type_change({'name':'value', 'new':self._values['type']})
         
 
@@ -1497,10 +1501,10 @@ class UI_data(UI_base_list):
             _uiconf.data.load('data', item=item)
             if update_ui:
                 self.update_widgets()
-        except Exception as e:
+        except Exception:
             if item in self._values['list']:
                 self._delete(item)
-            self.error(e)
+            self.exception('Cannot add strain data.')
     
     def _plot_comparison(self, simdata, expdata):
         
@@ -1577,8 +1581,8 @@ class UI_data(UI_base_list):
     
     def _on_replot(self,b):
         """Plot data with simulated pseudo-strains and pseudo-intensities."""
-        self.message('')
-        self.error('')
+        self.clear('info')
+        self.clear('error')
         self._outgr.clear_output()
         # update values from widgets
         self.update_values()
@@ -1620,9 +1624,9 @@ class UI_data(UI_base_list):
         with self._outgr:
             self._plot_comparison(simdata, expdata)
       
-    def show(self, err=None, msg=None, **kwargs): 
+    def show(self, err=None, msg=None, logger=None, **kwargs): 
         """Display the input collection."""
-        super().show(err=err, msg=msg, **kwargs)
+        super().show(err=err, msg=msg, logger=logger, **kwargs)
         display(self._outgr)
         
         
@@ -1710,9 +1714,9 @@ class UI_distribution(UI_base_list):
             self._widgets['scale'].redraw()
             self._was_displayed = True
     
-    def show(self, err=None, msg=None, **kwargs): 
+    def show(self, err=None, msg=None, logger=None, **kwargs): 
         """Display the input collection."""
-        super().show(err=err, msg=msg)
+        super().show(err=err, msg=msg, logger=logger)
         self._widgets['dist'].redraw()
         #self._widgets['dist'].sheet.layout.height='400px'
         #print(self._widgets['dist'].sheet.layout)
@@ -1830,8 +1834,8 @@ class UI_plot_scene(UI_base):
     def _on_replot(self,b):
         # Plot experiment geometry 
         # (red arrow shows motion of sampling points in stationary sample)
-        self.message('')
-        self.error('')
+        self.clear('info')
+        self.clear('error')
         self._out.clear_output()
         # update values from widgets
         self.update_values()
@@ -2002,8 +2006,8 @@ class UI_resolution(UI_base):
         return fname
     
     def _on_replot(self,b):
-        self.message('')
-        self.error('')
+        self.clear('info')
+        self.clear('error')
         self._out.clear_output()
         # update values from widgets
         self.update_values()
@@ -2176,8 +2180,8 @@ class UI_fit_imodel(UI_base):
     
     def _prepare(self):
         """Make all settings necessary to run commands."""
-        self.message('')
-        self.error('')
+        self.clear('info')
+        self.clear('error')
         self._out.clear_output()
         # update values from widgets
         self.update_values()
@@ -2264,8 +2268,14 @@ class UI():
         self._last_input_file = 'input.json'
         self.ui = {}
         self.wk = dataio.workspace()
-        self._msg = ipy.Output(layout=ipy.Layout(width='100%'))
-        self._err = ipy.Output(layout=ipy.Layout(width='100%'))
+        self._note = ipy.Output(layout=ipy.Layout(width='100%', min_height='100px'))
+        self._msg = ipy.Output(layout=ipy.Layout(width='100%', min_height='200px'))
+        self._err = ipy.Output(layout=ipy.Layout(width='100%', min_height='200px'))
+        self._logger = dataio.logger()
+        self._logger.output = self._msg
+        self._logger.output_short = self._note
+        self._logger.output_exc = self._err
+        
         # setup dialog
         self._add_input_ui(UI_workspace('workspace'))
         self._add_input_ui(UI_options('options'))
@@ -2354,9 +2364,13 @@ class UI():
         for key in keys:
             for ui in tabs_data[key]['ui']:
                 with tabs[key]:
-                    ui.show(msg=self._msg, err=self._err)
+                    try:
+                        ui.show(msg=self._msg, err=self._err, logger=self._logger)
+                    except Exception as e:
+                        print('Cannot add ui component: {}'.format(key))
+                        raise(e)
         
-
+        display(self._note)
         display(self._err)
         display(self._msg) 
         
@@ -2414,12 +2428,9 @@ class UI():
                     f.write(out)
                     f.close()
             else:
-                with self._msg:
-                    print(out)
-        except Exception as e:
-            with self._err:
-                print(e)
-            raise e
+                self.message(out)
+        except Exception:
+            self.exception('Cannot save program configuration')
         
     def load(self, filename=''):
         """Load input data in JSON format."""
@@ -2431,7 +2442,7 @@ class UI():
             # import into global input data
             _uiconf.import_json(lines, reload=True)
             if not _uiconf.is_ready():
-                print('Loading of program settings failed.')
+                self.error('Loading of program settings failed.')
                 return
             # Notification that data lists may have changed 
             # -> update dependent options
@@ -2443,13 +2454,9 @@ class UI():
                     self.ui[key].assign()
                     self.ui[key].update_widgets() 
                     # self.ui[key].notify()
-                except Exception as e:
-                    with self._err:
-                        print('Problem with settig value {}:'.format(key))
-                        print(e)
-                    raise e
-        except Exception as e:
-            with self._err:
-                print(e)
-            raise e
+                except Exception:
+                    self.exception('Problem with settig configuration value {}:'.format(key))
+
+        except Exception:
+            self.exception('Problem while loading program configuration.')
 

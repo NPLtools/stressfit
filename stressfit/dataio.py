@@ -63,20 +63,399 @@ be represented by:
 import numpy as np
 import datetime
 import json
+import traceback
+try:
+    from pygments import formatters, highlight, lexers
+    _has_pygments = True
+except ImportError:
+    _has_pygments = False
+try:
+    import ipywidgets as ipy
+    _has_ipy = True
+except ImportError:
+    _has_ipy = False
+try:
+    from IPython.display import display
+    _has_display = True
+except:
+    _has_display = False
 from pathlib import Path as _Path
 import os
 from functools import wraps
 import copy
+import logging
+from colorama import Fore
 
 __work = None
-
 __setup = None
+__log = None
 
 # allowed workspace directories
 _wks_keys = ['work', 'data', 'tables', 'instruments', 'output']
 # workspace directories without root
 _path_keys = _wks_keys.copy()
 _path_keys.remove('work')
+
+
+def logger():
+    """Access Stressfit loggers."""
+    global __log
+    if __log is  None:
+        __log = StressfitLogger()
+    return __log
+
+
+def _print_loggers(full=False):
+    for k,v in  logging.Logger.manager.loggerDict.items()  :
+        if full or k.strip().startswith('stressfit'):
+            print('+ [%s] {%s} ' % (str.ljust( k, 20)  , str(v.__class__)[8:-2]) ) 
+            if not isinstance(v, logging.PlaceHolder):
+                for h in v.handlers:
+                    print('     +++',str(h.__class__)[8:-2] )
+
+
+class StressfitLogger():
+    """Encapsulate python logging logger for Stressfit."""
+    
+# TODO progress logger
+    def __init__(self):
+                
+        # define optional widget outputs for loggers
+        self._msg = None # basic info, warning and error 
+        self._exc = None # exceptions
+        self._prog = None # progress
+        self._short = None # short messages, 2-line output area 
+        
+        # message logger: info, warning, error
+        self._lm = logging.getLogger('stressfit')
+        self._lm.setLevel(logging.INFO)
+        self._hm = _log_handler()
+        self._hm.setFormatter(_log_formatter())
+        self.add_handler(self._hm)
+        # optional file handler
+        self._hm_file = None
+        
+        # exception logger
+        self._lex = logging.getLogger('stressfit.exception')
+        self._lex.setLevel(logging.ERROR)
+        self._lex.propagate = False
+        self._hex = _log_handler_exc()
+        self._lex.addHandler(self._hex)
+        # optional file handler
+        self._hex_file = None
+        
+        # progress logger
+        self._lprog = logging.getLogger('stressfit.progress')
+        self._lprog.setLevel(logging.INFO)
+        self._lprog.propagate = False
+        self._hprog = _log_handler_prog()
+        self._lprog.addHandler(self._hprog)
+        # optional file handler
+        self._hprog_file = None
+        
+
+    @property
+    def output(self): 
+        """Output ipywidget, messages"""
+        return self._msg
+    
+    @output.setter
+    def output(self, value):
+        self._msg = value
+        if self._hm:
+            self._hm.out = value
+
+    @property
+    def output_exc(self): 
+        """Output ipywidget, exceptions"""
+        return self._exc
+    
+    @output_exc.setter
+    def output_exc(self, value):
+        self._exc = value
+        if self._hex:
+            self._hex.output = value
+        
+    @property
+    def output_prog(self): 
+        """Output ipywidget, progress"""
+        return self._prog
+    
+    @output_prog.setter
+    def output_prog(self, value):
+        self._prog = value
+        if self._hprog:
+            self._hprog.output = value
+
+    @property
+    def output_short(self): 
+        """Output ipywidget, short messages"""
+        return self._short
+    
+    @output_short.setter
+    def output_short(self, value):
+        self._short = value              
+
+    @property
+    def file_log(self):
+        return self._hm_file is not None
+    
+    @file_log.setter
+    def file_log(self, value:bool):
+        if value and self._hm_file is None:
+            self._hm_file = logging.FileHandler('messages.txt', mode='w')
+            self._lm.addHandler(self._hm_file)
+        elif not value:
+            try:
+                if self._hm_file:
+                    self._hm_file.close()
+                    if self._hm_file in self._lm.handlers:
+                        self._lm.removeHandler(self._hm_file)
+            finally:
+                self._hm_file = None                
+        return self._hm_file is not None
+    
+    
+    def _print_short(self, message, level):
+        """Print 1st line on the short output if defined."""
+        if self._short and isinstance(message, str):
+            # always clear it
+            self._short.clear_output()
+            lst = message.strip().split('\n')
+            msg = lst[0]
+            if level>=logging.ERROR:
+                fore = Fore.RED
+            elif level>=logging.WARNING:
+                fore = Fore.MAGENTA
+            else:
+                fore = Fore.RESET
+            with self._short:
+                print(fore + msg + Fore.RESET)
+    
+    def info(self, message):
+        """Print info message."""        
+        if isinstance(message, list):
+            message='\n'.join(message)
+        self. _print_short(message, logging.INFO)
+        self._lm.info(message)
+        
+    def warning(self, message):
+        """Print warning."""   
+        if isinstance(message, list):
+            message='\n'.join(message)
+        self. _print_short(message, logging.WARNING)
+        self._lm.warning(message)
+        
+    def error(self, message):
+        """Print error message."""
+        if isinstance(message, list):
+            message='\n'.join(message)
+        self. _print_short(message, logging.ERROR)
+        self._lm.error(message)
+        
+    def exception(self, message):
+        """Print error message."""
+        if isinstance(message, list):
+            message='\n'.join(message)
+        self. _print_short(message, logging.ERROR)
+        self._lex.error(message)
+
+    def progress(self, message):
+        """Print error message."""
+        if isinstance(message, list):
+            message='\n'.join(message)
+        self._lprog.info(message)
+        
+    def setLevel(self, level):
+        """Set main logger level."""
+        self._lm.setLevel(level)
+
+    def add_handler(self, hnd):
+        """Add another handler to the basic logger."""
+        self._lm.addHandler(hnd)  
+    
+    def remove_handler(self, hnd=None):
+        """Remove given handler from the basic logger."""
+        if hnd == None:
+            hnd = self._hm
+        self._lm.removeHandler(hnd)
+    
+    def remove_all_handlers(self):
+        """Remove all handlers."""
+        while self._lm.hasHandlers(): 
+            self._lm.removeHandler(self._lm.handlers[0])
+    
+    def reset(self):
+        """Remove all handlers except the default one."""
+        self.remove_all_handlers()
+        self._lm.addHandler(self._hm)         
+        
+    def clear(self, what='info'):
+        """Clear output if defined.
+        
+        Designed for ipywidgets.Output.
+        Calls output.clear_output().
+        """
+        if what=='error' and self.output_exc:
+            self.output_exc.clear_output()
+        elif what=='prog' and self.output_prog:
+            self.output_prog.clear_output()
+        elif self.output:
+            self.output.outputs = ()
+            self.output.clear_output()
+                   
+class _log_formatter(logging.Formatter):    
+    FORMATS = {logging.WARNING: '%(levelname)s: %(message)s',
+               logging.ERROR: '%(levelname)s: %(message)s',
+               logging.CRITICAL: '%(levelname)s: %(message)s'}
+    def format(self, record):
+        if record.levelno in _log_formatter.FORMATS:
+            log_fmt = _log_formatter.FORMATS.get(record.levelno)
+        else:
+            log_fmt = '%(message)s'
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)
+                    
+class _log_handler(logging.Handler):
+    """Class to redistribute python logging data."""
+    
+    def __init__(self, *args, **kwargs):
+         # Initialize the Handler
+         logging.Handler.__init__(self, *args)
+         self.out = None
+         # optional take format
+         for key, value in kwargs.items():
+             if "{}".format(key) == "output":
+                 self.out = value
+
+    def emit(self, record):
+        """Overload of logging.Handler method."""
+        # set collor for the level
+        if record.levelno>=logging.ERROR:
+            fore = Fore.RED
+        elif record.levelno>=logging.WARNING:
+            fore = Fore.MAGENTA
+        else:
+            fore = Fore.RESET
+
+        # format record
+        msg = self.format(record)
+        if self.out:
+            new_output = {
+                'name': 'stdout',
+                'output_type': 'stream',
+                'text': fore+msg+Fore.RESET+'\n'
+            }
+            # add on top of the outputs
+            self.out.outputs = (new_output, ) + self.out.outputs
+        else:
+            print(fore + msg + Fore.RESET)
+
+class _log_handler_exc(logging.StreamHandler):
+    """Exception logging handler."""
+    
+    def __init__(self, *args, **kwargs):
+         # Initialize the Handler
+         super().__init__(self, *args)
+         self.output = None
+         fmt = logging.Formatter('EXCEPTION: %(message)s')
+         self.setFormatter(fmt)        
+
+    def error_trace(self):
+        """Format and print traceback from the last exception.""" 
+        tb_text = "".join(traceback.format_exc()) 
+        if _has_pygments:
+            if _has_ipy and _has_display and self.output:
+                lexer = lexers.get_lexer_by_name("pytb", stripall=True)
+                style = '<STYLE>\n'
+                style += '.highlight .gr { color: #FF0000 }\n'
+                style += '.highlight .o { color: #333333 }\n'
+                style += '.highlight .m { color: #6600EE; font-weight: bold }\n'
+                style += '.highlight .nb { color: #007020 }\n'
+                style += '.highlight .gt { color: #0044DD }\n'
+                style += '.highlight .s1 { background-color: #fff0f0 } \n'
+                style += '.highlight .bp { color: #902020 } \n'
+                style += '.highlight .k { color: #008800; font-weight: bold }\n'   
+                style += '</STYLE>\n'
+                formatter = formatters.get_formatter_by_name('html',style='colorful')
+                tb_colored = highlight(tb_text, lexer, formatter)
+                t = ipy.HTML(value=style+tb_colored)
+                with self.output:
+                    display(t)
+            else:
+                # self.message('terminal16m')
+                formatter = formatters.get_formatter_by_name('terminal16m')
+                tb_colored = highlight(tb_text, lexer, formatter)
+                print(tb_colored)
+        elif self.output:
+
+            with self.output:
+                print(tb_text)
+        else:
+            print(tb_text)
+
+    def emit(self, record):
+        """Print to output if available."""
+        msg = self.format(record)
+        if self.output:
+            self.output.clear_output()
+            with self.output:
+                print(Fore.RED + msg + Fore.RESET)
+        else:
+            print(Fore.RED + msg + Fore.RESET)
+        self.error_trace()
+
+class _log_handler_prog(logging.StreamHandler):
+    """Progress logging handler."""
+    
+    def __init__(self, *args, **kwargs):
+         # Initialize the Handler
+         super().__init__(self, *args)
+         self.output = None
+         fmt = logging.Formatter('%(message)s')
+         self.setFormatter(fmt) 
+
+    def emit(self, record):
+        """Print to output if available."""
+        msg = self.format(record)
+        if self.output:
+            self.output.clear_output()
+            with self.output:
+                print(msg )
+        else:
+            print(msg)
+
+def workspace():
+    """Access Workspace object.
+    
+    Return
+    ------
+    instance of :class:`dataio.Workspace`
+        Workspace object which defines and maintains user 
+        workspace directories.
+    """
+    global __work
+    if __work is None:
+        __work = Workspace()
+    return __work
+
+
+def _setup():
+    """Access the instance of _Setup.
+    
+    _Setup handles application global settings and default values. It should
+    remain "private" as there is nothing to be done on it by users.
+    
+    Return
+    ------
+    Instance of :class:`dataio._Setup`
+    """
+    global __setup
+    if __setup is None:
+        __setup = _Setup()
+    return __setup
+
+
 
 
 def _mk_path_relative(root, path):
@@ -179,19 +558,7 @@ def _create_workspace_tree(wks):
                 msg = "File {} already exists.\nCannot create directory."
                 raise Exception(msg.format(f.as_posix()))
 
-def _setup():
-    """Access the instance of _Setup.
-    
-    _Setup handles application global settings and default values.
-    
-    Return
-    ------
-    Instance of :class:`dataio._Setup`
-    """
-    global __setup
-    if __setup is None:
-        __setup = _Setup()
-    return __setup
+
 
 class _Setup():
     """
@@ -319,20 +686,7 @@ class _Setup():
         fmt = '{}:\t{}'
         for key in self._data:
             print(fmt.format(key, self._data[key]))
-            
-def workspace():
-    """Access Workspace object.
-    
-    Return
-    ------
-    instance of :class:`dataio.Workspace`
-        Workspace object which defines and maintains user 
-        workspace directories.
-    """
-    global __work
-    if __work is None:
-        __work = Workspace()
-    return __work
+
 
 
 class Workspace():
@@ -378,6 +732,7 @@ class Workspace():
     _wks_file = 'workspace.json' # file with workspace info
     def __init__(self):
         # set application default workspace
+        self._logger = logger()
         self.reset_paths(create_tree=True, save=True)
     
     @property
@@ -489,8 +844,10 @@ class Workspace():
             msg = 'Directory does not exist: {}\n{}'
             raise Exception(msg.format(root,err_msg))
         self._paths['work'] = p
+        self._logger.clear()
         if verbose:
-            print('Workspace switched to {}'.format(self._paths['work']))        
+            self._logger.info('Workspace switched to {}'.format(self._paths['work']))
+            #print('Workspace switched to {}'.format(self._paths['work']))        
         # try to load workspace file
         wks = self._load()
         
@@ -510,7 +867,8 @@ class Workspace():
         else:
             if verbose:
                 fn = self._get_workspace_file()
-                print('Loaded workspace setting from {}'.format(fn))
+                self._logger.info('Loaded workspace setting from {}'.format(fn))
+                # print('Loaded workspace setting from {}'.format(fn))
             self._paths.update(wks)
         
         # create subdirectories if needed
@@ -1478,5 +1836,11 @@ def test():
     d = load_data('eps_B_axi.dat', kind='data')
     assert len(d)>10
 
-    
 
+#log = logging.getLogger()
+#try: 
+#    a=1/0
+#except Exception as e: 
+#    log.exception('aaa')
+
+    

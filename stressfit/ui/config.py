@@ -5,6 +5,7 @@ Created on Mon Apr 25 15:47:30 2022
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
 
+# TODO move to the core module package
 # TODO connect with a messaging tool instead of print()
 # TODO define strain distribution list, linked to input data
 # TODO define command for plotting & fitting strain  model + data)
@@ -17,6 +18,7 @@ import re
 import json
 
 __config = None
+
 
 def uiconfig():
     """Access UI_config object.
@@ -829,3 +831,5 @@ def test():
     res = uiconf.is_ready()
     print(res)
 
+
+            
