@@ -131,7 +131,7 @@ class StressfitLogger():
         self._lm.setLevel(logging.INFO)
         self._hm = _log_handler()
         self._hm.setFormatter(_log_formatter())
-        self.add_handler(self._hm)
+        self._lm.addHandler(self._hm)
         # optional file handler
         self._hm_file = None
         
@@ -155,12 +155,12 @@ class StressfitLogger():
         
 
     @property
-    def output(self): 
+    def output_msg(self): 
         """Output ipywidget, messages"""
         return self._msg
     
-    @output.setter
-    def output(self, value):
+    @output_msg.setter
+    def output_msg(self, value):
         self._msg = value
         if self._hm:
             self._hm.out = value
@@ -271,38 +271,64 @@ class StressfitLogger():
         self._lm.setLevel(level)
 
     def add_handler(self, hnd):
-        """Add another handler to the basic logger."""
+        """Add another handler to the message logger."""
         self._lm.addHandler(hnd)  
     
     def remove_handler(self, hnd=None):
-        """Remove given handler from the basic logger."""
+        """Remove given  handler from the message logger."""
         if hnd == None:
             hnd = self._hm
         self._lm.removeHandler(hnd)
     
     def remove_all_handlers(self):
-        """Remove all handlers."""
+        """Remove all handlers from gthe message logger."""
         while self._lm.hasHandlers(): 
             self._lm.removeHandler(self._lm.handlers[0])
     
-    def reset(self):
-        """Remove all handlers except the default one."""
+    def reset_handlers(self):
+        """Remove all handlers from gthe message logger except the default one."""
         self.remove_all_handlers()
         self._lm.addHandler(self._hm)         
         
-    def clear(self, what='info'):
+    def clear(self, what='all'):
         """Clear output if defined.
         
-        Designed for ipywidgets.Output.
-        Calls output.clear_output().
+        Parameters
+        ----------
+        what : str
+            Output to be cleared:
+                
+            error 
+                error output
+            info 
+                short info messages                
+            msg
+                list of messages
+            prog
+                progress info
+            all
+                all outputs
         """
         if what=='error' and self.output_exc:
             self.output_exc.clear_output()
         elif what=='prog' and self.output_prog:
             self.output_prog.clear_output()
-        elif self.output:
-            self.output.outputs = ()
-            self.output.clear_output()
+        elif what=='info' and self.output_short:
+            self.output_short.clear_output()
+        elif what=='msg' and self.output_msg:
+            self.output_msg.outputs = ()
+            self.output_msg.clear_output()
+        elif what=='all':
+            if self.output_exc:
+                self.output_exc.clear_output()
+            if self.output_prog:
+                self.output_prog.clear_output()
+            if self.output_short:
+                self.output_short.clear_output()
+            if self.output_msg:
+                self.output_msg.outputs = ()
+                self.output_msg.clear_output()
+            
                    
 class _log_formatter(logging.Formatter):    
     FORMATS = {logging.WARNING: '%(levelname)s: %(message)s',

@@ -31,6 +31,25 @@ def uiconfig():
         __config = UI_config()
     return __config
 
+
+def get_scan(self, name):
+    """Return scan data as dict.
+    
+    Shortcut for stressfit.config.uiconfig().data.get_scan(name)
+    
+    Parameters
+    ----------
+    name : str
+        Key string for the data item.
+
+    Returns
+    -------
+    dict
+        Scan data compatible with :func:`stressfit.commands.set_scan`.
+
+    """
+    return uiconfig().data.get_scan(name)
+
 class ScanData():
     """Encapsulate input (experimental) data.
     
@@ -170,6 +189,7 @@ class UI_data():
     load_keys = ['sampling','attenuation','data']
     
     def __init__(self, config):
+        self._log = dataio.logger()
         # keys of listed data items
         self._keys = {}
         for key in UI_data.list_keys:
@@ -385,7 +405,7 @@ class UI_data():
                 if key in lst:
                     self._input[key] = lst[key]
         else:
-            print('No uinput data found.')        
+            self._log.error('No uinput data found.')        
 
     def data_from_dict(self, value):
         """Import input data from a dictionary."""
@@ -398,7 +418,7 @@ class UI_data():
             self._validate_keys()
             self._update_keys()
         else:
-            print('No uconfig data found.')
+            self._log.error('No uconfig data found.')
 
     def data_to_dict(self):
         """Export input data as dict."""       
@@ -444,7 +464,7 @@ class UI_data():
                         self._load_data(key)
             self._set_reload(what, False, item=item)
         except Exception as e:
-            print(e)
+            self._log.exception(str(e))
     
     def clean(self):
         """Clean idle references etc.."""
@@ -521,7 +541,7 @@ class UI_data():
             return sobj.scan
         else:
             for msg in msgs:
-                print(msg)
+                self._log.warning(msg)
             return None 
         
     def get_item(self, name, item=None):
@@ -627,7 +647,7 @@ class UI_data():
             msgs.extend(s)
         if not valid:
             for msg in msgs:
-                print(msg)            
+                self._log.warning(msg)           
         return valid
   
     def is_ready(self):
@@ -635,10 +655,10 @@ class UI_data():
         out = True
         if not self.validate():
             out = False
-            print('Fix the input.')
+            self._log.error('Fix the input.')
         elif self.reload_needed:
             out = False
-            print('Input has changed, call reload_all() and check is_ready() again.')          
+            self._log.error('Input has changed, reload data and try again.')          
         return out
       
 
@@ -651,6 +671,7 @@ class UI_config():
     
     def __init__(self):
         # get initial configuretion from resources
+        self._log = dataio.logger()
         self._config = dataio.load_config('config_ui')
         self._uconfig = self._config['uconfig']
         self._udata = UI_data(self._config)
@@ -731,7 +752,7 @@ class UI_config():
                 if key in lst:
                     self._uconfig[key] = lst[key]
         else:
-            print('No uconfig data found.')
+            self._log.error('No uconfig data found.')
     
     def get(self, key):
         """Return requested config data.
@@ -778,7 +799,7 @@ class UI_config():
         if data:
             out = self._udata.validate()
             if not out:
-                print('Fix config data input.')
+                self._log.error('Fix config data input.')
                 return out
         
         msgs = []
@@ -794,7 +815,7 @@ class UI_config():
                         msgs.append(msg)
         if not out:
             for msg in msgs:
-                print(msg)         
+                self._log.warning(msg)        
         return out
     
     def is_ready(self):

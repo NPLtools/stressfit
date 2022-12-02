@@ -4,6 +4,7 @@ Created on Sat Sep  9 23:53:16 2017
 
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
+# TODO redirect print and exception handling to logger
 import numpy as np
 from lmfit import Minimizer, Parameters
 from scipy.interpolate import CubicSpline as Cspline
@@ -252,92 +253,6 @@ def costFnc(params, model, areg, guess):
         w = np.sqrt(1.0*abs(nres + nreg - model.nvar))
         y = w*model.constraint(params)
         res = np.concatenate((res, np.array([y])), axis=0)
-    return res
-
-def runFit_alt(model, maxiter=200, maxc=10, areg=0., bootstrap=False, loops=3):
-    """ Execution of least square fit.
-    
-        Arguments
-        ---------
-            model : mccfit class
-                class handling model parameters
-            maxiter : int
-                maximum number of function evaluations
-            areg: float
-                regularization coefficient
-            bootstrap: boolean
-                run loops to estimate confidence limits
-            loops: int
-                number of bootstrap loops
-        Returns
-        -------
-            results : boolean
-                    success
-    """
-    global _chi2, _reg
-    if (model.data is None):
-        msg = 'Set value of {}.data.'.format(model.__class__.__name__)
-        raise Exception('No data defined for fitting. '+msg)
-    if (bootstrap):
-        res = runFitEx(model, maxiter=maxiter, loops=loops, areg=areg)
-        return res
-    ndim = model.dist.shape[0]
-    ndata = model.data.shape[0]
-    xdata = model.data[:,0]
-    _chi2 = np.inf
-    _reg = np.inf
-    # initialize distribution array
-    xdis = model.dist[:,0]
-    model.fitInit()
-    iterf = None
-    if (maxiter>0):
-        data_orig = model.data.copy()
-        ydata = data_orig[:,1]
-        for i in range(maxc):
-            minner = Minimizer(costFnc, model.params, 
-                               fcn_args=(model, areg, True), 
-                               iter_cb=iterf)
-            model.result = minner.minimize(method='leastsq', 
-                            params=model.params, 
-                            ftol=model.ftol, 
-                            epsfcn=model.epsfcn, 
-                            max_nfev=maxiter)
-            model.params = model.result.params
-                  
-            [yfit, fit_err, ypos] = model.getSmearedFnc(xdata)
-            er = np.sqrt(fit_err**2 + model.data[:,2]**2)
-            resid = (yfit - data_orig[:,1])/er
-            _chi2 = getChi2(resid, model.params)   
-            _reg = model.result.redchi
-            print('chi2 = {:g}, reg = {:g}'.format(_chi2, _reg))
-            delta = ydata - yfit
-            model.data[:,1] = ydata + delta
-        model.data = data_orig 
-    else:
-        [yfit, fit_err, ypos] = model.getSmearedFnc(xdata)
-    model.areg = areg
-    # par =params as array (par, serr)
-    model.par = params2array(model.params)
-    # fit = array(x, y, yerr) with fitted curve
-    model.fit = np.array([xdata, yfit, fit_err]).T
-    # pos = array(x, y, yerr), with nominal and information depths
-    model.pos = np.array([xdata, ypos, np.zeros(ndata)]).T
-
-    # dist = array(x, y, xerr, yerr) with interpolated distribution
-    ydis = model.getDistribution(xdis)
-    dis_err = np.zeros(ndim)
-    model.dist = np.array([xdis, ydis, dis_err]).T
-    model.chi  = _chi2 
-    model.reg = _reg
-    if (model.avgrange is not None):
-        av = getAverage(xdis, ydis, rang = model.avgrange)  
-        model.avg = [av, 0.]
-    if (not _quiet) : print('runFit finished\n')
-    if (model.result is not None):
-        res = model.result.success
-    else:
-        res = True
-    model.fitFinal()
     return res
 
 def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
@@ -1164,8 +1079,8 @@ class Ifit(MCCfit):
             f = dataio.derive_filename(file, ext='png', sfx='fit')
             outpng = dataio.get_output_file(f, path=outpath)
             # outpng = deriveFilename(outpath+file, 'png', 'fit')
-            f = dataio.derive_filename(file, ext='png', sfx='model')
-            outpngmodel = dataio.get_output_file(f, path=outpath)
+            #f = dataio.derive_filename(file, ext='png', sfx='model')
+            #outpngmodel = dataio.get_output_file(f, path=outpath)
             #outpngmodel = deriveFilename(outpath+file, 'png', 'model')
             f = dataio.derive_filename(file, ext='png', sfx='depth')
             outpngdepth = dataio.get_output_file(f, path=outpath)
@@ -1173,18 +1088,26 @@ class Ifit(MCCfit):
         else:
             saveit=False
             outpng=''
-            outpngmodel=''
+            #outpngmodel=''
             outpngdepth=''
-        gr.plotIntensityFit(self, save=saveit, file=outpng)  
-        # Plot result, model   
-        gr.plotIntensityModel(self, save=saveit, file=outpngmodel)
+        # Plot result, fit & model
+        #gr.plotIntensityFit(self, save=saveit, file=outpng)  
+        #gr.plotIntensityModel(self, save=saveit, file=outpngmodel)
+        gr.plot_fit(self, what='int', toplot=['fit','model'], 
+                    inline=True, save=saveit, file=outpng)
         # Save results
         self.saveResults(outpath, file)
 
         # Information depth and sampling width
+        
         if plotSampling:
-            self.calInfoDepth(self.data[:,0])
-            gr.plotInfoDepth(self, save=saveit, file=outpngdepth)
+            use_int = False
+            if 'use_int' in kwargs:
+                use_int = kwargs['use_int']
+            self.calInfoDepth(self.data[:,0], use_int=use_int)
+            gr.plot_resolution(self, depth=True, cog=True, inline=True, 
+                               save=saveit, file=outpngdepth)
+            #gr.plotInfoDepth(self, save=saveit, file=outpngdepth)
             self.saveInfoDepth(outpath, file)
 
     def intFnc(self, x):
@@ -1221,7 +1144,6 @@ class Sfit(MCCfit):
         return [y, ey, pos]
 
     def reportFit(self, outpath='', file='', reglog=None, **kwargs):   
-        # Plot result, fit
         if (file):
             saveit=True
             f = dataio.derive_filename(file, ext='png', sfx='fit')
@@ -1235,16 +1157,22 @@ class Sfit(MCCfit):
             outpng=''
             outpngmodel=''
         
-        gr.plotStrainFit(self, save=saveit, file=outpng)         
-        # Plot result, model
-        gr.plotStrainModel(self, save=saveit, file=outpngmodel)       
+        # Plot result, fit & model
+        
+        #gr.plotStrainFit(self, save=saveit, file=outpng)         
+        #gr.plotStrainModel(self, save=saveit, file=outpngmodel)  
+        
+        gr.plot_fit(self, what='eps', toplot=['fit','model'], 
+                    inline=True, save=saveit, file=outpng)
         # Save results
         self.saveResults(outpath, file, reglog=reglog)
         
         # Report averaged value
         if (self.avgrange is not None):
             fmt = 'Integral over x in [{:g}, {:g}]: {:g} +- {:g}\n' 
-            if (not _quiet): print(fmt.format(self.avgrange[0], self.avgrange[1], self.avg[0], self.avg[1]))
+            msg = fmt.format(self.avgrange[0], self.avgrange[1], self.avg[0], 
+                             self.avg[1])
+            if (not _quiet): print(msg)
         
     def intFnc(self,x):
         """Returns interpolated intensity function value """

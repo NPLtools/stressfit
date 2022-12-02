@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Aug 31 08:47:39 2017
+Created on Thu Aug 31 08:47:39 2017.
 
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
@@ -12,22 +12,23 @@ import copy
 # set default plot properties
 params = {'legend.fontsize': 'x-large',
           'figure.figsize': (6, 4),
-         'axes.labelsize': 'x-large',
-         'axes.titlesize':'x-large',
-         'xtick.labelsize':'large',
-         'ytick.labelsize':'large'}
+          'axes.labelsize': 'x-large',
+          'axes.titlesize':'x-large',
+          'xtick.labelsize':'large',
+          'ytick.labelsize':'large'}
 plt.rcParams.update(params)
  
-def plotFit(mcfit, title = '', ylabel='', save = False, file = 'fit.png'):
+
+def plotFit(mcfit, title='', ylabel='', save=False, file='fit.png'):
     """Plot intensity data and fits as a function of scan position.
     
-    Arguments
-    ---------
-        mcfit: MCCFit class
+    Parameters
+    ----------
+        mcfit : :class:`MCCfit`
             instance of MCCFit with intensity distribution and data assigned
-        save: boolean
+        save : boolean
             if True, save plot as PNG figure
-        file: string
+        file : string
             file name for the PNG output
     """
     plt.xlabel('Scan position, mm')
@@ -60,13 +61,12 @@ def plotFit(mcfit, title = '', ylabel='', save = False, file = 'fit.png'):
             plt.savefig(fn, bbox_inches='tight')
         plt.show()
     
-def plotModel(mcfit, title = '', ylabel='', save = False, 
-              file = 'model.png'): 
+def plotModel(mcfit, title='', ylabel='', save=False, file='model.png'): 
     """Plot distribution model as a function of information depth.
     
-    Arguments
-    ---------
-        mcfit: MCCFit class
+    Parameters
+    ----------
+        mcfit : :class:`MCCfit`
             instance of MCCFit with distribution and data assigned
         save: boolean
             if True, save plot as PNG figure
@@ -115,16 +115,17 @@ def plotModel(mcfit, title = '', ylabel='', save = False,
         plt.savefig(fn, bbox_inches='tight')
     plt.show()    
   
+
     
-def plotIntensityFit(mcfit, save = False, file = 'strainFit.png'):
+def plotIntensityFit(mcfit, save=False, file='strainFit.png'):
     """  Descendand of plotFit, only sets title and ylabel ...
     """
     plotFit(mcfit,title='Measured vs. model intensity', 
             ylabel='Intensity', save=save, file=str(file))
 
     
-def plotIntensityModel(mcfit, save = False, file = 'strainModel.png'): 
-    """  Calls ploModel with correct title and ylabel ...
+def plotIntensityModel(mcfit, save=False, file='strainModel.png'): 
+    """  Calls plotModel with correct title and ylabel ...
     """
     plotModel(mcfit,title='Scattering probability distribution', 
               ylabel='Scattering probability', save=save, file=str(file))
@@ -143,73 +144,12 @@ def plotStrainModel(mcfit, save = False, file = 'strainModel.png'):
               ylabel='Strain, $\mu\epsilon$', save=save, file=str(file))
 
 
-
-def plot_resolution(model, 
-                    depth=True, 
-                    cog=False, 
-                    inline=True,
-                    save=False, 
-                    file=''):
-    """Plot pseudo-strain and intensity as a function of scan position..
-    
-    Parameters
-    ----------
-        model : MCCfit
-            fit model, must be initialized before
-        strain : bool
-            Plot strain vs position
-        intensity : bool
-            Plot intensity vs. position
-        inline : bool
-            Plot all in one row (else plot intensity below the strains)
-        save : boolean
-            if True, save plot as PNG figure
-        file : string
-            file name for the PNG output
-    """
-    if model.resolution is None:
-        return
-    what = []
-    if depth:
-        what += ['depth']
-    if cog:
-        what += ['cog']
-    nf = len(what)
-    if nf==0:
-        return
-    if inline:
-        nx = nf
-        ny = 1
-    else:
-        nx = 1
-        ny = nf
-    xwidth = params['figure.figsize'][0]
-    yheight = params['figure.figsize'][1]
-    fig, axs = plt.subplots(nrows=ny, ncols=nx, 
-                            figsize=(nx*xwidth,ny*yheight))
-    plt.subplots_adjust(wspace=0.4)
-    fig.suptitle('Sampling positions')
-    if np.size(axs)==1:
-        axs = np.array([axs],dtype=object)
-    axx = axs.reshape((axs.size,))
-    for i in range(len(what)):
-        if what[i]=='depth':
-             plotInfoDepth(model, ax=axx[i], save=save, file=file)
-        if what[i]=='cog':
-             plotCOG(model, ax=axx[i], save=save, file=file)
-    fig.tight_layout()
-    fn = str(file)
-    if (save and fn):
-        plt.savefig(fn, bbox_inches='tight')
-    plt.show()
-
-    
-def plotInfoDepth(model, ax=None, save=False, file=''):
+def plotInfoDepth(mcfit, ax=None, save=False, file=''):
     """Plot information depth and width as a function of scan position.
     
     Parameters
     ----------
-        model : MCCfit
+        mcfit : :class:`MCCfit`
             Fit model, must be initialized before
         ax : Axis
             If defined, plot on given Axis object, otherwise create its own.
@@ -218,13 +158,13 @@ def plotInfoDepth(model, ax=None, save=False, file=''):
         file : string
             File name for the PNG output
     """
-    if model.resolution is not None:
-        data = model.resolution
+    if mcfit.resolution is not None:
+        data = mcfit.resolution
         x = data['x']
         yd = data['pos']
         yw = data['width']
-    elif model.infodepth is not None:
-        data = model.infodepth
+    elif mcfit.infodepth is not None:
+        data = mcfit.infodepth
         x = data[:,0]
         yd = data[:,1]
         yw = data[:,2]
@@ -250,12 +190,12 @@ def plotInfoDepth(model, ax=None, save=False, file=''):
             plt.savefig(fn, bbox_inches='tight')
         plt.show()
  
-def plotCOG(model, ax=None, save=False, file=''):
+def plotCOG(mcfit, ax=None, save=False, file=''):
     """Plot center of gravity of the sampling distribution.
     
     Parameters
     ----------
-        model : MCCfit
+        mcfit : :class:`MCCfit`
             Fit model, must be initialized before
         ax : Axis
             If defined, plot on given Axis object, otherwise create its own.
@@ -264,11 +204,10 @@ def plotCOG(model, ax=None, save=False, file=''):
         file : string
             File name for the PNG output
     """
-    
-    if model.resolution is None:
+    if mcfit.resolution is None:
         return
-    x = model.resolution['x']
-    data = model.resolution['ctr']
+    x = mcfit.resolution['x']
+    data = mcfit.resolution['ctr']
     if ax is None:
         fig, ax1 = plt.subplots()
     else:
@@ -290,12 +229,12 @@ def plotCOG(model, ax=None, save=False, file=''):
             plt.savefig(fn, bbox_inches='tight')
         plt.show()       
  
-def plotPseudoStrain(model, ax=None, save=False, file=''):
+def plotPseudoStrain(mcfit, ax=None, save=False, file=''):
     """Plot pseudo-strains as a function of scan position.
     
     Parameters
     ----------
-        model : MCCfit
+        mcfit : :class:`MCCfit`
             Fit model, must be initialized before
         ax : Axis
             If defined, plot on given Axis object, otherwise create its own.
@@ -304,7 +243,7 @@ def plotPseudoStrain(model, ax=None, save=False, file=''):
         file : string
             File name for the PNG output
     """
-    data = model.infodepth
+    data = mcfit.infodepth
     if data is None:
         return
     if ax is None:
@@ -323,15 +262,527 @@ def plotPseudoStrain(model, ax=None, save=False, file=''):
         plt.show()
 
 
+#%% Creating plot data structures
+
+def get_plot_pseudostrain(mcfit):
+    """Collect pseudo-strain data for plotting.
+    
+    
+    Uses `mcfit.infodepth` data, which must be initialized by calling 
+    :meth:`mcfit.calInfoDepth`.
+    
+    Parameters
+    ----------
+        mcfit : :class:`MCCfit`
+            instance of MCCFit with model distribution and data assigned
+    Return
+    ------
+    dict
+        Data structure prepared for plotting by :func:`plot_collection`
+    
+    """
+    data = mcfit.infodepth
+    result = {}
+    sres = {}
+    ires = {}
+    # strain
+    sres['type'] = 'graph'
+    sres['title'] = 'Pseudo-strain'
+    sres['xlabel'] = 'Scan position, mm'
+    sres['ylabel'] = 'Strain,  1e-6'
+    sres['grid'] = True
+    item = {}
+    item['x'] = data[:,0]
+    item['y'] = data[:,4]
+    item['label'] = 'simulation'
+    item['fmt'] = 'b-'
+    sres['items'] = [item]
+    result['strain'] = sres
+    # intensity
+    ires['type'] = 'graph'
+    ires['title'] = 'Sampling intensity'
+    ires['xlabel'] = 'Scan position, mm'
+    ires['ylabel'] = 'Intensity, rel. units'
+    ires['grid'] = True
+    item = {}
+    item['x'] = data[:,0]
+    item['y'] = data[:,3]
+    item['label'] = 'simulation'
+    item['fmt'] = 'b-'
+    ires['items'] = [item]
+    result['intensity'] = ires
+    return result
+
+
+def _plot_data_template():
+    toplot = {}
+    toplot['type'] = 'graph'
+    toplot['title'] = 'Title'
+    toplot['xlabel'] = 'x'
+    toplot['ylabel'] = 'y'
+    toplot['legend'] = True
+    toplot['grid'] = True
+    toplot['items'] = []
+    return toplot
+    
+def get_plot_fit(mcfit, title='', ylabel=''):
+    """Collect fit results for plotting.
+    
+    The type of fit results (intensity or strain) depends
+    on the actual type of mcfit (IFit or Sfit). Corresponding
+    title and y-axis label must be provided as arguments.
+    The x-axis is always nominal scan position. 
+    
+    Parameters
+    ----------
+        mcfit : :class:`MCCfit`
+            Fit model object with results.
+        title : str
+            plot tite 
+        ylabel : str
+            y-axis label
+    Return
+    ------
+    dict
+        Data structure prepared for plotting by :func:`plot_results`
+    
+    """
+    toplot = _plot_data_template()
+    toplot['title'] = title
+    toplot['xlabel'] = 'Scan position, mm'
+    toplot['ylabel'] = ylabel        
+    if (mcfit.data is not None):
+    # exp. data
+        item = {}
+        item['label'] = 'data'
+        item['fmt'] = 'ko'    
+        item['x'] = mcfit.data[:,0]
+        item['y'] = mcfit.data[:,1]        
+        if (mcfit.data.shape[1] > 2):
+            item['yerr'] = mcfit.data[:,2]
+        else:
+            item['yerr'] = np.zeros(mcfit.data.shape[0])
+        toplot['items'].append(item)
+        ymin=np.min(mcfit.data[:,1])
+        ymax=np.max(mcfit.data[:,1])
+    # fitted function
+        if (mcfit.fit is None):
+            [yfit, fit_err, ypos] = mcfit.getSmearedFnc(mcfit.data[:,0])
+            xfit = mcfit.data[:,0]
+        else:
+            xfit = mcfit.fit[:,0]
+            yfit = mcfit.fit[:,1]
+            fit_err = mcfit.fit[:,2]            
+        item = {}
+        item['label'] = 'fit'
+        item['fmt'] = 'r-'
+        item['x'] = xfit
+        item['y'] = yfit
+        item['yerr'] = fit_err
+        toplot['items'].append(item)
+        ymin=np.min(np.concatenate((yfit, mcfit.data[:,1]), axis=0))
+        ymax=np.max(np.concatenate((yfit, mcfit.data[:,1]), axis=0))
+        # set ymin=0 if near zero
+        dy = ymax - ymin
+        if ((ymin>=0) and (ymin<0.1*dy)):
+            ymin = 0.
+            toplot['ylim'] = [ymin-0.1*dy, ymax+0.1*dy]
+    # guess
+        if (mcfit.guess is not None):
+            item = {}
+            item['label'] = 'guess'
+            item['fmt'] = 'b--'
+            item['x'] = mcfit.guess[:,0]
+            item['y'] = mcfit.guess[:,1]
+            toplot['items'].append(item)
+    return toplot
+
+
+def get_plot_model(mcfit, title='', ylabel=''):
+    """Collect fitted model distribution for plotting.
+    
+    Parameters
+    ----------
+         mcfit : :class:`MCCfit`
+            Fit model object with model distribution assigned.
+        title : str
+            plot tite 
+        ylabel : str
+            y-axis label
+
+    Return
+    ------
+    dict
+        Data structure prepared for plotting by :func:`plot_results`
+        
+    """
+    modp = mcfit.mod
+    intp = mcfit.dist
+    if ((mcfit is None) or (intp is None)):
+        msg = '{}: distribution not initialized.'
+        raise Exception(msg.format(mcfit.__class__.__name__))
+    ymin = min(intp[:,1])
+    ymax = max(intp[:,1])
+    if (ymax == ymin):
+        margin = 0.05*ymax
+    else:
+        margin = 0.05*(ymax-ymin)
+    if (margin==0):
+        margin = 0.1
+    ymin -= margin
+    ymax += margin
+    xlim = [min(modp[:,0]), max(modp[:,0])]
+    ylim = [ymin, ymax]
+    
+    if (modp.shape[1] > 3):
+        xerr = modp[:,2]
+        yerr = modp[:,3]
+    else:
+        xerr = np.zeros(modp.shape[0])
+        yerr = np.zeros(modp.shape[0])
+            
+    toplot = _plot_data_template()
+    toplot['title'] = title
+    toplot['xlabel'] = 'Information depth, mm'
+    toplot['ylabel'] = ylabel
+    toplot['xlim'] = xlim
+    toplot['ylim'] = ylim
+    item = {}
+    item['label'] = 'points'
+    item['fmt'] = 'ro'                
+    item['x'] = modp[:,0]
+    item['y'] = modp[:,1]
+    item['xerr'] = xerr
+    item['yerr'] = yerr
+    toplot['items'].append(item)    
+    if (intp is not None):
+        if (intp.shape[1] > 2):
+            ferr = intp[:,2]
+        else:
+            ferr = np.zeros(intp.shape[0])
+        item = {}
+        item['label'] = 'interpolation'
+        item['fmt'] = 'r-'
+        item['x'] = intp[:,0]
+        item['y'] = intp[:,1]
+        item['yerr'] = ferr
+        toplot['items'].append(item)
+
+    return toplot
+
+def get_plot_depth(mcfit):
+    """Collect plot data for information depth.
+    
+    Parameters
+    ----------
+        mcfit : :class:`MCCfit`
+            Model object initialized with :meth:`calResolution`.
+    Return
+    ------
+    dict
+        Data structure prepared for plotting by :func:`plot_twins`
+        
+    """ 
+    data = None
+    toplot = {}
+    toplot['items'] = []
+    toplot['type'] = 'twinx'
+    if mcfit.resolution is not None:
+        data = mcfit.resolution
+        x = data['x']
+        yd = data['pos']
+        yw = data['width']
+    elif mcfit.infodepth is not None:
+        data = mcfit.infodepth
+        x = data[:,0]
+        yd = data[:,1]
+        yw = data[:,2]
+    if data:
+        toplot['title'] = 'Depth scale'
+        toplot['xlabel'] = 'Scan position, mm'
+        toplot['ylabel'] = ['Information depth,  mm']
+        toplot['ylabel'].append('Sampling width,  mm')
+        toplot['legend'] = True
+        item = {}
+        item['iax'] = 0
+        item['fmt'] = 'bo-'
+        item['x'] = x
+        item['y'] = yd
+        item['label'] = 'depth'
+        toplot['items'].append(item)
+        item = {}
+        item['iax'] = 1
+        item['fmt'] = 'ro-'
+        item['x'] = x
+        item['y'] = yw
+        item['label'] = 'width'
+        toplot['items'].append(item)
+    return toplot
+    
+
+def get_plot_cog(mcfit):
+    """Collect plot data for sampling center of gravity.
+    
+    Parameters
+    ----------
+        mcfit : :class:`MCCfit`
+            Model object initialized with :meth:`calResolution`.
+    Return
+    ------
+    dict
+        Data structure prepared for plotting by :func:`plot_twins`
+        
+    """ 
+    data = None
+    toplot = {}
+    toplot['type'] = 'graph'
+    toplot['items'] = []
+    if mcfit.resolution is None:
+        return toplot
+    x = mcfit.resolution['x']
+    data = mcfit.resolution['ctr']
+    toplot['title'] = 'Centre of gravity'
+    toplot['xlabel'] = 'Scan position, mm'
+    toplot['ylabel'] = 'Centre of gravity, mm'
+    toplot['legend'] = True
+    
+    fmts = ['ro-','bo-','go-']
+    labels = ['x','y','z']
+    for i in range(3):
+        item = {}
+        item['fmt'] = fmts[i]
+        item['x'] = x
+        item['y'] = data[:,i]
+        item['label'] = labels[i]
+        toplot['items'].append(item)
+
+    toplot['grid'] = {}
+    toplot['grid']['minor'] = {'color':'0.7','linestyle': '-'}
+    toplot['grid']['major'] = {'color':'0.7','linestyle': '-'}
+   
+    return toplot
+
+
+def get_plot_comparison(simdata, expdata):
+    """Collect plot data for comparing experimental and simulated data.
+
+    Lists of experimental and simulated data sets are provided as  
+    arguments (dict). The keys of simdata and expdata must match in 
+    order to be plotted on the same plot. simdata items without corresponding
+    expdata item are ignored.
+
+    Parameters
+    ----------
+    simdata : dict
+        Named list of data structures used by :func:`plot_graph`
+        Each plot plot_graph input is addressed as `simdata[key][what]`,
+        where `what` is either `strain` or `intensity`. The key must match
+        corresponding item in expdata.
+    expdata : dict
+        Experimental data. Named list of data structures returned by 
+        :func:`stressfit.ui.config.uiconfig().data.get_scan`.
+
+    Returns
+    -------
+    dict
+        Data structure prepared for plotting by :func:`plot_collection`.
+
+    """
+    def exp_to_dict(expdata, what='int'):
+        # convert exp. data do dict for plotting
+        out = {}
+        edata = {}
+        out['type'] = 'graph'
+        out['title'] = ''
+        out['grid'] = True
+        out['legend'] = True
+        out['xlabel'] = 'Scan position, mm'
+        if what=='int':
+            out['title'] = expdata['intfile']
+            out['ylabel'] = 'Intensity, rel. units'
+            edata['x'] = expdata['int'][:,0]
+            edata['y'] = expdata['int'][:,1]
+            edata['yerr'] = expdata['int'][:,2]
+        else:
+            out['title'] = expdata['epsfile']
+            out['ylabel'] = 'Strain,  1e-6'
+            edata['x'] = expdata['eps'][:,0]
+            edata['y'] = expdata['eps'][:,1]
+            edata['yerr'] = expdata['eps'][:,2]
+        out['items'] = []
+        return out, edata
+    
+    def scale(data, A=1, B=0, x0=0):
+        """Scale intensity data."""
+        out = {}
+        out['x'] = data['x']-x0
+        out['y'] = A*data['y'] + B
+        if 'yerr' in data:
+            out['yerr'] = A*data['yerr']
+        else:
+            out['yerr'] = np.zeros(len(data['x']))
+        return out
+    
+    coll = {}
+    for key in expdata:
+        dexp = expdata[key]
+        if key in simdata and simdata[key] is not None:
+            dsim = simdata[key]
+        else:
+            dsim = None
+        # strain
+        toplot, edata = exp_to_dict(dexp, what='eps')
+        item = {}
+        item['label'] = 'experiment'
+        item['fmt'] = 'ko' 
+        item['x'] = edata['x']
+        item['y'] = edata['y']
+        item['yerr'] = edata['yerr']
+        toplot['items'].append(item)
+        if dsim and 'strain' in dsim:
+            toplot['items'].extend(dsim['strain']['items'])
+        coll[key+'_s'] = toplot            
+        # intensity
+        if 'int' in dexp and dexp['int'] is not None:
+            toplot, edata  = exp_to_dict(dexp, what='int')
+            item = {}
+            item['label'] = 'experiment'
+            item['fmt'] = 'ko' 
+            item['x'] = edata['x']
+            item['y'] = edata['y']
+            item['yerr'] = edata['yerr']
+            toplot['items'].append(item)
+            if dsim and 'intensity' in dsim:
+                # try to scale intensity to match the data
+                for item in dsim['intensity']['items']:
+                    A = dexp['int'][:,1].mean()/item['y'].mean()
+                    scaled_data = scale(item, A=A, B=0, x0=0)
+                    item_scaled = copy.deepcopy(item)
+                    item_scaled['x'] = scaled_data['x']
+                    item_scaled['y'] = scaled_data['y']
+                    item_scaled['yerr'] = scaled_data['yerr']
+                    toplot['items'].append(item_scaled)
+            coll[key+'_i'] = toplot      
+    return coll 
+    
+    
+    
+#%% Top level plot functions        
+
+def plot_resolution(mcfit, depth=True, cog=False, inline=True, save=False, 
+                    file=''):
+    """Plot information about sampling centre vs. scan position.
+    
+    Parameters
+    ----------
+        mcfit : :class:`MCCfit`
+            Fit model, must be initialized with :meth:`mcfit.calResolution` 
+        depth : bool
+            Plot information depth vs. scan position
+        cog : bool
+            Plot gauge centre-of-gravity vs. scan position
+        inline : bool
+            Plot all in one row (else arrange in a column)
+        save : boolean
+            Save plot as PNG file
+        file : string
+            File name for the PNG output
+    """
+    if mcfit.resolution is None: return
+    coll = []
+    if depth:
+        coll.append(get_plot_depth(mcfit))
+    if cog:
+        coll.append(get_plot_cog(mcfit))
+        
+    # nothing to plot ... 
+    if len(coll)==0: return
+    
+    plot_collection(coll, dim=len(coll), title='Sampling positions', 
+                    save=save, file=file)    
+        
+    
+def plot_fit(mcfit, what='int', toplot=['fit','model'],
+             inline=True, save=False, file=''):
+    """Plot fit results for intensity and strain distributions.
+    
+    Parameters
+    ----------
+    mcfit : :class:`MCCfit`
+        Fit model object.
+    what : str
+        Either 'int' or 'eps' for intensity and strain, respectively.
+    toplot : list
+        Which graphs should be plotted. Allowed elements are 'fit' and 'model'
+    inline : bool
+            Plot all in one row (else arrange in a column)
+    save : boolean
+       Save plot as PNG.
+    file : str
+        File name for saved plot.
+
+    """
+    if what=='int':
+        ylabel1 = 'Intensity, rel. units'
+        ylabel2 = 'Scattering probability, rel. units'
+        title1 = 'Measured vs. model intensity'
+        title2 = 'Scattering probability distribution'
+    elif what=='eps':
+        ylabel1 = 'Strain,  1e-6'
+        ylabel2 = 'Strain,  1e-6'
+        title1 = 'Measured vs. model strain'
+        title2 = 'Intrinsic strain distribution'
+    else:
+        raise Exception('Undefined fit type: {}'.format(what))
+    
+    coll = {}
+    dim = 2
+    inline = inline
+    if 'fit' in toplot:
+        coll['fit'] = get_plot_fit(mcfit, title=title1, ylabel=ylabel1)
+    if 'model' in toplot:
+        coll['model'] = get_plot_model(mcfit, title=title2, ylabel=ylabel2)
+    plot_collection(coll, dim=dim, inline=inline, title='',
+                    save=save, file=file)      
+
+    
+def plot_comparison(simdata, expdata, title='', inline=True, save=False, file=''):
+    """Plotcomparison of experimental and simulated data.
+
+    Lists of experimental and simulated data sets are provided as  
+    arguments (dict). The keys of simdata and expdata must match in 
+    order to be plotted on the same plot. simdata items without corresponding
+    expdata item are ignored.
+
+    Parameters
+    ----------
+    simdata : dict
+        Named list of data structures used by :func:`plot_graph`
+        Each plot plot_graph input is addressed as `simdata[key][what]`,
+        where `what` is either `strain` or `intensity`. The key must match
+        corresponding item in expdata.
+    expdata : dict
+        Experimental data. Named list of data structures returned by 
+        :func:`stressfit.ui.config.get_scan`.
+
+    """
+    coll = get_plot_comparison(simdata, expdata)
+    if len(coll)>0:    
+        plot_collection(coll, dim=2, inline=inline, title=title,
+                        save=save, file=file)      
+    
+
+#%% General plot functions using dict structures on input
 
 def plot_collection(data, dim = None, inline=True, title='', save=False, file=''):
     """Plot multiple results in a grid of plots.
     
     Parameters
     ----------
-        data : dict
-            A collection of datasets to be passed to :func:`plot_results`.
-        dim : list
+        data : dict or list
+            A collection of datasets to be passed to one of the plotting 
+            functions: :func:`plot_graph`, :func:`plot_twins` 
+        dim : list or int
             Optional dimensions of the grid, [nx, ny] 
         inline : bool
             Plot all in one row (else plot one per row).
@@ -342,15 +793,19 @@ def plot_collection(data, dim = None, inline=True, title='', save=False, file=''
         file : string
             file name for the PNG output
     """
-    what = []
-    what = list(data.keys())
+    # convert data sets to a list
+    if isinstance(data, dict):
+        src = list(data.values())
+    else:
+        src = data
+    # define plot grid
     if isinstance(dim, list):
         [nx, ny] = dim
     elif isinstance(dim, int):
         nx = dim
-        ny = int(0.9999*len(what)/nx) + 1
+        ny = int(0.9999*len(src)/nx) + 1
     else:
-        nf = len(what)
+        nf = len(src)
         if nf==0:
             return
         if inline:
@@ -369,21 +824,31 @@ def plot_collection(data, dim = None, inline=True, title='', save=False, file=''
     if np.size(axs)==1:
         axs = np.array([axs],dtype=object)
     axx = axs.reshape((axs.size,))
-    for i in range(len(what)):
-        d = data[what[i]]
+    for i in range(len(src)):
+        d = src[i]
+        
         if d is not None:
-            plot_results(d, ax=axx[i])
-    fig.tight_layout()
+            if 'type' in d:
+                if d['type'] == 'twinx':
+                    plot_twins(d, ax=axx[i])
+                elif d['type'] == 'graph':
+                    plot_graph(d, ax=axx[i])
+            else:
+                plot_results(d, ax=axx[i])
+    fig.tight_layout(w_pad=2.0)
     fn = str(file)
     if (save and fn):
         plt.savefig(fn, bbox_inches='tight')
     plt.show()
+    # print info below the figure ...
     if (save and fn):
         print('Figure saved in {}'.format(fn))
 
-
 def plot_results(data, ax=None, save=False, file=''):
     """Plot data on given axis.
+    
+    Obsolete, provided for backward compatibility only. 
+    Use :func:`plot_graph` instead.
     
     Parameters
     ----------
@@ -406,7 +871,61 @@ def plot_results(data, ax=None, save=False, file=''):
     """
     def get_args(d):
         args = {'label':None, 'fmt':'ko-', 'xerr': None, 'yerr':None}
-        for key in ['label','fmt','xerr','yerr']:
+        for key in ['label','fmt','xerr','yerr', 'valid']:
+            if key in d:
+                args[key] = d[key]
+        if 'args' in d:
+            args.update(d['args'])
+        return args
+    items = []
+    item = {}
+    item['x'] = data['x']
+    item['y'] = data['y']
+    item['args'] = get_args(data)
+    items.append(item)
+    if 'other' in data:
+        other = data['other']
+        if isinstance(other, list):
+            dlist = other
+        else:
+            dlist = [other]
+        for d in dlist:
+            items.append(d)
+    data['items'] = items
+    data['grid'] = True
+    # redirect to the newer plot_graph
+    plot_graph(data, ax=ax, save=save, file=file)
+    
+
+def plot_graph(data, ax=None, save=False, file=''):
+    """Plot data on a simple graph with x,y axes.
+
+    The data keys of data must include: **xlabel, ylabel, items**. Optional
+    keys are: **title, legend, grid**. 
+    
+    The `items` include data for indivitual data sets to plot. Each
+    item must include: **x, y**. 
+    
+    Optional keys **xerr, yerr, valid, label, fmt** are passed to errobar function as 
+    arguments. Additional arguments can be added in a list with the key='args'.
+    The `valid` array is used to mark the masked data (valid=0) in gray. 
+    
+    Pass legend location as the value of data['legend'] (optional).
+    
+    Parameters
+    ----------
+        data : dict
+            Data to plot.
+        ax : Axis
+            If defined, plot on given Axis object, otherwise create its own.
+        save : boolean
+            If True, save plot as PNG figure
+        file : string
+            File name for the PNG output.
+    """
+    def get_args(d):
+        args = {'label':None, 'fmt':'ko-', 'xerr': None, 'yerr':None}
+        for key in ['label','fmt','xerr','yerr', 'valid']:
             if key in d:
                 args[key] = d[key]
         if 'args' in d:
@@ -446,7 +965,7 @@ def plot_results(data, ax=None, save=False, file=''):
     def plot(ax, d):
         """Plot data on given axis.
         
-        If data includes data ask, plot separately valid data and then
+        If data includes data mask, plot separately valid data and then
         the masked data in shadow collor.
         """
         mcolor = 'grey'
@@ -473,10 +992,8 @@ def plot_results(data, ax=None, save=False, file=''):
     
     if data is None:
         return
-    if 'other' in data:
-        other = data['other']
-    else:
-        other = []
+    if not 'items' in data:
+        return
     if ax is None:
         fig, ax1 = plt.subplots() 
     else:
@@ -484,21 +1001,26 @@ def plot_results(data, ax=None, save=False, file=''):
     ax1.set_title(data['title'])
     ax1.set_xlabel(data['xlabel'])
     ax1.set_ylabel(data['ylabel'])
-    plot(ax1, data)
-    #args = get_args(data)
-    #ax1.errorbar(data['x'], data['y'], **args)
-    if other is not None:
-        if isinstance(other, list):
-            dlist = other
+    for d in data['items']:
+        plot(ax1, d)
+    
+    if 'grid' in data:
+        if isinstance(data['grid'], dict):
+            if 'major' in data['grid']:
+                if 'minor' in data['grid']:
+                    ax1.minorticks_on()
+                    ax1.grid(b=True, which='minor', **data['grid']['minor'])
+                ax1.grid(b=True, which='major', **data['grid']['major'])
+            else:
+                ax1.grid(**data['grid'])
         else:
-            dlist = [other]
-        for d in dlist:
-            plot(ax1, d)
-            #args = get_args(d)
-            #ax1.errorbar(d['x'], d['y'], **args)
-    ax1.grid()
+            ax1.grid()
     if 'legend' in data:
-        ax1.legend(loc='best', frameon=True)
+        if isinstance(data['legend'], str):
+            loc = data['legend']
+        else:
+            loc = 'best'
+        ax1.legend(loc=loc, frameon=True)
     if 'xlim' in data:
         ax1.set_xlim(data['xlim'])
     if 'ylim' in data:
@@ -508,6 +1030,88 @@ def plot_results(data, ax=None, save=False, file=''):
         if (save and fn):
             plt.savefig(fn, bbox_inches='tight')
         plt.show()
+
+def plot_twins(data, ax=None, save=False, file=''):
+    """Plot data on a graph with twin y-axes.
+    
+    The data keys of data must include: **xlabel, ylabel, items**. Optional
+    keys are: **title, legend**. ylabel is a list with the 2 strings 
+    for the y-axes labels.
+    
+    The `items` include data for indivitual data sets to plot. Each
+    item must include: **x, y, iax**, where `iax` is the index (0,1) 
+    to the corresponding y-axis.  
+    
+    Optional keys **xerr, yerr, label, fmt** are passed to errobar function as 
+    arguments. Additional arguments can be added in a list with the key='args'.
+    
+    Pass legend location as the value of data['legend'] (optional).
+
+    Parameters
+    ----------
+        data : dict
+            Data to plot.
+        ax : Axis
+            If defined, plot on given Axis object, otherwise create its own.
+        save : boolean
+            If True, save plot as PNG figure
+        file : string
+            File name for the PNG output.
+    """
+    def get_args(d):
+        """Extract arguments for the errorbar function."""
+        args = {'label':None, 'fmt':'ko-', 'xerr': None, 'yerr':None}
+        for key in ['label','fmt','xerr','yerr']:
+            if key in d:
+                args[key] = d[key]
+        if 'args' in d:
+            args.update(d['args'])
+        return args
+
+    if ax is None:
+        fig, ax1 = plt.subplots()
+    else:
+        ax1 = ax
+    
+    ax2 = ax1.twinx()   
+    axes = (ax1, ax2)
+    if 'title' in data:
+        ax1.set_title(data['title'])
+    ax1.set_xlabel(data['xlabel'])
+    ax1.set_ylabel(data['ylabel'][0], color='k')
+    ax2.set_ylabel(data['ylabel'][1], color='k')
+    
+    lns = []
+    labs = []
+    for item in data['items']:
+        iax = item['iax']
+        if iax in [0,1]:
+            args = get_args(item)
+            ln = axes[iax].errorbar(item['x'], item['y'], **args)
+            lns.append(ln)
+            if 'label' in args:
+                labs.append(args['label'])
+            else:
+                labs.append(args[''])
+    if 'xlim' in data:
+        ax1.set_xlim(data['xlim'])
+    if 'ylim' in data:
+        ax1.set_ylim(data['ylim'])
+    if 'legend' in data:
+        if isinstance(data['legend'], str):
+            loc = data['legend']
+        else:
+            loc = 'best'
+        ax1.legend(lns, labs, loc=loc, frameon=True)
+    
+    if ax is None:
+        fn = str(file)
+        if (save and fn):
+            plt.savefig(fn, bbox_inches='tight')
+        plt.show()
+
+
+#%% 2D scene plots
 
 def plotShape(rang, proj, shape, arrows=True, file=''): 
     """ Plot sample in 2D projection.

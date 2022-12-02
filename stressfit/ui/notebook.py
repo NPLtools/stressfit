@@ -52,30 +52,6 @@ def _has_keys(args, keys):
     return all (k in args for k in keys)
 
 
-class log_viewer(logging.Handler):
-    """Class to redistribute python logging data."""
-
-    def __init__(self, output, *args, **kwargs):
-         # Initialize the Handler
-         logging.Handler.__init__(self, *args)
-         self.out = output
-         # optional take format
-         # setFormatter function is derived from logging.Handler
-         for key, value in kwargs.items():
-             if "{}".format(key) == "format":
-                 self.setFormatter(value)
-
-    def emit(self, record):
-        """Overload of logging.Handler method."""
-        msg = self.format(record)
-        if record.levelno>=logging.ERROR:
-            fore = Fore.RED
-        elif record.levelno>=logging.WARNING:
-            fore = Fore.YELLOW
-        else:
-            fore = Fore.BLACK
-        new = {'name': 'stdout', 'output_type': 'stream', 'text': (fore + (msg + '\n'))}
-        self.out.outputs = (new,) + self.out.outputs
 
 
 #%% Base abstract classes for input collections
@@ -110,13 +86,12 @@ class UI_base:
     
     def __init__(self, name, keys, **kwargs):   
         # define layout parameters - subclasses should override it
-        self._err = None # error output, can be defined by ui()
-        self._msg = None # message output, can be defined by ui()
         self._debug = False
         self.uiparam = {}
         self.uiparam['title'] = 'Title'
         self.uiparam['title_size'] = '+1'
         self.uiparam['title_color'] = '#35446B'
+        self.uiparam['width'] = '97%'
         self._name = name # unique instance name
         self._keys = keys # list of allowed value keys
         self._widgets = {} # dict of input widgets
@@ -156,11 +131,10 @@ class UI_base:
 # private methods
 
     def _dbg_message(self, txt, clear=False):
-        if self._debug and self._msg:
+        if self._debug:
             if clear:
-                self._msg.clear_output()
-            with self._msg:
-                print(txt)
+                self.clear('msg')
+            self.message(txt)
 
     def _clean_keys(self, data:dict):
         """Delete all data items with undefined keys."""
@@ -302,10 +276,8 @@ class UI_base:
         """Set callback to be executed when the UI changes state."""
         self._on_change = on_change
               
-    def show(self, err=None, msg=None, logger=None, **kwargs):
+    def show(self, logger=None, **kwargs):
         """Display VBox container with all input widgets."""        
-        self._err = err
-        self._msg = msg
         self._logger = logger
         self._create_widgets(**kwargs)
         ui = self._create_ui(**kwargs)
@@ -331,7 +303,7 @@ class UI_base_list(UI_base):
         self.uiparam['list_title'] = 'List title'
         self.uiparam['list_title_size'] = '-1'
         self.uiparam['list_border'] = '1px solid'
-        self.uiparam['list_width'] = '100%'
+        self.uiparam['list_width'] = '97%'
         self.uiparam['add_button_label'] = 'Add'
         self.uiparam['add_button_icon'] = None
         self.uiparam['add_button_width'] = '50px'
@@ -348,9 +320,9 @@ class UI_base_list(UI_base):
         """Update stressfit configuration and redraw the table of data sets."""
         try: 
             grid = self._create_list()      
-            self._out.clear_output()
+            self._outtab.clear_output()
             if len(self._values['list'].keys())>0:
-                    with self._out:
+                    with self._outtab:
                         display(grid)                    
         except Exception:
             msg = 'Cannot redraw table.'
@@ -584,7 +556,7 @@ class UI_base_list(UI_base):
         """
         return self._values['list']
 
-    def show(self, err=None, msg=None, logger=None, **kwargs):
+    def show(self, logger=None, **kwargs):
         """Display VBox container with all input widgets.
         
         In addition to UI_base, display the table with the list
@@ -600,8 +572,6 @@ class UI_base_list(UI_base):
         kwargs : dict
             Parameters passed to :meth:`_create_ui`
         """               
-        self._err = err
-        self._msg = msg
         self._logger = logger
         
         # create value widgets and place them in vertical list
@@ -634,10 +604,8 @@ class UI_base_list(UI_base):
                                  color=self.uiparam['title_color'])
         
         # create table output area
-        tab_border = self.uiparam['list_border']
-        tab_width = self.uiparam['list_width']
-        self._out = ipy.Output(layout=ipy.Layout(width=tab_width, 
-                                                 border=tab_border))
+        self._outtab = ipy.Output(layout=ipy.Layout(width=self.uiparam['list_width'], 
+                                                 border=self.uiparam['list_border']))
         
         # make HBox with add button and name field
         add_box = ipy.HBox([btn_add, self._name_inp, hint], 
@@ -647,7 +615,7 @@ class UI_base_list(UI_base):
         top = [hdr] + self._buttons
         top_wdg = ipy.HBox(top)
         layout = ipy.Layout(margin='0px 0px 20px 0px', width='100%')
-        display(ipy.VBox([top_wdg, ui, add_box, list_hdr, self._out], 
+        display(ipy.VBox([top_wdg, ui, add_box, list_hdr, self._outtab], 
                          layout=layout))
         # update table
         self._redraw_table()      
@@ -697,7 +665,7 @@ class UI_workspace(UI_base):
         self.wk = dataio.workspace()
         super().__init__(name, self.wk.keys, exclude=exclude)
         self.uiparam['title'] = 'Workspace'
-        self._out = ipy.Output(layout=ipy.Layout(width='100%'))     
+        self._out = ipy.Output(layout=ipy.Layout(width=self.uiparam['width']))     
         
     def _init_values(self, **kwargs):
         if 'exclude' in kwargs:
@@ -1090,9 +1058,9 @@ class UI_shape(UI_base):
                     param[key] = item.value
             self._values['param'] = param
     
-    def show(self, err=None, msg=None, logger=None, **kwargs): 
+    def show(self, logger=None, **kwargs): 
         """Display the input collection."""
-        super().show(err=err, msg=msg, logger=logger)
+        super().show(logger=logger)
         # trigger displaying of shape parameters
         self._on_change_shape({'name':'value', 'new':self.select})
     
@@ -1321,9 +1289,9 @@ class UI_attenuation(UI_base):
         """Assign values to global data."""
         self._values = _uiconf.data.get_item(self.name)
         
-    def show(self, err=None, msg=None, logger=None, **kwargs): 
+    def show(self, logger=None, **kwargs): 
         """Display the input collection."""
-        super().show(err=err, msg=msg, logger=logger, **kwargs)
+        super().show(logger=logger, **kwargs)
         self._type_change({'name':'value', 'new':self._values['type']})
         
 
@@ -1365,7 +1333,7 @@ class UI_data(UI_base_list):
                          list_fmt=['{}'] + 2*['{}'] + 2*['{}']) 
         self.pgm_options = _uiconf.get('options')   
         # output area for plots
-        self._outgr = ipy.Output(layout=ipy.Layout(width='100%', border='none'))
+        self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none'))
         self.uiparam['title'] = header
         self.uiparam['list_title'] = 'Loaded data'
         self.uiparam['add_button_label'] = 'Load'
@@ -1505,92 +1473,17 @@ class UI_data(UI_base_list):
             if item in self._values['list']:
                 self._delete(item)
             self.exception('Cannot add strain data.')
-    
-    def _plot_comparison(self, simdata, expdata):
-        
-        def exp_to_dict(expdata, what='int'):
-            # convert exp. data do dict for plotting
-            out = {}
-            if what=='int':
-                out['title'] = expdata['intfile']
-                out['xlabel'] = 'Scan position, mm'
-                out['ylabel'] = 'Intensity, rel. units'
-                out['x'] = expdata['int'][:,0]
-                out['y'] = expdata['int'][:,1]
-                out['yerr'] = expdata['int'][:,2]
-            else:
-                out['title'] = expdata['epsfile']
-                out['xlabel'] = 'Scan position, mm'
-                out['ylabel'] = 'Strain,  1e-6'
-                out['x'] = expdata['eps'][:,0]
-                out['y'] = expdata['eps'][:,1]
-                out['yerr'] = expdata['eps'][:,2]
-            return out
-        
-        def scale(data, A=1, B=0, x0=0):
-            """Scale intensity data."""
-            out = copy.deepcopy(data)
-            out['x'] = data['x']-x0
-            out['y'] = A*data['y'] + B
-            if 'yerr' in data:
-                out['yerr'] = A*data['yerr']
-            return out
-        
-        coll = {}
-        has_intensity = None
-        dim = 2
-        inline = True
-        for key in expdata:
-            dexp = expdata[key]
-            dsim = simdata[key]  
-            # use first data set to decide if intenisty should be plotted
-            if has_intensity is None:
-                has_intensity = dsim['intensity'] is not None
-                if has_intensity:
-                    dim = 2
-                    inline = True
-            # strain
-            toplot = exp_to_dict(dexp, what='eps')
-            toplot['title'] = dexp['epsfile']
-            toplot['label'] = 'experiment'
-            toplot['fmt'] = 'ko'            
-            other = dsim['strain']
-            other['label'] = 'simulation'
-            other['fmt'] = 'b-'
-            toplot['other'] = other
-            coll[key+'_s'] = toplot            
-            # intensity
-            if dexp['int'] is not None:
-                toplot = exp_to_dict(dexp, what='int')
-                toplot['title'] = dexp['intfile']
-                toplot['label'] = 'experiment'
-                toplot['fmt'] = 'ko'
-                sim_int = dsim['intensity']['y']
-                A = dexp['int'][:,1].mean()/sim_int.mean()
-                other = scale(dsim['intensity'], A=A, B=0, x0=0)
-                other['label'] = 'simulation'
-                other['fmt'] = 'b-'
-                toplot['other'] = other
-            else:
-                toplot = dsim['intensity']
-                toplot['label'] = 'simulation'
-                toplot['fmt'] = 'b-'
-            coll[key+'_i'] = toplot
-        if len(coll)>0:    
-            gr.plot_collection(coll, dim=dim, inline=inline)      
-    
+
     def _on_replot(self,b):
         """Plot data with simulated pseudo-strains and pseudo-intensities."""
-        self.clear('info')
-        self.clear('error')
-        self._outgr.clear_output()
+        self.clear('all')
+        self._out.clear_output()
         # update values from widgets
         self.update_values()
         # get command parameters
         par = _uiconf.get(self.name)
         _uiconf.data.reload_all()
         if not _uiconf.is_ready():
-            self._out.clear_output()
             self.error('Input data not ready.')
             return
         # set attenuation
@@ -1611,7 +1504,7 @@ class UI_data(UI_base_list):
             geometry = {k:scan[k] for k in Geometry.input_keys}
             comm.set_geometry(geometry)
             comm.set_sampling(scan['sampling'])
-            with self._msg:
+            with self._out:
                 res = comm.report_pseudo_strains(scan_range, fname, 
                                                  nev=nrec,
                                                  intensity=True,
@@ -1621,13 +1514,14 @@ class UI_data(UI_base_list):
             expdata[name] = scan
             simdata[name] = res
         # do plot
-        with self._outgr:
-            self._plot_comparison(simdata, expdata)
+        with self._out:
+            gr.plot_comparison(simdata, expdata, 
+                               title='Experimental data vs. pseudo-stran')
       
-    def show(self, err=None, msg=None, logger=None, **kwargs): 
+    def show(self, logger=None, **kwargs): 
         """Display the input collection."""
-        super().show(err=err, msg=msg, logger=logger, **kwargs)
-        display(self._outgr)
+        super().show(logger=logger, **kwargs)
+        display(self._out)
         
         
 class UI_distribution(UI_base_list):  
@@ -1647,7 +1541,7 @@ class UI_distribution(UI_base_list):
                                    'interpolation'],
                          list_fmt=['{}','{:d}', '({:g},{:g})','{:d}', '{}'] )       
         # output area
-        self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none'))         
+        #self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none'))         
         # title
         self.uiparam['title'] = UI_distribution._dtypes[self.dtype]['title']
         self.uiparam['list_title'] = self.uiparam['title'] + ' list'
@@ -1714,9 +1608,9 @@ class UI_distribution(UI_base_list):
             self._widgets['scale'].redraw()
             self._was_displayed = True
     
-    def show(self, err=None, msg=None, logger=None, **kwargs): 
+    def show(self, logger=None, **kwargs): 
         """Display the input collection."""
-        super().show(err=err, msg=msg, logger=logger)
+        super().show(logger=logger)
         self._widgets['dist'].redraw()
         #self._widgets['dist'].sheet.layout.height='400px'
         #print(self._widgets['dist'].sheet.layout)
@@ -1834,8 +1728,7 @@ class UI_plot_scene(UI_base):
     def _on_replot(self,b):
         # Plot experiment geometry 
         # (red arrow shows motion of sampling points in stationary sample)
-        self.clear('info')
-        self.clear('error')
+        self.clear('all')
         self._out.clear_output()
         # update values from widgets
         self.update_values()
@@ -1896,7 +1789,7 @@ class UI_resolution(UI_base):
                          rang=rang, steps=steps, nrec=nrec) 
         self.pgm_options = _uiconf.get('options')        
         # output area
-        self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none'))         
+        self._out = ipy.Output(layout=ipy.Layout(border='none'))         
         # select options
         self._options['sampling'] = _uiconf.data.listkeys('sampling')
         self._options['geometry'] = _uiconf.data.listkeys('geometry')
@@ -2006,8 +1899,7 @@ class UI_resolution(UI_base):
         return fname
     
     def _on_replot(self,b):
-        self.clear('info')
-        self.clear('error')
+        self.clear('all')
         self._out.clear_output()
         # update values from widgets
         self.update_values()
@@ -2038,21 +1930,23 @@ class UI_resolution(UI_base):
         scan_range = rang + [nstp]
         save = self.pgm_options['save']
         with self._out:
-            if par['strain']:
-                comm.report_pseudo_strains(scan_range, fname, 
+            try:
+                if par['strain']:
+                    comm.report_pseudo_strains(scan_range, fname, 
+                                               nev=nrec,
+                                               intensity=True,
+                                               inline=True,
+                                               plot=True, 
+                                               save=save)
+                if par['resolution']:    
+                    comm.report_resolution(scan_range, fname, 
                                            nev=nrec,
-                                           intensity=True,
+                                           cog=True,
                                            inline=True,
                                            plot=True, 
                                            save=save)
-            if par['resolution']:    
-                comm.report_resolution(scan_range, fname, 
-                                       nev=nrec,
-                                       cog=True,
-                                       inline=True,
-                                       plot=True, 
-                                       save=save)
-    
+            except Exception as e:
+                self.exception(str(e))
 
 
 class UI_fit_imodel(UI_base):
@@ -2135,7 +2029,7 @@ class UI_fit_imodel(UI_base):
         btn_guess = ipy.Button(description='Guess',
                                 layout=ipy.Layout(width='80px'))
         btn_guess.on_click(self._on_guess)
-        #self._buttons.append(btn_guess)
+        self._buttons.append(btn_guess)
         
         btn_fit = ipy.Button(description='Fit',
                                 layout=ipy.Layout(width='80px'))
@@ -2180,8 +2074,7 @@ class UI_fit_imodel(UI_base):
     
     def _prepare(self):
         """Make all settings necessary to run commands."""
-        self.clear('info')
-        self.clear('error')
+        self.clear('all')
         self._out.clear_output()
         # update values from widgets
         self.update_values()
@@ -2215,18 +2108,17 @@ class UI_fit_imodel(UI_base):
         ifit = self._prepare()        
         with self._out:
             # create smeared curve: run without fitting, maxiter=0
-            comm.run_fit(ifit, maxiter=0)
-            # plot results
-            comm.report_fit(ifit, '')
+            comm.run_fit(ifit, maxiter=0, outname='')
         
     def _on_guess(self,b):
         ifit = self._prepare()    
         par = _uiconf.get(self.name)
         with self._out:
             # create smeared curve: run without fitting, maxiter=0
-            comm.run_fit(ifit, maxiter=par['fit']['maxiter'], guess=True)
-            # plot results
-            comm.report_fit(ifit, '')
+            comm.run_fit_guess(ifit,
+                               maxiter=par['fit']['maxiter'], 
+                               areg=par['fit']['areg'],
+                               outname='')
             
     def _on_fit(self,b):
         ifit = self._prepare()  
@@ -2238,7 +2130,8 @@ class UI_fit_imodel(UI_base):
                          loops=par['fit']['loops'],
                          areg=par['fit']['areg'],
                          guess=par['fit']['guess'],
-                         bootstrap=par['fit']['loops']>2)
+                         bootstrap=par['fit']['loops']>2,
+                         outname=None)
             # plot results
             save = self.pgm_options['save']
             if save:
@@ -2268,13 +2161,13 @@ class UI():
         self._last_input_file = 'input.json'
         self.ui = {}
         self.wk = dataio.workspace()
-        self._note = ipy.Output(layout=ipy.Layout(width='100%', min_height='100px'))
-        self._msg = ipy.Output(layout=ipy.Layout(width='100%', min_height='200px'))
-        self._err = ipy.Output(layout=ipy.Layout(width='100%', min_height='200px'))
+        self._note = ipy.Output(layout=ipy.Layout(width='100%', min_height='30px', border='none'))
+        self._msg = ipy.Output(layout=ipy.Layout(width='100%', min_height='200px', border='1px solid'))
+        #self._err = ipy.Output(layout=ipy.Layout(width='100%', min_height='200px', border='1px solid'))
         self._logger = dataio.logger()
-        self._logger.output = self._msg
         self._logger.output_short = self._note
-        self._logger.output_exc = self._err
+        self._logger.output_msg = self._msg
+        self._logger.output_exc = self._msg
         
         # setup dialog
         self._add_input_ui(UI_workspace('workspace'))
@@ -2299,6 +2192,34 @@ class UI():
         self.ui['imodel'].set_on_change(self._change)
 
     
+    def _message(self, txt, clear=True):
+        """Print info to the logger, if defined."""
+        if self._logger:
+            self._logger.info(txt)           
+        else:
+            print(txt)
+
+    def _warning(self, txt):
+        """Print warning to the logger, if defined."""
+        if self._logger:
+            self._logger.warning(txt)           
+        else:
+            print(txt)
+     
+    def _error(self, txt):
+        """Print error to the logger, if defined."""
+        if self._logger:
+            self._logger.error(txt)           
+        else:
+            print(txt)        
+    
+    def _exception(self, txt):
+        """Print exception to the logger, if defined."""
+        if self._logger:
+            self._logger.exception(txt)           
+        else:
+            print(txt) 
+
     def _add_input_ui(self, ui):
         if ui.name in UI._registered_ui:
             self.ui[ui.name] = ui
@@ -2311,6 +2232,60 @@ class UI():
         if idx==6:
             self.ui['imodel'].refresh()
         
+
+    
+    def _on_save_input(self,b):
+        s = choose_file_save(initialdir=self.wk.path('work').as_posix(), 
+                        initialfile=self._last_input_file,
+                        filetypes=(('Setup files','*.inp')))
+        if s:
+            self.save(filename=s)
+            p = _Path(s)
+            self._last_input_file = p.name
+            
+    def _on_load_input(self,b):
+        s = choose_file(initialdir=self.wk.path('work').as_posix(), 
+                        initialfile=self._last_input_file,
+                        filetypes=(('Setup files','*.inp')))
+        if s:
+            self.load(filename=s)
+            p = _Path(s)
+            self._last_input_file = p.name
+
+    def _on_clear_logs(self,b):
+        self.clear_logs()
+  
+    def _on_reload_data(self,b):
+        _uiconf.data.reload_all()
+        
+    def _change(self, obj, **kwargs):
+        if obj.name == 'shape':
+            if 'shape' in kwargs:
+                if self.ui['shape'].select != 'File':
+                    comp = self.ui['shape'].create_shape()
+                    comm.set_shape(comp)
+            else:
+                if self.ui['shape'].select != 'File':
+                    comm.set_shape(None,**kwargs)
+        # update selection lists: geometry and sampling
+        self._update_options(obj.name)
+
+    def _update_options(self, name):
+        """Update selection lists: geometry and sampling."""
+        if name in ['geometry', 'sampling']:
+            for key in ['scene','resolution','data']:
+                self.ui[key].update_options(name)
+        # update other selection lists
+        elif name == 'imodel':
+            self.ui['fit_imodel'].update_options('model')
+        elif name == 'data':
+            self.ui['fit_imodel'].update_options('data')
+
+    def clear_logs(self):
+        """Clear output area specified as a string argument."""
+        if self._logger:
+            self._logger.clear(what='all')
+
     def display(self):
         """Display all input blocks."""
         # output tabs layout
@@ -2357,7 +2332,12 @@ class UI():
         btn_save.on_click(self._on_save_input)
         btn_load = ipy.Button(description='Load input')
         btn_load.on_click(self._on_load_input)        
-        display(ipy.HBox([btn_save,btn_load]))
+        btn_clear = ipy.Button(description='Clear logs')
+        btn_clear.on_click(self._on_clear_logs) 
+        btn_reload_data = ipy.Button(description='Reload data')
+        btn_reload_data.on_click(self._on_reload_data)            
+        display(ipy.HBox([btn_save,btn_load, btn_reload_data, btn_clear]))
+        display(self._note)
         
         display(tab)
         keys = list(tabs_data.keys())
@@ -2365,57 +2345,15 @@ class UI():
             for ui in tabs_data[key]['ui']:
                 with tabs[key]:
                     try:
-                        ui.show(msg=self._msg, err=self._err, logger=self._logger)
+                        ui.show(logger=self._logger)
                     except Exception as e:
                         print('Cannot add ui component: {}'.format(key))
                         raise(e)
         
-        display(self._note)
-        display(self._err)
-        display(self._msg) 
+        #display(self._err)
+        display(ipy.VBox([ipy.Label('Messages'), self._msg]))
         
         tab.observe(self._tab_observe, names='selected_index')
-    
-    def _on_save_input(self,b):
-        s = choose_file_save(initialdir=self.wk.path('work').as_posix(), 
-                        initialfile=self._last_input_file,
-                        filetypes=(('Setup files','*.inp')))
-        if s:
-            self.save(filename=s)
-            p = _Path(s)
-            self._last_input_file = p.name
-            
-    def _on_load_input(self,b):
-        s = choose_file(initialdir=self.wk.path('work').as_posix(), 
-                        initialfile=self._last_input_file,
-                        filetypes=(('Setup files','*.inp')))
-        if s:
-            self.load(filename=s)
-            p = _Path(s)
-            self._last_input_file = p.name
-            
-    def _change(self, obj, **kwargs):
-        if obj.name == 'shape':
-            if 'shape' in kwargs:
-                if self.ui['shape'].select != 'File':
-                    comp = self.ui['shape'].create_shape()
-                    comm.set_shape(comp)
-            else:
-                if self.ui['shape'].select != 'File':
-                    comm.set_shape(None,**kwargs)
-        # update selection lists: geometry and sampling
-        self._update_options(obj.name)
-
-    def _update_options(self, name):
-        """Update selection lists: geometry and sampling."""
-        if name in ['geometry', 'sampling']:
-            for key in ['scene','resolution','data']:
-                self.ui[key].update_options(name)
-        # update other selection lists
-        elif name == 'imodel':
-            self.ui['fit_imodel'].update_options('model')
-        elif name == 'data':
-            self.ui['fit_imodel'].update_options('data')
 
     def save(self, filename=''):
         """Save input data in JSON format.""" 
@@ -2428,9 +2366,9 @@ class UI():
                     f.write(out)
                     f.close()
             else:
-                self.message(out)
+                self._message(out)
         except Exception:
-            self.exception('Cannot save program configuration')
+            self._exception('Cannot save program configuration')
         
     def load(self, filename=''):
         """Load input data in JSON format."""
@@ -2442,7 +2380,7 @@ class UI():
             # import into global input data
             _uiconf.import_json(lines, reload=True)
             if not _uiconf.is_ready():
-                self.error('Loading of program settings failed.')
+                self._error('Loading of program settings failed.')
                 return
             # Notification that data lists may have changed 
             # -> update dependent options
@@ -2455,8 +2393,8 @@ class UI():
                     self.ui[key].update_widgets() 
                     # self.ui[key].notify()
                 except Exception:
-                    self.exception('Problem with settig configuration value {}:'.format(key))
+                    self._exception('Problem with settig configuration value {}:'.format(key))
 
         except Exception:
-            self.exception('Problem while loading program configuration.')
+            self._exception('Problem while loading program configuration.')
 

@@ -262,11 +262,8 @@ def cal_pseudo_strains(scan_range, nev=3000, use_int=False):
         
     Returns
     -------
-    dict
-        Results as dict with keys `strain`, `intensity`.
-        Each of them contains a dict with results including:
-            title, xlabel, ylabel, x, y
-        In addition, it returns `model`, a pointer to the Sfit object.
+    :class:`MCCfit.Sfit`
+        Model with initialized with :meth:`calInfoDepth`.
     """
     # Initialize model
     model = mc.Sfit(nev=nev, xdir=_geom.scandir)
@@ -285,26 +282,39 @@ def cal_pseudo_strains(scan_range, nev=3000, use_int=False):
     fy = len(x)*[1]
     model.defDistribution(par=[x, y], vary=[fx, fy], ndim=100, scaled=True)
     model.calInfoDepth(xd, use_int=use_int)
-    data = model.infodepth
-    result = {}
-    sres = {}
-    ires = {}
-    # strain
-    sres['title'] = 'Pseudo strain'
-    sres['xlabel'] = 'Scan position, mm'
-    sres['ylabel'] = 'Strain,  1e-6'
-    sres['x'] = data[:,0]
-    sres['y'] = data[:,4]
-    result['strain'] = sres
-    # intensity
-    ires['title'] = 'Pseudo intensity'
-    ires['xlabel'] = 'Scan position, mm'
-    ires['ylabel'] = 'Intensity, rel. units'
-    ires['x'] = data[:,0]
-    ires['y'] = data[:,3]
-    result['intensity'] = ires
-    return result, model
+    return model
         
+def cal_resolution(scan_range, nev=3000):
+    """Calculate spatial resolution data.
+    
+    Parameters
+    ----------
+    scan_range : [min, max, n]
+        Scan range [mm] given as min, max and number of positions. 
+        Positions are relative to the scan centre provided in sample geometry.
+    nev : int, optional
+        Number of events to be used for convolution.
+        
+    Returns
+    -------
+    :class:`MCCfit.Sfit`
+        Model object initialized with :meth:`calResolution`.
+    """
+    # Initialize model
+    model = mc.Sfit(nev=nev, xdir=_geom.scandir)
+    
+    # choose randomly a subset of sampling events
+    sam.shuffleEvents()
+    
+    # define strain distribution model
+    x = np.linspace(scan_range[0],  scan_range[1], num=scan_range[2])
+    y = np.zeros(len(x))
+    fx = len(x)*[1]
+    fy = len(x)*[1]
+    model.defDistribution(par=[x, y], vary=[fx, fy], ndim=100, scaled=True)
+    model.calResolution(x)
+    return model
+    
 
 def report_pseudo_strains(scan_range, file, 
                           nev=3000, 
@@ -335,8 +345,15 @@ def report_pseudo_strains(scan_range, file,
     use_int : bool
         Use previously fitted intensity distribution in calculation 
         of pseudo-strain.
+        
+    Return
+    ------
+    dict
+        Plot data.
     """   
-    data, model = cal_pseudo_strains(scan_range, nev=nev, use_int=use_int)
+    model = cal_pseudo_strains(scan_range, nev=nev, use_int=use_int)
+    data = gr.get_plot_pseudostrain(model)
+    
     if not intensity and 'intensity' in data:
         del data['intensity']                          
     if plot:
@@ -375,31 +392,18 @@ def report_resolution(scan_range, file,
     save: bool
         Save figures and table with results.
     """
-    # Initialize model
-    model = mc.Sfit(nev=nev, xdir=_geom.scandir)
-    
-    # choose randomly a subset of sampling events
-    sam.shuffleEvents()
-    
-    # define strain distribution model
-    x = np.linspace(scan_range[0],  scan_range[1], num=scan_range[2])
-    y = np.zeros(len(x))
-    fx = len(x)*[1]
-    fy = len(x)*[1]
-    model.defDistribution(par=[x, y], vary=[fx, fy], ndim=100, scaled=True)
-    model.calResolution(x)
+    sfx='dpos'
+    model = cal_resolution(scan_range, nev=nev)
     if plot:
-        f = dataio.derive_filename(file, ext='png', sfx='dpos')
+        f = dataio.derive_filename(file, ext='png', sfx=sfx)
         filepng = dataio.get_output_file(f)
-        #gr.plotInfoDepth(model, save=save, file=filepng)
-        #gr.plotPseudoStrain(model, save=save, file=filepng2)
         gr.plot_resolution(model, depth=True, 
                     cog=cog, 
                     inline=inline,
                     save=save, 
                     file=filepng)
     if file and save:
-        model.saveResolution('', file, sfx='dpos')
+        model.saveResolution('', file, sfx=sfx)
     
 def set_sampling(sampling):
     """Assign sampling events for use by convolution models.
@@ -867,8 +871,30 @@ def define_sfit(scan, nodes, nev, z0=0.0, constFnc=None, eps0=False,
     sfit.defScaling(par=[1., e0, z0], vary=[0, 0, 0])
     return sfit
 
+def run_fit_guess(model, maxiter=100, areg=1e-5, outname=None):
+    """Run guess fit.
+     
+    Fast fit which neglects smearing, only subtracts pseudo-strains. 
 
-def run_fit(model, maxiter=100, areg=1e-3, outname=None, guess=False, 
+    Parameters
+    ----------
+    model : obj
+        Instance of a model class from ``stressfit.mccfit`` (Ifit or Sfit)
+    maxiter : int, optional
+        Maximum number of iterations. 
+    areg : array of float
+        Regularization parameters.The length of the array defines the number of
+        fits.
+    outname: str, optional
+        Filename for output data.
+        Set to empty string to suppress output except of plots. 
+        Set to None to suppress any output.
+    """
+    mc.runFit(model, maxiter=maxiter, areg=areg, guess=True)
+    if outname is not None:
+        report_fit(model, outname)
+        
+def run_fit(model, maxiter=100, areg=1e-5, outname=None, guess=False, 
             bootstrap=False, loops=3):
     """Run fit on given model.
 
@@ -881,7 +907,7 @@ def run_fit(model, maxiter=100, areg=1e-3, outname=None, guess=False,
     areg : float
         Regularization parameter.
     outname: str, optional
-        Filename for output data. A prefix 'a(n)_' will be aded for yeach loop.
+        Filename for output data. A prefix 'a(n)_' will be added for yeach loop.
         Set to empty string to suppress output except of intermediate plots. 
         Set to None to suppress any output.
     guess : bool, optional
@@ -898,54 +924,17 @@ def run_fit(model, maxiter=100, areg=1e-3, outname=None, guess=False,
     sam.shuffleEvents()
     
     if guess:
-        # Set maxiter=0 if you don't want to fit, just plot the initial model.
-        mc.runFit(model, maxiter=maxiter, areg = areg, guess=True)
+        run_fit_guess(model, maxiter=maxiter, areg=areg, outname=None)
     
     res = mc.runFit(model, maxiter=maxiter, areg=areg, bootstrap=bootstrap, 
                         loops=loops)
     if not res:
-        print('Fit not finished.')
+        print('Fit not completed.')
     
     if outname is not None:
-        report_fit(model, outname) 
-    
-def run_fit_guess(model, maxiter=100, areg=1e-3):
-    """Run guess fit.
-     
-    Fast fit which neglects smearing, only subtracts pseudo-strains. 
-
-    Parameters
-    ----------
-    model : obj
-        Instance of a model class from ``stressfit.mccfit`` (Ifit or Sfit)
-    maxiter : int, optional
-        Maximum number of iterations. 
-    areg : array of float
-        Regularization parameters.The length of the array defines the number of
-        fits.
-    """
-    mc.runFit(model, maxiter=maxiter, areg = areg, guess=True)
-    report_fit(model, '')
-        
-def run_fit_alt(model, maxiter=100, areg=1e-3, maxc=10):
-    """Run guess fit.
-     
-    Fast fit which neglects smearing, only subtracts pseudo-strains. 
-
-    Parameters
-    ----------
-    model : obj
-        Instance of a model class from ``stressfit.mccfit`` (Ifit or Sfit)
-    maxiter : int, optional
-        Maximum number of iterations. 
-    areg : array of float
-        Regularization parameters.The length of the array defines the number of
-        fits.
-    """
-    mc.runFit_alt(model, maxiter=maxiter, maxc=maxc, areg = areg)
-    #report_fit(model, '')
+        report_fit(model, outname, use_int=True) 
             
-def run_fit_reg(model, maxiter=100, areg=[1e-4, 1e-3], outname=None, guess=True):
+def run_fit_reg(model, maxiter=100, areg=[1e-5, 1e-4], outname=None, guess=True):
     """Run regularization loop with fitting of given model.
 
     Parameters
@@ -967,24 +956,23 @@ def run_fit_reg(model, maxiter=100, areg=[1e-4, 1e-3], outname=None, guess=True)
     """
     na = len(areg)
     if guess:
-        # Set maxiter=0 if you don't want to fit, just plot the initial model.
         ia = min(max(0,int(na/2)),na-1)  
-        mc.runFit(model, maxiter=maxiter, areg=areg[ia], guess=True)
-        # report_fit(model, '')
+        run_fit_guess(model, maxiter=maxiter, areg=areg[ia], outname=None)
 
     reglog = np.zeros((na,3))
     for ia in range(na):    
         res = mc.runFit(model, maxiter=maxiter, areg=areg[ia])
         reglog[ia] = [areg[ia], model.chi, model.reg]
         if not res:
-            print('Fit not finished.')
+            print('Fit not completed.')
         ss = '[areg, chi2, reg] = {:g}\t{:g}\t{:g}\n'.format(*reglog[ia,:])
         print(ss)
         sfx = 'a{:g}_'.format(areg[ia])
-        if outname:
-            report_fit(model, sfx+outname, reglog=reglog) 
-        elif outname=='':
-            report_fit(model, '') 
+        if outname is not None:
+            if len(str(outname))>0:
+                report_fit(model, sfx+outname, reglog=reglog) 
+            else:
+                report_fit(model, '') 
     
     # report the table with regularization progress:
     ss = 'areg\tchi2\treg\n'
