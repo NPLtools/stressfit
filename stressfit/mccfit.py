@@ -4,7 +4,6 @@ Created on Sat Sep  9 23:53:16 2017
 
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
-# TODO redirect print and exception handling to logger
 import numpy as np
 from lmfit import Minimizer, Parameters
 from scipy.interpolate import CubicSpline as Cspline
@@ -26,7 +25,11 @@ _reg = np.inf
 _ispline = None # spline interpolator for intensity, used by SFit
 _quiet = False
 
+_log = dataio.logger()
+
 intpmodels = ['natural','clamped', 'PCHIP', 'Akima']
+
+
 
 def intClear():
     global _ispline
@@ -220,7 +223,7 @@ def getChi2(resid, params):
     return chi2
 
     
-def fitcallb(params, iter, resid, *fcn_args, **fcn_kws):
+def fitcallb(params, iteration, resid, *fcn_args, **fcn_kws):
     """ Callback to provide fit progress info.
     """
     global _chi2, _reg
@@ -230,7 +233,7 @@ def fitcallb(params, iter, resid, *fcn_args, **fcn_kws):
         _reg = reg
         _chi2 = chi
         fmt = 'iter={:d}, chi2={:g}, reg={:g}'
-        if (not _quiet): print(fmt.format(iter, chi, reg))
+        if (not _quiet): _log.progress(fmt.format(max(0,iteration), chi, reg))
 
 
 # define objective function for fitting: returns the array to be minimized
@@ -256,32 +259,38 @@ def costFnc(params, model, areg, guess):
     return res
 
 def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
-    """ Execution of least square fit.
+    """Execute least square fit.
     
-        Arguments
-        ---------
-            model : mccfit class
-                class handling model parameters
-            maxiter : int
-                maximum number of function evaluations
-            areg: float
-                regularization coefficient
-            bootstrap: boolean
-                run loops to estimate confidence limits
-            loops: int
-                number of bootstrap loops
-        Returns
-        -------
-            results : boolean
-                    success
+    Parameters
+    ----------
+        model : mccfit class
+            class handling model parameters
+        maxiter : int
+            maximum number of function evaluations
+        areg : float
+            regularization coefficient
+        bootstrap : boolean
+            run loops to estimate confidence limits
+        loops : int
+            number of bootstrap loops
+        guess : bool
+            if true, run only the guess fit without deconvolution
+    Returns
+    -------
+        results : boolean
+                success
     """
     global _chi2, _reg
     if (model.data is None):
         msg = 'Set value of {}.data.'.format(model.__class__.__name__)
         raise Exception('No data defined for fitting. '+msg)
+
     if (bootstrap):
         res = runFitEx(model, maxiter=maxiter, loops=loops, areg=areg)
         return res
+    if not (_quiet or guess):
+        _log.clear(what='prog')
+        _log.progress('Starting fit for < {:d} iterations.'.format(maxiter))
     ndim = model.dist.shape[0]
     ndata = model.data.shape[0]
     xdata = model.data[:,0]
@@ -321,39 +330,49 @@ def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
     if (model.avgrange is not None):
         av = getAverage(xdis, ydis, rang = model.avgrange)  
         model.avg = [av, 0.]
-    if (not _quiet) and (not guess): print('runFit finished\n')
+    if not (_quiet or guess): _log.progress('runFit finished')
     if (model.result is not None):
         res = model.result.success
     else:
         res = True
     model.fitFinal()
+    if not res:
+        _log.progress('Fit not completed.')
     return res
 
 def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
-    """ Execution of least square fit.
+    """Execute a least square fit.
     
-        Extended version with error estimates by bootstrap method.
-    
-        Arguments
-        ---------
-            model : mccfit class
-                class handling model parameters
-            maxiter : int
-                maximum number of function evaluations
-            loops : int
-                number of loops in the boostrap cycle
-            areg : float
-                regularization coefficient
-        -------
-        Returns
-        -------
-            results : boolean
+    Extended version with error estimates by bootstrap method.
+
+    Parameters
+    ----------
+        model : mccfit class
+            class handling model parameters
+        maxiter : int
+            maximum number of function evaluations
+        loops : int
+            number of loops in the boostrap cycle
+        areg : float
+            regularization coefficient
+        guess : bool
+            if true, run only the guess fit without deconvolution
+
+    Returns
+    -------
+        results : boolean
                     success
     """
     global _chi2, _reg
     if (model.data is None):
         msg = 'Set value of {}.data.'.format(model.__class__.__name__)
         raise Exception('No data defined for fitting. '+msg)
+    
+    if not (_quiet or guess):
+        _log.clear(what='prog')
+        fmt = 'Starting fit for < {:d} iterations'
+        fmt += ' and {:d} loops for error estimate.'
+        _log.progress(fmt.format(maxiter, loops))
     ndim = model.dist.shape[0]
     # length of distribution model arrays (number of nodes):  
     # initialize arrays
@@ -413,7 +432,10 @@ def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
             avg += p*av
             avg2 += p*av**2
         #reg = costFnc(model.params, model, areg)
-        if (not _quiet): print('Loop {:d}: chi2={:g}, reg={:g}\n'.format(it, _chi2, _reg))    
+        if not  model.result.success:
+            _log.progress('Fit not completed.')
+        if not (_quiet or guess):
+            _log.progress('Loop {:d}: chi2={:g}, reg={:g}\n'.format(it, _chi2, _reg))
     model.data = data0
     model.chi  = chi0/sump
     model.reg = reg0/sump
@@ -454,7 +476,8 @@ def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
     # averaged value
     model.avg = [avg, avg_err]
     if (model.result is not None):
-        if (not _quiet): print('runFitEx weights: '+str(pval)+'\n')
+        if not (_quiet or guess):
+            _log.progress('runFitEx weights: '+str(pval)+'\n')
         res = model.result.success
     else:
         res = True
@@ -475,6 +498,8 @@ class MCCfit(ABC):
                 ftol : float
                     tolerance to be passed to the leastsq minimizer
         """
+        # assign main logger for messages
+        self._log = dataio.logger()
         # init parameters
         self.nev = nev
         xd = np.array(xdir)
@@ -901,10 +926,11 @@ class MCCfit(ABC):
             res = ss
         except Exception as e:
             res = ss
-            print(e)
-            msg = 'Can''t evaluate fit result: '
+            msg = '{}\n'.format(str(e))
+            msg += 'Can''t evaluate fit result: '
             msg += 'the fit was not completed successfully or wrong result structure.'
-            # raise RuntimeError(msg)
+            self._log.exception(msg)
+            # raise RuntimeError(strmsg)
         return res
 
     def saveInfoDepth(self, outpath, fname):                        
@@ -1015,10 +1041,12 @@ class MCCfit(ABC):
             else:
                 self.intpmod = intpmodels.index(model)
         except:
-            print('Invalid interpolation model. Choose string or index:')
+            self._log.error('Invalid interpolation model.')
+            msg = 'Choose string or index to define interpolation:\n'
             fmt = '{}:\t{}\n'
             for i in range(len(intpmodels)):    
-                print(fmt.format(i, intpmodels[i]))
+                msg += fmt.format(i, intpmodels[i])
+            self._log.info(msg)
             
     # Descendants must implement a smearing model
     @abstractmethod
@@ -1172,7 +1200,7 @@ class Sfit(MCCfit):
             fmt = 'Integral over x in [{:g}, {:g}]: {:g} +- {:g}\n' 
             msg = fmt.format(self.avgrange[0], self.avgrange[1], self.avg[0], 
                              self.avg[1])
-            if (not _quiet): print(msg)
+            if (not _quiet): self._log.info(msg)
         
     def intFnc(self,x):
         """Returns interpolated intensity function value """

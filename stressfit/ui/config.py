@@ -5,8 +5,7 @@ Created on Mon Apr 25 15:47:30 2022
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
 
-# TODO move to the core module package
-# TODO connect with a messaging tool instead of print()
+# TODO move to the core module package - remove dependence on Geometry
 # TODO define strain distribution list, linked to input data
 # TODO define command for plotting & fitting strain  model + data)
 

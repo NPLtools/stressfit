@@ -1225,7 +1225,7 @@ class UI_sampling(UI_base_list):
         except Exception:
             if item in self._values['list']:
                 self._delete(item)
-            self.exception('Cannot add sampling data.')
+            self.exception('Cannot add sampling data [{}].'.format(item))
         if update_ui:
             self.update_widgets()        
         
@@ -1472,7 +1472,7 @@ class UI_data(UI_base_list):
         except Exception:
             if item in self._values['list']:
                 self._delete(item)
-            self.exception('Cannot add strain data.')
+            self.exception('Cannot add strain data [{}].'.format(item))
 
     def _on_replot(self,b):
         """Plot data with simulated pseudo-strains and pseudo-intensities."""
@@ -2161,14 +2161,16 @@ class UI():
         self._last_input_file = 'input.json'
         self.ui = {}
         self.wk = dataio.workspace()
+        msgl = ipy.Layout(width='100%', min_height='200px', border='none')
         self._note = ipy.Output(layout=ipy.Layout(width='100%', min_height='30px', border='none'))
-        self._msg = ipy.Output(layout=ipy.Layout(width='100%', min_height='200px', border='1px solid'))
+        self._msg = ipy.Output(layout=msgl)
+        self._prog = ipy.Output(layout=msgl)
         #self._err = ipy.Output(layout=ipy.Layout(width='100%', min_height='200px', border='1px solid'))
         self._logger = dataio.logger()
         self._logger.output_short = self._note
         self._logger.output_msg = self._msg
         self._logger.output_exc = self._msg
-        
+        self._logger.output_prog = self._prog
         # setup dialog
         self._add_input_ui(UI_workspace('workspace'))
         self._add_input_ui(UI_options('options'))
@@ -2286,7 +2288,7 @@ class UI():
         if self._logger:
             self._logger.clear(what='all')
 
-    def display(self):
+    def display(self, show_messages=True):
         """Display all input blocks."""
         # output tabs layout
         # Define tabs_data in the order of tabs
@@ -2341,18 +2343,20 @@ class UI():
         
         display(tab)
         keys = list(tabs_data.keys())
-        for key in keys:
-            for ui in tabs_data[key]['ui']:
-                with tabs[key]:
-                    try:
-                        ui.show(logger=self._logger)
-                    except Exception as e:
-                        print('Cannot add ui component: {}'.format(key))
-                        raise(e)
+        try:
+            for key in keys:
+                for ui in tabs_data[key]['ui']:
+                    with tabs[key]:
+                        try:
+                            ui.show(logger=self._logger)
+                        except Exception as e:
+                            print('Cannot add ui component: {}'.format(key))
+                            raise(e)
+        except Exception as e:
+            self._exception(str(e))
         
-        #display(self._err)
-        display(ipy.VBox([ipy.Label('Messages'), self._msg]))
-        
+        if show_messages:
+            self.display_messages()
         tab.observe(self._tab_observe, names='selected_index')
 
     def save(self, filename=''):
@@ -2380,7 +2384,7 @@ class UI():
             # import into global input data
             _uiconf.import_json(lines, reload=True)
             if not _uiconf.is_ready():
-                self._error('Loading of program settings failed.')
+                self._error('Program input is not complete.')
                 return
             # Notification that data lists may have changed 
             # -> update dependent options
@@ -2393,8 +2397,25 @@ class UI():
                     self.ui[key].update_widgets() 
                     # self.ui[key].notify()
                 except Exception:
-                    self._exception('Problem with settig configuration value {}:'.format(key))
+                    self._exception('Cannot set values for {}:'.format(key))
 
         except Exception:
-            self._exception('Problem while loading program configuration.')
+            self._exception('Cannot load program configuration {}.'.format(filename))
 
+    def display_messages(self):
+        """Display message panels in a separate output."""
+        # create tab container
+        # display(ipy.VBox([ipy.Label('Messages'), self._msg]))
+        tab = ipy.Tab()        
+        # define output tabs
+        tabs = {}
+        tabs['Messages'] = self._msg
+        tabs['Progress log'] = self._prog
+        # create and display tab component
+        keys = list(tabs.keys())
+        tab.children = list(tabs.values())
+        for i in range(len(keys)):
+            tab.set_title(i, keys[i])
+        display(tab)
+        
+        

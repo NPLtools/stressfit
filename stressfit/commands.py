@@ -928,9 +928,7 @@ def run_fit(model, maxiter=100, areg=1e-5, outname=None, guess=False,
     
     res = mc.runFit(model, maxiter=maxiter, areg=areg, bootstrap=bootstrap, 
                         loops=loops)
-    if not res:
-        print('Fit not completed.')
-    
+ 
     if outname is not None:
         report_fit(model, outname, use_int=True) 
             
@@ -963,8 +961,6 @@ def run_fit_reg(model, maxiter=100, areg=[1e-5, 1e-4], outname=None, guess=True)
     for ia in range(na):    
         res = mc.runFit(model, maxiter=maxiter, areg=areg[ia])
         reglog[ia] = [areg[ia], model.chi, model.reg]
-        if not res:
-            print('Fit not completed.')
         ss = '[areg, chi2, reg] = {:g}\t{:g}\t{:g}\n'.format(*reglog[ia,:])
         print(ss)
         sfx = 'a{:g}_'.format(areg[ia])

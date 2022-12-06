@@ -445,7 +445,6 @@ class _log_handler_prog(logging.StreamHandler):
         """Print to output if available."""
         msg = self.format(record)
         if self.output:
-            self.output.clear_output()
             with self.output:
                 print(msg )
         else:
