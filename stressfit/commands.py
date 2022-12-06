@@ -890,7 +890,7 @@ def run_fit_guess(model, maxiter=100, areg=1e-5, outname=None):
         Set to empty string to suppress output except of plots. 
         Set to None to suppress any output.
     """
-    mc.runFit(model, maxiter=maxiter, areg=areg, guess=True)
+    mc.runFit(model, maxiter=maxiter, areg=areg, guess=True);
     if outname is not None:
         report_fit(model, outname)
         
@@ -926,8 +926,8 @@ def run_fit(model, maxiter=100, areg=1e-5, outname=None, guess=False,
     if guess:
         run_fit_guess(model, maxiter=maxiter, areg=areg, outname=None)
     
-    res = mc.runFit(model, maxiter=maxiter, areg=areg, bootstrap=bootstrap, 
-                        loops=loops)
+    mc.runFit(model, maxiter=maxiter, areg=areg, bootstrap=bootstrap, 
+                        loops=loops);
  
     if outname is not None:
         report_fit(model, outname, use_int=True) 
@@ -959,7 +959,7 @@ def run_fit_reg(model, maxiter=100, areg=[1e-5, 1e-4], outname=None, guess=True)
 
     reglog = np.zeros((na,3))
     for ia in range(na):    
-        res = mc.runFit(model, maxiter=maxiter, areg=areg[ia])
+        mc.runFit(model, maxiter=maxiter, areg=areg[ia]);
         reglog[ia] = [areg[ia], model.chi, model.reg]
         ss = '[areg, chi2, reg] = {:g}\t{:g}\t{:g}\n'.format(*reglog[ia,:])
         print(ss)

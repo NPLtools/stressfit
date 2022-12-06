@@ -229,17 +229,31 @@ def create_text(name='', label='Text',value='', indent=False,
 
 #%% Single-value input containers
 
+
+
 class BasicInput():
     """Basic input class with name and callback on value change.
     
     Do not use directly, implement own descendant classes.
     """
     
-    def __init__(self, name, value):
+    class _WidgetLogger():
+        def error(message):
+            print(message)
+        def exception(message):
+            print(message)
+        def info(message):
+            print(message)
+    
+    def __init__(self, name, value, logger=None):
         self.name = name
         self._value = value
         self._observe = None
         self._call_enabled = True
+        if logger==None:
+            self._log = BasicInput._WidgetLogger()
+        else:
+            self._log = logger
 
     def _call_observe(self):
         """Invoke callback. To be used when value changes."""
@@ -286,8 +300,8 @@ class ComposedInput(BasicInput):
     """
     
     def __init__(self, name='', value=None, align='vertical', 
-                 layout = None):
-        super().__init__(name, {})
+                 layout = None, **kwargs):
+        super().__init__(name, {}, **kwargs)
         self._widgets = {}
         self.align = align
         if layout:
@@ -381,8 +395,8 @@ class DirInput(BasicInput):
     """
     
     def __init__(self, name='', path='', label='', tooltip='', 
-                 width_label=150, width_button=50):
-        super().__init__(name, path)
+                 width_label=150, width_button=50, **kwargs):
+        super().__init__(name, path, **kwargs)
         self.label = label
         self.tooltip = tooltip
         w_lbl = '{}px'.format(width_label)
@@ -461,9 +475,10 @@ class FileInput(BasicInput):
     
     def __init__(self,  name='', file='',path='', label='', fileonly=False,
                  filetypes=None,
-                 tooltip='', width='100%', width_label=150, width_button=50):
+                 tooltip='', width='100%', width_label=150, width_button=50,
+                 **kwargs):
         
-        super().__init__(name, '.')
+        super().__init__(name, '.', **kwargs)
         self._path = path
         self._fileonly = fileonly
         self._filetypes = filetypes
@@ -533,7 +548,7 @@ class FileInput(BasicInput):
             self._set_file(f)
         except Exception as e:
             self._path = _path
-            raise e
+            self._log.exception(str(e))
         # temporary switch off calling of observe.
         en = self._call_enabled
         self._call_enabled = False
@@ -579,7 +594,7 @@ class FileInput(BasicInput):
                 self._set_file(s)
                 self.txt.value = self._file
             except Exception as e:
-                print(e)
+                self._log.exception(str(e))
              
     def _on_text(self, change):
         """Text change - update value."""
@@ -590,7 +605,7 @@ class FileInput(BasicInput):
                     self._set_file(s)
                     self._call_observe()
                 except Exception as e:
-                    print(e)
+                    self._log.exception(str(e))
                                  
     def ui(self, width='100%', border='none'):
         """Return input widget as HBox with flex layout."""
@@ -632,8 +647,8 @@ class ArrayInput(BasicInput):
     def __init__(self, name='', value=[0.0,0.0,0.0], label='array', 
                  hint='define an array', step=0.1, isInt=False,
                  width_label=150, width_num=80, unit='px',
-                 lmin=None, lmax=None):
-        super().__init__(name, value)
+                 lmin=None, lmax=None, **kwargs):
+        super().__init__(name, value, **kwargs)
         if isinstance(value, (float,int)):
             self._value = [value]
             self._is_scalar = True
@@ -692,13 +707,13 @@ class ArrayInput(BasicInput):
         """Set values to the widgets."""
         if self._is_scalar:
             if not (isinstance(value, float) or isinstance(value, int)):
-                raise Exception('Required scalar value, not {}'.format(value))
+                self._log.error('Required scalar value, not {}'.format(value))
             self._value[0] = value
         else:
             ni = len(self.inputs)
             if len(value) != len(self.inputs):
                 nd = len(value)
-                raise Exception('Array lengths do not match: {},{}'.format(nd,ni))
+                self._log.error('Array lengths do not match: {},{}'.format(nd,ni))
             for i in range(ni):
                 self._value[i] = value[i]
         en = self._call_enabled
@@ -765,8 +780,8 @@ class SelectInput(BasicInput):
     """
     
     def __init__(self, name='',  options=[], label='', hint='', value=None, 
-                 index=-1, width_label=150, width_drop=60, unit='px'):
-        super().__init__(name, value)
+                 index=-1, width_label=150, width_drop=60, unit='px', **kwargs):
+        super().__init__(name, value, **kwargs)
         self._options = options
         self.label = label
         self.hint = hint
@@ -816,7 +831,7 @@ class SelectInput(BasicInput):
             self._update_widgets()
         except  Exception as e:
             self._value = val
-            raise e
+            self._log.exception(str(e))
        
     @property
     def index(self):
@@ -849,9 +864,7 @@ class SelectInput(BasicInput):
         except Exception as e:
             msg = 'Cannot set value to options: {}\n{}'
             self._call_enabled = en
-            raise Exception(msg.format(self._value,e))
-
-    
+            self._log.exception(msg.format(self._value,e))
 
     def _on_change(self,change):
         """Value change - update value."""
@@ -903,8 +916,8 @@ class DistTable(BasicInput):
     
     _headers = ['x','fitx','y','fity']   
     def __init__(self, name='', value=None, nx=6, x_range=[0.0, 10.0],
-                 border='1px solid', label='distribution'):
-        super().__init__(name, value)
+                 border='1px solid', label='distribution', **kwargs):
+        super().__init__(name, value, **kwargs)
         self.num_format = '0.0'
         self._cells = {}
         self._row_select = []      
@@ -956,7 +969,6 @@ class DistTable(BasicInput):
     
     def _render_readonly(self, value):
         out = {}
-        #print(value)
         if value.read_only:
             out = {'backgroundColor' : "#EEEEEE"}
         return out
@@ -1050,7 +1062,7 @@ class DistTable(BasicInput):
         """Retrieve data from the sheet."""
         my_cells = ['00','02','03','10','12','13']
         if not all(k in self._cells.keys() for k in my_cells+DistTable._headers):
-            raise Exception('DistTable: no sheet data.')
+            self._log.error('DistTable: no sheet data.')
         data = {}
         data['x'] = [self._cells['00'].value] + self._cells['x'].value + [self._cells['10'].value]
         data['y'] = [self._cells['02'].value] + self._cells['y'].value + [self._cells['12'].value]
@@ -1082,7 +1094,7 @@ class DistTable(BasicInput):
                     self._data[k].remove(d)
             self.redraw()
         except Exception as e:
-            raise e
+            self._log.exception(str(e))
 
     def _insert_rows(self, before=False):
         """Insert rows after/before the selected ones."""
@@ -1112,7 +1124,7 @@ class DistTable(BasicInput):
                 di += 1
             self.redraw()
         except Exception as e:
-            raise e
+            self._log.exception(str(e))
 
     def reset(self):
         """Reset to original value."""
@@ -1122,11 +1134,11 @@ class DistTable(BasicInput):
     def import_data(self, data, set_as_orig=False):
         """Import new table data."""
         if not all(k in data.keys() for k in DistTable._headers):
-            raise Exception('DistTable import: missing keys.')
+            self._log.error('DistTable import: missing keys.')
         nr = len(data['x'])
         for key in data:
             if nr != len(data[key]):
-                raise Exception('DistTable import: unequal column lengths.')
+                self._log.error('DistTable import: unequal column lengths.')
             self._data[key] = data[key]
         if set_as_orig:
             self._data_orig = self._copy_data()
@@ -1230,15 +1242,14 @@ class ScaleTable(BasicInput):
     
     _headers = ['keys','values','fit']
     
-    def __init__(self, name='', value=None, fmt='0.00', label='scale'):
-        super().__init__(name, value)
+    def __init__(self, name='', value=None, fmt='0.00', label='scale', 
+                 **kwargs):
+        super().__init__(name, value, **kwargs)
         self.num_format = fmt
         self._cells = {}
         self._data = {}
         self._set_default_data()
         self._label = label
-        self._log_out = ipy.Output(layout=ipy.Layout(width='100%', 
-                                                 border='none'))
         self.sheet = None
         if isinstance(value, dict):
             self.import_data(value)
@@ -1287,11 +1298,7 @@ class ScaleTable(BasicInput):
                                                numeric_format=self.num_format)
         self._cells['fit'] = ipysheet.column(1, fixes, row_start=0, 
                                              type='checkbox', style=stl)
-        self.sheet = sheet
-        
-        #self._log('_create_sheet:\n{}'.format(self._data))
-        #self._log('_cells[fit]:\n{}'.format(self._cells['fit']))
-        
+        self.sheet = sheet       
     
     def _sheet_to_data(self):
         """Retrieve self._data from the sheet."""
@@ -1305,7 +1312,6 @@ class ScaleTable(BasicInput):
     def _data_to_sheet(self):
         """Set self._data to the sheet."""
         if self.sheet:
-            #self._log('_data_to_sheet:\n{}'.format(self._data))
             #with ipysheet.hold_cells():
             for key in self._cells:
                 if key in self._data:
@@ -1319,24 +1325,18 @@ class ScaleTable(BasicInput):
             for c in self._cells:
                 self._cells[c].send_state()
 
-    def _log(self, msg):
-        with self._log_out:
-            print(msg)
-
     def reset(self):
         """Reset to original value."""
         self.import_data(self._data_orig)
     
     def import_data(self,data, set_as_orig=False):
-        """Import new data."""
-        #self._log('import_data:\n{}'.format(data))
-        
+        """Import new data."""        
         if not all(k in data.keys() for k in ScaleTable._headers):
-            raise Exception('Invalid import data: missing keys.')
+            self._log.error('Invalid import data: missing keys.')
         nr = len(data['values'])
         for key in ScaleTable._headers:
             if nr != len(data[key]):
-                raise Exception('Invalid import data: unequal array lengths.')
+                self._log.error('Invalid import data: unequal array lengths.')
             self._data[key] = data[key]
         if set_as_orig:
             self._data_orig = self._copy_data()
@@ -1376,9 +1376,9 @@ class ScaleTable(BasicInput):
         if self._label:
             #lb = create_header(self._label, size='+0')
             lb = ipy.Label(value=self._label)
-            out = ipy.VBox([lb, self.sheet, self._log_out], layout=dist_layout)
+            out = ipy.VBox([lb, self.sheet], layout=dist_layout)
         else:
-            out = ipy.VBox([self.sheet, self._log_out], layout=dist_layout)
+            out = ipy.VBox([self.sheet], layout=dist_layout)
         return out
         
         
@@ -1400,10 +1400,11 @@ class FitControl(ComposedInput):
         - areg : float, regularization parameter
     """
     
-    def __init__(self, name='', value=None, layout = None):
+    def __init__(self, name='', value=None, layout=None, **kwargs):
         super().__init__(name, value, 
                          align='vertical',
-                         layout=layout)
+                         layout=layout,
+                         **kwargs)
                 
     def _create_values(self):
         self._value['maxiter'] = 200

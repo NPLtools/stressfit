@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Sep  9 23:53:16 2017
+Created on Sat Sep  9 23:53:16 2017.
 
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
+# TODO Extract reporting to a dedicated module
+# TODO Model definition data and fitting functions should be in separate modules/classes.
+# TODO Move the MC convolution procedures from smaple module to an extra module.
+# TODO The sample module should only encapsulate sample properties.
+
 import numpy as np
 from lmfit import Minimizer, Parameters
 from scipy.interpolate import CubicSpline as Cspline
@@ -29,17 +34,20 @@ _log = dataio.logger()
 
 intpmodels = ['natural','clamped', 'PCHIP', 'Akima']
 
-
-
 def intClear():
+    """Clear intensity fit result.
+    
+    Scattering probability distribution is assumed uniform afterwards.
+    """
     global _ispline
     _ispline = None
 
 def intDefined():
+    """Query if intensity fit is defined."""
     return _ispline is not None
 
 def intFnc(x):
-    """Returns interpolated intensity function value """
+    """Return interpolated intensity function value."""
     if (_ispline is None):
         y = np.ones(x.shape)
     else:
@@ -47,10 +55,16 @@ def intFnc(x):
     return np.maximum(0., y)
 
 def quiet(b):
+    """Set quiet mode for progress logs."""
     global _quiet
     _quiet=b
 
 def path2win(name):
+    """Convert windows-like paths with backslashes.
+    
+    Obsolete, left for backward compatibility. 
+    Use pathlib or os packages instead.
+    """
     out = name.replace('\\','/')
     if (out[-1] != '/'):
         out += '/'
@@ -59,18 +73,18 @@ def path2win(name):
 def deriveFilename(file, ext='', sfx=''):
     """Return string derived from given filename.
     
-      1)  Remove file extension (if any)
-      2)  add suffix 
-      3)  add extensio
-       
-       Arguments
-       ---------
-           file: string
-               base filename
-           ext: string
-               extension to be added
-           sfx: string
-               a suffix to be added at the end of filename (before extension)
+    1)  Remove file extension (if any)
+    2)  add suffix 
+    3)  add extensio
+     
+    Parameters
+    ----------
+         file: string
+             base filename
+         ext: string
+             extension to be added
+         sfx: string
+             a suffix to be added at the end of filename (before extension)
     
     """
     a = file.split('.')
@@ -90,7 +104,7 @@ def deriveFilename(file, ext='', sfx=''):
     return s 
 
 def params2array(params):    
-    """ Convert params to array.
+    """Convert params to an array.
     
     Returns
     -------
@@ -108,7 +122,7 @@ def params2array(params):
 
 
 def params2dist(params):    
-    """ Convert distribution part of params to array.
+    """Convert distribution part of params to array.
     
     Returns
     -------
@@ -130,18 +144,19 @@ def params2dist(params):
     return np.array([x, y, dx, dy]).T
 
 def array2params(par, err, params):    
-    """ Convert array to params.
+    """Convert array to params.
     
     NOTE: we rely that params is an ordered dictionary
     
-    Arguments
-    ---------
-        par, err : arrays
+    Parameters
+    ----------
+        par, err : array like
             values and std. errors
     
     Returns
     -------
-       Parameters
+        dict
+            Fit parameters in the format used by mcfit.
     """
     dim = np.array([par.size, err.size, len(params)])
     b = dim - dim[0]
@@ -169,7 +184,11 @@ def array2params(par, err, params):
 
 
 def getSmoothness(x, y):
-    """Get smoothness for regularization:
+    """Get smoothness for regularization.
+ 
+    Returns
+    -------
+    float
         average of |dy/dx|
     """
     nx = x.shape[0]
@@ -185,8 +204,7 @@ def getSmoothness(x, y):
     return sumy/(nx-1)
 
 def getAverage(x, y, rang=[0., 1.]):
-    """Get strain integral over given range. 
-    """
+    """Get strain integral over given range."""
     nx = x.shape[0]
     ix = [0, nx-1]
     dx = np.zeros(len(x))
@@ -213,8 +231,7 @@ def getAverage(x, y, rang=[0., 1.]):
     
 
 def getChi2(resid, params):
-    """return reduced chi2 from the previously calculated residuals
-    """
+    """Return reduced chi2 from the previously calculated residuals."""
     ivar = 0
     for key in params:
         p = params[key]
@@ -224,7 +241,9 @@ def getChi2(resid, params):
 
     
 def fitcallb(params, iteration, resid, *fcn_args, **fcn_kws):
-    """ Callback to provide fit progress info.
+    """Perform actions after each iteration.
+    
+    Callback function to provide fit progress info.
     """
     global _chi2, _reg
     reg = getChi2(resid, params)
@@ -238,8 +257,7 @@ def fitcallb(params, iteration, resid, *fcn_args, **fcn_kws):
 
 # define objective function for fitting: returns the array to be minimized
 def costFnc(params, model, areg, guess):
-    """ Residual array to be passed to the minimizer: intensity scan.
-    """
+    """Residual array to be passed to the minimizer: intensity scan."""
     model.params = params
     res = model.calResid(guess=guess)
     nres = res.shape[0]
@@ -486,18 +504,23 @@ def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
 
 
 class MCCfit(ABC):
+    """Set parameters needed to run the fit procedure.
+        
+    Arguments
+    ---------                
+    nev : int
+        number of points from sampling events used in convolution
+    xdir : int
+        scan direction (local coordinates)  
+    ftol : float
+        tolerance to be passed to the leastsq minimizer
+    epsfcn : function
+        Function used by scipy.optimize.leastsq to calculate optimal step length.
+        
+    """
+    
     def __init__(self, nev=1000, xdir=[0., 0., -1.], ftol=1.e-4, epsfcn=None):
-        """ Set parameters needed to run the fit procedure.
-            
-            Arguments
-            ----------                
-                nev : int
-                    number of points from sampling events used in convolution
-                xdir : int
-                    scan direction (local coordinates)  
-                ftol : float
-                    tolerance to be passed to the leastsq minimizer
-        """
+
         # assign main logger for messages
         self._log = dataio.logger()
         # init parameters
@@ -538,7 +561,7 @@ class MCCfit(ABC):
         self.scaled = False # if true, scaling factor and shift are included in reports
         
     def fitInit(self):
-        """ Common tasks to do before fitting """
+        """Do common tasks before fitting."""
         ivar = 0
         for key in self.params:
             p =self.params[key]
@@ -549,25 +572,28 @@ class MCCfit(ABC):
         self.calInfoDepth(xdata)
         
     def fitFinal(self):
-        """ Common tasks to do after fitting """
+        """Do common tasks after fitting."""
         # mod = disttribution model as array (x, y, xerr, yerr)
         self.mod = params2dist(self.params)
         self.setModelPoints(self.mod[:,0], self.mod[:,1])
                
     def defDistribution(self, par, vary, ndim=100, scaled=False):
-        """ Define distribution model parameters.
+        """Define distribution model parameters.
+    
+        Creates Parameters object required by Minimizer from lmfit.
         
-            Creates Parameters object required by Minimizer from lmfit.
-            
-            Arguments
-            ---------
-            par : list [x, y]
-                node positions (x) and values (y)
-            vary : list [fx, fy]
-                corresponding flags 0|1 for fixed|free parameters
-                interpolation order (1..3)
-            ndim: int
-                number of points for interpolation
+        Parameters
+        ----------
+        par : list [x, y]
+            node positions (x) and values (y)
+        vary : list [fx, fy]
+            corresponding flags 0|1 for fixed|free parameters
+            interpolation order (1..3)
+        ndim: int
+            number of points for interpolation
+        scaled : bool
+            If true, scaling parameters will be included in the result of 
+            getDistribution.
         """
         # validate input and plot
         self.scaled = scaled
@@ -614,7 +640,7 @@ class MCCfit(ABC):
         self.dist = np.array([xdis, ydis, dis_err]).T
 
     def addNoise(self, data):
-        """return self.data + gaussian noise 
+        """Return fit data + gaussian noise.
         
         Assume data = array(x,y,err)
         """
@@ -628,21 +654,21 @@ class MCCfit(ABC):
 
 
     def resetParams(self):
-        """Reset params to initial values"""
+        """Reset params to initial values."""
         self.params = self.params_ini
         
     def defScaling(self, par, vary, minval=None, maxval=None):
-        """ Define scaling for the distribution model.
+        """Define scaling for the distribution model.
         
-            Adds items to the Parameters object required by Minimizer from lmfit.
-            Call to this routine assumes previous call to defDistribution !
-            
-            Arguments
-            ---------
-            par : [A, B, xc]
-                scaling for the distribution: y = A*dist(x-xc) + B
-            vary : [fA, fB, fxc]
-                corresponding flags 0|1 for fixed|free parameters
+        Adds items to the Parameters object required by Minimizer from lmfit.
+        Call to this routine assumes previous call to defDistribution !
+        
+        Parameters
+        ----------
+        par : [A, B, xc]
+            scaling for the distribution: y = A*dist(x-xc) + B
+        vary : [fA, fB, fxc]
+            corresponding flags 0|1 for fixed|free parameters
         """
         # validate input and plot
         dim = np.array([len(par), len(vary), 3])
@@ -666,13 +692,11 @@ class MCCfit(ABC):
         self.params_ini = self.params
 
     def getScaling(self):
-        """ Extract scaling parameters
-
-
+        """Extract scaling parameters.
             
         Returns
         -------
-            model parameters and scaling : [ A, B, xc]
+            Model parameters and scaling : [ A, B, xc]
 
         """
         if ('A' in self.params):
@@ -689,11 +713,11 @@ class MCCfit(ABC):
             xc = 0.
         return [A, B, xc]
     def getParams(self):
-        """ Convert params to a list of parameter values.
+        """Convert params to a list of parameter values.
             
         Returns
         -------
-            model parameters and scaling : [xy, A, B, xc]
+            Model parameters and scaling : [xy, A, B, xc]
         """
         [A, B, xc] = self.getScaling()
         xy = params2dist(self.params)
@@ -708,8 +732,7 @@ class MCCfit(ABC):
 
 
     def getDistribution(self, xval):
-        """ Return interpolated distribution.
-        """
+        """Return interpolated distribution."""
         [xy, A, B, xc] = self.getParams()
         self.setModelPoints(xy[:,0], xy[:,1])
         if (self.scaled):
@@ -720,24 +743,21 @@ class MCCfit(ABC):
         return res
 
     def updateDistribution(self):
-        """ Shortcut to calculate internally stored distribution 
-        """
+        """Shortcut to calculate internally stored distribution."""
         dis = self.getDistribution(self.dist[:,0])
         self.dist[:,1] = dis[:]
         self.tck = splrep(self.dist[:,0], self.dist[:,1], k=1, s=0)
         return
 
     def calResid(self, guess=False):
-        """ Calculate and return residuals for leastsq fiting.
-        """
+        """Calculate and return residuals for leastsq fiting."""
         [yf, ef, pos] = self.getSmearedFnc(self.data[:,0], guess=guess)
         er = np.sqrt(ef**2 + self.data[:,2]**2)
         self.resid = (yf - self.data[:,1])/er
         return self.resid
 
     def calDeriv(self):
-        """ Calculate 1st derivative of the distribution.
-        """
+        """Calculate 1st derivative of the distribution."""
         nx = self.dist.shape[0]
         res = np.zeros(nx-1)
         x = self.dist[:,0]
@@ -782,7 +802,7 @@ class MCCfit(ABC):
    
     
     def formatResultFit(self):
-        """Format a table with fitted data
+        """Format a table with fitted data.
         
         Appends fitted curve to the table of original data.
         The resulting table has 6 columns: x, y, err, pos, fit, err.
@@ -885,7 +905,7 @@ class MCCfit(ABC):
         return ss
 
     def formatResultLog(self):
-        """Format a table with fitted parameters and chi2
+        """Format a table with fitted parameters and chi2.
                
         Returns
         -------
@@ -962,6 +982,18 @@ class MCCfit(ABC):
                 f.close
                 
     def saveResults(self, outpath, fname, reglog=None):
+        """Save fit results.
+        
+        Parameters
+        ----------
+        outpath : str
+            Output path.
+        fname : str
+            File name.
+        reglog : dict
+            Log data from the regularization loop if any.
+        
+        """
         hasData = (self.data is not None)
         hasFit = (self.fit is not None)
         if (hasData and hasFit and fname):  
@@ -1003,6 +1035,29 @@ class MCCfit(ABC):
                 f.close
     
     def calInfoDepth(self, x, use_int=False):
+        """Calculate information depth data.
+        
+        Performs MC convolution of the sampling distribution with the sample 
+        for each scan step. Output is saved as a 2D array in self.infodepth.         
+        The output columns are:
+            
+        -  x : scan positions [mm]
+        -  pos : information depth
+        -  width : information width (FWHM) 
+        -  cnts : intensity (=sampling volume)
+        -  eps :  pseudo-strains [1e-6] 
+        -  ctr : xyz coordinates of the sampling centre of gravity
+        -  err : errors of pseudo-strain [1e-6] 
+        
+        Parameters
+        ----------
+        x : array
+            scan positions
+        use_int : bool
+            True of the convolution takes into account the scattering 
+            probability distribution (it should be previously determined by 
+            fitting the intensities).
+        """
         ifunc = None
         if use_int:
             ifunc = intFnc
@@ -1010,13 +1065,39 @@ class MCCfit(ABC):
         self.infodepth = sam.convGauge(x-xc, self.xdir, 0, self.nev, 
                                        ifunc=ifunc)
 
-    def calResolution(self, x):
+    def calResolution(self, x, use_int=False):
+        """Calculate spatial resolution characteristics.
+        
+        Performs MC convolution of the sampling distribution with the sample 
+        for each scan step. Output is saved as a dictionary with following 
+        items:
+        
+            
+        - x : scan positions [mm]
+        - pos : information depth (depends on sample shape definition)
+        - width : information width (FWHM of depth)
+        - ctr :  sampling centre of mass (x,y,z) in local coordinates
+        - cov : covariance matrix of sampling distribution 
+          (6 elements in Voigt notation)
+        
+        Parameters
+        ----------
+        x : array
+            scan positions
+        use_int : bool
+            True of the convolution takes into account the scattering 
+            probability distribution (it should be previously determined by 
+            fitting the intensities).
+        """
+        ifunc = None
+        if use_int:
+            ifunc = intFnc
         [A, B, xc] = self.getScaling()
-        self.resolution = sam.convResol(x-xc, self.xdir, 0, self.nev)
+        self.resolution = sam.convResol(x-xc, self.xdir, 0, self.nev,
+                                        ifunc=ifunc)
         
     def setModelPoints(self, x, y):
-        """Set x,y points to define the model
-        """
+        """Set x,y points to define the model."""
         if not ((x is None) and (y is None)):
             nx = x.size
             ny = y.size
@@ -1032,7 +1113,14 @@ class MCCfit(ABC):
                 self.intp = Aspline(x,y)
 
     def setInterpModel(self, model='clamped'):
-        """ Set interpolation model as index or string"""
+        """Set interpolation method as an index or string.
+        
+        Available interpolation models are defined by the list
+        mcfit.intpmodels. The choice affects which of the 
+        scipy.interpolate package methods is used for inteprolation between 
+        mdel distribution nodes.
+        
+        """
         try:
             if (type(model) is int):
                 if (model<0 or model > len(intpmodels)-1):
@@ -1074,7 +1162,43 @@ class MCCfit(ABC):
 
 # class for fitting smeared intensities
 class Ifit(MCCfit):
+    """Descendant of MCCfit class for fitting intensity.
+    
+    Arguments
+    ---------                
+    nev : int
+        number of points from sampling events used in convolution
+    xdir : int
+        scan direction (local coordinates)  
+    ftol : float
+        tolerance to be passed to the leastsq minimizer
+    epsfcn : function
+        Function used by scipy.optimize.leastsq to calculate optimal step length.
+    """
+    
     def getSmearedFnc(self, x, guess=False):
+        """Calculate smeared intensity distribution.
+        
+        Performs MC convolution of the sampling cloud of events with 
+        the sample geometry and its intrinsic properties including
+        distribution of intrinsic scattering probability.
+        
+
+        Parameters
+        ----------
+        x : array
+            Scan positions [mm].
+        guess : bool
+            If true, no convolution is done, only returns intrinsic scattering 
+            probability distribution as a function of scan positions.
+
+        Returns
+        -------
+        list
+            [y, ey, pos] arrays with intensity values, stddev and information 
+            depth values.
+
+        """
         [A, B, xc] = self.getScaling()
         self.updateDistribution()
         if (guess):
@@ -1088,46 +1212,72 @@ class Ifit(MCCfit):
         return [y, ey, pos]
 
     def getDistribution(self, xval):
-        """ Override the default getDistribution, impose >=0 values
+        """Return interpolated distribution.
+        
+        Overrides the default getDistribution, impose >=0 values.
         """
         d = super().getDistribution(xval)
         res = np.maximum(0., d)        
         return res        
 
     def defDistribution(self, par, vary, ndim=100, scaled=False):
-        """ Override the default getDistribution, impose >=0 values
+        """Define distribution model parameters.
+    
+        Overrides the default getDistribution, impose >=0 values.
+        
+        Creates Parameters object required by Minimizer from lmfit.
+        
+        Parameters
+        ----------
+        par : list [x, y]
+            node positions (x) and values (y)
+        vary : list [fx, fy]
+            corresponding flags 0|1 for fixed|free parameters
+            interpolation order (1..3)
+        ndim: int
+            number of points for interpolation
+        scaled : bool
+            If true, scaling parameters will be included in the result of 
+            getDistribution.
         """
         super().defDistribution(par, vary, ndim=ndim, scaled=scaled)
         for i in range(self.nd):
             self.params['y_'+str(i)].set(min=0.)
 
     def reportFit(self, outpath='', file='', plotSampling=False, **kwargs):
+        """Report on the fit results.
+        
+        Plots and saves the results of the fitting procedure.
+        
+        Parameters
+        ----------
+        outpath : str
+            Output path.
+        file : str
+            Output file name.
+        plotSampling : bool
+            If true, also plot and save the spatial resolution characteristics.
+        **kwargs : 
+            Allows to pass 'use_int' parameter to calInfoDepth.
+
+        """
         if (file):
             saveit=True
             f = dataio.derive_filename(file, ext='png', sfx='fit')
             outpng = dataio.get_output_file(f, path=outpath)
-            # outpng = deriveFilename(outpath+file, 'png', 'fit')
-            #f = dataio.derive_filename(file, ext='png', sfx='model')
-            #outpngmodel = dataio.get_output_file(f, path=outpath)
-            #outpngmodel = deriveFilename(outpath+file, 'png', 'model')
             f = dataio.derive_filename(file, ext='png', sfx='depth')
             outpngdepth = dataio.get_output_file(f, path=outpath)
-            # outpngdepth = deriveFilename(outpath+file, 'png', 'depth') 
         else:
             saveit=False
             outpng=''
-            #outpngmodel=''
             outpngdepth=''
         # Plot result, fit & model
-        #gr.plotIntensityFit(self, save=saveit, file=outpng)  
-        #gr.plotIntensityModel(self, save=saveit, file=outpngmodel)
         gr.plot_fit(self, what='int', toplot=['fit','model'], 
                     inline=True, save=saveit, file=outpng)
         # Save results
         self.saveResults(outpath, file)
 
-        # Information depth and sampling width
-        
+        # Plot information depth and sampling width        
         if plotSampling:
             use_int = False
             if 'use_int' in kwargs:
@@ -1135,17 +1285,16 @@ class Ifit(MCCfit):
             self.calInfoDepth(self.data[:,0], use_int=use_int)
             gr.plot_resolution(self, depth=True, cog=True, inline=True, 
                                save=saveit, file=outpngdepth)
-            #gr.plotInfoDepth(self, save=saveit, file=outpngdepth)
             self.saveInfoDepth(outpath, file)
 
     def intFnc(self, x):
-        """Returns interpolated intensity function value """
+        """Return interpolated intensity function value."""
         y = splev(x, self.tck, ext=1)
         # disable negative intensities
         return np.maximum(0., y)
     
     def fitFinal(self):
-        """ Common tasks to do after fitting """
+        """Do common tasks after fitting ends."""
         global _ispline
         super().fitFinal()
         _ispline = self.tck
@@ -1153,12 +1302,46 @@ class Ifit(MCCfit):
 
 # class for fitting smeared strains
 class Sfit(MCCfit):
-
+    """Descendant of MCCfit class for fitting strain distribution.
+    
+    Arguments
+    ---------                
+    nev : int
+        number of points from sampling events used in convolution
+    xdir : int
+        scan direction (local coordinates)  
+    ftol : float
+        tolerance to be passed to the leastsq minimizer
+    epsfcn : function
+        Function used by scipy.optimize.leastsq to calculate optimal step length.
+    """
+    
     def __init__(self, nev=1000, xdir=[0., 0., -1.], ftol=1.e-4, epsfcn=None):
         super().__init__(nev=nev, xdir=xdir, ftol=ftol, epsfcn=epsfcn)
         self.imodel = None
         
     def getSmearedFnc(self, x, guess=False):
+        """Calculate smeared strain distribution.
+        
+        Performs MC convolution of the sampling cloud of events with 
+        the sample geometry and its intrinsic properties including
+        lattice strain distribution.
+
+        Parameters
+        ----------
+        x : array
+            Scan positions [mm].
+        guess : bool
+            If true, no convolution is done, only returns intrinsic scattering 
+            probability distribution as a function of scan positions.
+
+        Returns
+        -------
+        list
+            [y, ey, pos] arrays with fitted strain values, stddev and 
+            information depth values.
+
+        """        
         [A, B, xc] = self.getScaling()
         self.updateDistribution()
         if (guess):
@@ -1171,24 +1354,32 @@ class Sfit(MCCfit):
         ey = A*err
         return [y, ey, pos]
 
-    def reportFit(self, outpath='', file='', reglog=None, **kwargs):   
+    def reportFit(self, outpath='', file='', reglog=None, **kwargs):
+        """Report on the fit results.
+        
+        Plots and saves the results of the fitting procedure.
+        
+        Parameters
+        ----------
+        outpath : str
+            Output path.
+        file : str
+            Output file name.
+        reglog : dict
+            Log data from the regularization loop if any.
+        **kwargs : 
+            Not used in this version. 
+
+        """        
         if (file):
             saveit=True
             f = dataio.derive_filename(file, ext='png', sfx='fit')
             outpng = dataio.get_output_file(f, path=outpath)
-            # outpng = deriveFilename(outpath+file, 'png', 'fit')
-            f = dataio.derive_filename(file, ext='png', sfx='model')
-            outpngmodel = dataio.get_output_file(f, path=outpath)
-            # outpngmodel = deriveFilename(outpath+file, 'png', 'model')
         else:
             saveit=False
             outpng=''
-            outpngmodel=''
         
         # Plot result, fit & model
-        
-        #gr.plotStrainFit(self, save=saveit, file=outpng)         
-        #gr.plotStrainModel(self, save=saveit, file=outpngmodel)  
         
         gr.plot_fit(self, what='eps', toplot=['fit','model'], 
                     inline=True, save=saveit, file=outpng)
@@ -1203,7 +1394,7 @@ class Sfit(MCCfit):
             if (not _quiet): self._log.info(msg)
         
     def intFnc(self,x):
-        """Returns interpolated intensity function value """
+        """Return interpolated strain function value."""
         if (_ispline is None):
             y = np.ones(x.shape)
         else:
@@ -1211,7 +1402,7 @@ class Sfit(MCCfit):
         return np.maximum(0., y)
     
     def strainFnc(self,x):
-        """Returns interpolated intensity function value """
+        """Return interpolated strain function value."""
         # note: the underlying model defines strain in 10^-6 units
         # but this function should return absolute strain
         y = 1e-6*splev(x, self.tck, ext=3)

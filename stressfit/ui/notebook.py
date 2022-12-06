@@ -4,6 +4,7 @@ Created on Tue Oct  5 11:38:15 2021
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
 
+# TODO catch any error if workspace is misconfigured on startup
 # TODO extract execution code to a top-level command handler
 # TODO manage messages in widgets and config, define extra spaces for it in notebook
 # TODO model definition - strain
@@ -11,29 +12,21 @@ Created on Tue Oct  5 11:38:15 2021
 # TODO input - compliance
 # TODO model definition - stress
 # TODO fit stress
-# 
-# TODO clean usage of _err and _msg !!!!!!
 
-
-
-#print('_has_pygments = {}'.format(_has_pygments))
-#import abc
-import re
+# TODO Unify default widgets properties to reduce code duplication ...
 
 import abc
 import ipywidgets as ipy
-import json
 import copy
 from IPython.display import display
-from .widgets import DirInput, FileInput, ArrayInput, SelectInput, FitControl
-from .widgets import create_header, create_select 
-from .widgets import create_checkbox, create_text
-from .widgets import SButton, SRadioButtons, DistTable, ScaleTable
-from .widgets import choose_file, choose_file_save
+#from .widgets import DirInput, FileInput, ArrayInput, SelectInput, FitControl
+#from .widgets import create_header, create_select 
+#from .widgets import create_checkbox, create_text
+#from .widgets import SButton, SRadioButtons, DistTable, ScaleTable
+#from .widgets import choose_file, choose_file_save
 from pathlib import Path as _Path
 import numpy as np
-import logging
-from colorama import Fore
+
 # stresssfit imports
 import stressfit.commands as comm
 import stressfit.shapes as shapes
@@ -42,7 +35,7 @@ import stressfit.graphs as gr
 import stressfit.mccfit as mc
 from stressfit.ui.config import uiconfig
 from stressfit.geometry import Geometry
-
+import stressfit.ui.widgets as sw
 
 # get ui configuration and data with default input values
 _uiconf = uiconfig()
@@ -51,11 +44,7 @@ def _has_keys(args, keys):
     """Verify that all args are in keys."""
     return all (k in args for k in keys)
 
-
-
-
 #%% Base abstract classes for input collections
-
 
 class UI_base:
     """Common parent class for all input collection.
@@ -91,7 +80,8 @@ class UI_base:
         self.uiparam['title'] = 'Title'
         self.uiparam['title_size'] = '+1'
         self.uiparam['title_color'] = '#35446B'
-        self.uiparam['width'] = '97%'
+        self.uiparam['width'] = '97%'    
+        self._logger = dataio.logger() # assign stressfit logger
         self._name = name # unique instance name
         self._keys = keys # list of allowed value keys
         self._widgets = {} # dict of input widgets
@@ -276,12 +266,11 @@ class UI_base:
         """Set callback to be executed when the UI changes state."""
         self._on_change = on_change
               
-    def show(self, logger=None, **kwargs):
+    def show(self, **kwargs):
         """Display VBox container with all input widgets."""        
-        self._logger = logger
         self._create_widgets(**kwargs)
         ui = self._create_ui(**kwargs)
-        hdr = create_header(self.uiparam['title'],
+        hdr = sw.create_header(self.uiparam['title'],
                       color=self.uiparam['title_color'],
                       size=self.uiparam['title_size'])
         top = [hdr] + self._buttons
@@ -403,10 +392,10 @@ class UI_base_list(UI_base):
         for key in self._values['list']:
             rec = self._get_display_record(key)  
             self._dbg_message('\t{}'.format(rec))            
-            b = SButton(description='',icon='trash',value=key,
+            b = sw.SButton(description='',icon='trash',value=key,
                             layout=ipy.Layout(width='30px'), tooltip='Remove')
             b.on_click(self._on_del_click)
-            be = SButton(description='',icon='edit',value=key,
+            be = sw.SButton(description='',icon='edit',value=key,
                             layout=ipy.Layout(width='30px'), tooltip='Modify')
             be.on_click(self._on_edit_click)
             wrec = [b, be]
@@ -556,30 +545,23 @@ class UI_base_list(UI_base):
         """
         return self._values['list']
 
-    def show(self, logger=None, **kwargs):
+    def show(self, **kwargs):
         """Display VBox container with all input widgets.
         
         In addition to UI_base, display the table with the list
         of data sets, text field and a button for adding new items.
         
         Parameters
-        ----------
-        err : ipywidgets.Output
-            Output area for errors provided by UI application
-        msg : ipywidgets.Output
-            Output area for messages provided by UI application
-        
+        ----------        
         kwargs : dict
             Parameters passed to :meth:`_create_ui`
         """               
-        self._logger = logger
-        
         # create value widgets and place them in vertical list
         self._create_widgets(**kwargs)
         ui = self._create_ui(**kwargs)
         
         # create title
-        hdr = create_header(self.uiparam['title'],
+        hdr = sw.create_header(self.uiparam['title'],
                       color=self.uiparam['title_color'],
                       size=self.uiparam['title_size'])
 
@@ -599,7 +581,7 @@ class UI_base_list(UI_base):
                                  layout=ipy.Layout(width=name_w))
         
         # create list header
-        list_hdr = create_header(self.uiparam['list_title'],
+        list_hdr = sw.create_header(self.uiparam['list_title'],
                                  size=self.uiparam['list_title_size'],
                                  color=self.uiparam['title_color'])
         
@@ -679,10 +661,11 @@ class UI_workspace(UI_base):
         for key in self._keys:
             if not key in self._excluded_keys:
                 [lbl, ttp] = UI_workspace._inp[key]
-                inp = DirInput(name=key, 
+                inp = sw.DirInput(name=key, 
                                path=self._values[key], 
                                label=lbl, 
-                               tooltip=ttp)
+                               tooltip=ttp,
+                               logger=self._logger)
                 inp.observe(self._on_path_change)
                 self._widgets[key] = inp
         self._widgets['work'].txt.disabled=True      
@@ -738,10 +721,10 @@ class UI_workspace(UI_base):
         """Save workspace configuration in workspace root directory."""
         self._out.clear_output()
         try:
-            with self._out:
-                self.wk.save()
-                self.wk.validate_paths()
-                self.message('Workspace configuration saved.')
+            self.wk.validate_paths()
+            self.wk.save()
+            msg = 'Workspace configuration saved in {}.'
+            self.message(msg.format(self.wk._get_workspace_file()))
         except Exception:
             self.exception('Workspace save failed.')
     
@@ -798,7 +781,7 @@ class UI_options(UI_base):
         
     def _create_widgets(self, **kwargs):        
         # auto-save
-        wdg = create_checkbox(name='save', label='Save',
+        wdg = sw.create_checkbox(name='save', label='Save',
                               value=self._values['save'],
                               width_label=100, width_box=20,
                               tooltip='Auto-save results',
@@ -806,7 +789,7 @@ class UI_options(UI_base):
         self._widgets['save'] = wdg
         wdg.observe(self._observe,'value', type='change')
         # prefix for output file names
-        wdg = create_text(name='prefix', label='Prefix', 
+        wdg = sw.create_text(name='prefix', label='Prefix', 
                           value=self._values['prefix'],
                           width_label=60, width_box=100,
                           tooltip='Prefix for output file names')
@@ -860,7 +843,7 @@ class UI_shape(UI_base):
         for key in self.shapes:
             options.append((self.shapes[key]['name'],key))
         
-        wdg = create_select(name='shape', options=options, 
+        wdg = sw.create_select(name='shape', options=options, 
                             label='', value=self.select,
                             width_label=0, width_drop=150)
         self._widgets['shape'] = wdg
@@ -910,7 +893,7 @@ class UI_shape(UI_base):
             desc = p['label']
             hint = p['hint']
             if isinstance(value, str):
-                wgt = FileInput(name=key, 
+                wgt = sw.FileInput(name=key, 
                        file=value, 
                        path=dataio.workspace().path('data'),
                        #fileonly=True,
@@ -918,7 +901,8 @@ class UI_shape(UI_base):
                        label=desc,
                        tooltip=hint,
                        width='50%',
-                       width_label=130)
+                       width_label=130,
+                       logger=self._logger)
             else:
                 raise Exception('Unknown parameter type: {}'.format(value))
             wgt.observe(self._on_change_param)
@@ -945,17 +929,20 @@ class UI_shape(UI_base):
             if uni:
                 hint = ' [{}]'.format(uni) + ' ' + hint
             if isinstance(value, float) or isinstance(value, int):
-                wgt = ArrayInput(name=key, value=value, label=desc, hint=hint,
-                                 isInt = isinstance(value, int))
+                wgt = sw.ArrayInput(name=key, value=value, label=desc, hint=hint,
+                                 isInt = isinstance(value, int), 
+                                 logger=self._logger)
             elif isinstance(value, list):
                 if isinstance(value[0],float):
-                    wgt = ArrayInput(name=key, value=value, label=desc, hint=hint)
+                    wgt = sw.ArrayInput(name=key, value=value, label=desc, 
+                                        hint=hint, logger=self._logger)
                 else:
-                    wgt = SelectInput(name=key, options=value, 
+                    wgt = sw.SelectInput(name=key, options=value, 
                                       index=0,
                                       label=desc, 
                                       hint=hint,
-                                      width_drop=80)
+                                      width_drop=80,
+                                      logger=self._logger)
             else:
                 raise Exception('Unknown parameter type: {}'.format(value))
             wgt.observe(self._on_change_param)
@@ -1033,7 +1020,7 @@ class UI_shape(UI_base):
         items = self._widgets['param']
         for key in param:
             item = items[key]
-            if isinstance(item, SelectInput):
+            if isinstance(item, sw.SelectInput):
                 items[key].index = param[key]
             else:
                 items[key].value = param[key]
@@ -1052,15 +1039,15 @@ class UI_shape(UI_base):
             items = self._widgets['param']
             for key in items:
                 item = items[key]
-                if isinstance(item, SelectInput):
+                if isinstance(item, sw.SelectInput):
                     param[key] = item.index
                 else:
                     param[key] = item.value
             self._values['param'] = param
     
-    def show(self, logger=None, **kwargs): 
+    def show(self, **kwargs): 
         """Display the input collection."""
-        super().show(logger=logger)
+        super().show()
         # trigger displaying of shape parameters
         self._on_change_shape({'name':'value', 'new':self.select})
     
@@ -1115,7 +1102,8 @@ class UI_geometry(UI_base_list):
         inp['scanorig'] = {'hint':'Scan origin [mm]'}        
         for k in self._keys:
             inp[k]['value'] = self._values['input'][k]
-            self._widgets[k] = ArrayInput(name=k, label=k, **inp[k])
+            self._widgets[k] = sw.ArrayInput(name=k, label=k, **inp[k],
+                                             logger=self._logger)
 
     def _create_ui(self, **kwargs):
         lst = []
@@ -1181,17 +1169,19 @@ class UI_sampling(UI_base_list):
 
     def _create_widgets(self, file='', path='', nrec=3000):
         # file input
-        fi = FileInput(name='file', 
+        fi = sw.FileInput(name='file', 
                        file=self._values['input']['file']['file'], 
                        path=self.wk.full_path('data', as_posix=True), 
                        label='File name',
                        tooltip='File with simulated sampling points.',
-                       width_label=130)
+                       width_label=130,
+                       logger=self._logger)
         self._widgets['file'] = fi  
-        inp = ArrayInput(name='nrec', label='Maximum events', hint='',
+        inp = sw.ArrayInput(name='nrec', label='Maximum events', hint='',
                          value=self._values['input']['nrec'],
                          isInt=True, step=1000, lmin=1000,
-                         width_label=130)
+                         width_label=130,
+                         logger=self._logger)
         self._widgets['nrec'] = inp        
     
     def _create_ui(self, **kwargs):
@@ -1248,23 +1238,25 @@ class UI_attenuation(UI_base):
         self._current_att = {'att':1.1}
                 
     def _create_widgets(self, table='Fe_mu.dat', value=1.1):        
-        radio = SRadioButtons(name='type', 
+        radio = sw.SRadioButtons(name='type', 
                              options=UI_attenuation._att_types,
                              value=self._values['type'],
                              description='')    
         
-        val = ArrayInput(name='value', 
+        val = sw.ArrayInput(name='value', 
                    label='Value',
                    value=self._values['value'], 
                    hint='attenuation coefficient [1/cm]',
-                   width_label=80)
+                   width_label=80,
+                   logger=self._logger)
         
-        fi = FileInput(name='table',
+        fi = sw.FileInput(name='table',
                        file=self._values['table']['file'], 
                        path=self.wk.full_path('tables', as_posix=True), 
                        label='Table',
                        tooltip='Lookup table for attenuation coefficient [1/cm] vs. wavelength [AA].',
-                       width_label=80)
+                       width_label=80,
+                       logger=self._logger)
         
         radio.observe(self._type_change)
         self._widgets[radio.name] = radio
@@ -1289,9 +1281,9 @@ class UI_attenuation(UI_base):
         """Assign values to global data."""
         self._values = _uiconf.data.get_item(self.name)
         
-    def show(self, logger=None, **kwargs): 
+    def show(self, **kwargs): 
         """Display the input collection."""
-        super().show(logger=logger, **kwargs)
+        super().show(**kwargs)
         self._type_change({'name':'value', 'new':self._values['type']})
         
 
@@ -1354,41 +1346,46 @@ class UI_data(UI_base_list):
     def _create_widgets(self, **kwargs):
         """Create widgets registered in self._widgets."""
         # file input
-        fi = FileInput(name='strain', 
+        fi = sw.FileInput(name='strain', 
                        file=self._values['input']['strain'],
                        path=self.wk.full_path('data', as_posix=True),
                        fileonly=True,
                        label='Strain',
                        tooltip='File with strain data.',
-                       width_label=80)
+                       width_label=80,
+                       logger=self._logger)
         self._widgets['strain'] = fi
-        fi = FileInput(name='intensity', 
+        fi = sw.FileInput(name='intensity', 
                        file=self._values['input']['intensity'], 
                        path=self.wk.full_path('data', as_posix=True),
                        fileonly=True,
                        label='Intensity',
                        tooltip='File with intensity data.',
-                       width_label=80)
+                       width_label=80,
+                       logger=self._logger)
         self._widgets['intensity'] = fi
 
         # sampling selection
-        wdg =  SelectInput(name='sampling', label='Sampling', 
+        wdg =  sw.SelectInput(name='sampling', label='Sampling', 
                            options = self._options['sampling'],
                            value = self._values['input']['sampling'],
-                           width_label=80, width_drop=100)
+                           width_label=80, width_drop=100,
+                           logger=self._logger)
         self._widgets['sampling'] = wdg
         # geometry selection
-        wdg =  SelectInput(name='geometry', label='Orientation', 
+        wdg =  sw.SelectInput(name='geometry', label='Orientation', 
                            options = self._options['geometry'],
                            value = self._values['input']['geometry'],
-                           width_label=80, width_drop=100)
+                           width_label=80, width_drop=100,
+                           logger=self._logger)
         self._widgets['geometry'] = wdg
         
         # number of events to plot
-        wdg = ArrayInput(name='nrec', label='Events', hint='',
+        wdg = sw.ArrayInput(name='nrec', label='Events', hint='',
                          value=self._values['conf']['nrec'],
                          isInt=True, step=1000, lmin=1000,lmax=100000,
-                         width_label=80, width_num=100)
+                         width_label=80, width_num=100,
+                         logger=self._logger)
         self._widgets['nrec'] = wdg 
 
     def _create_ui(self, **kwargs):       
@@ -1518,9 +1515,9 @@ class UI_data(UI_base_list):
             gr.plot_comparison(simdata, expdata, 
                                title='Experimental data vs. pseudo-stran')
       
-    def show(self, logger=None, **kwargs): 
+    def show(self, **kwargs): 
         """Display the input collection."""
-        super().show(logger=logger, **kwargs)
+        super().show(**kwargs)
         display(self._out)
         
         
@@ -1554,18 +1551,21 @@ class UI_distribution(UI_base_list):
     def _create_widgets(self, **kwargs): 
 
         # distribution table
-        self._widgets['dist'] = DistTable(name='dist', label='',
+        self._widgets['dist'] = sw.DistTable(name='dist', label='',
                                           value=self._values['input']['dist'],
-                                          border='1px solid')
+                                          border='1px solid',
+                                          logger=self._logger)
         # scale table
-        self._widgets['scale'] = ScaleTable(name='scale', label='Scaling',
-                                            value=self._values['input']['scale'])
+        self._widgets['scale'] = sw.ScaleTable(name='scale', label='Scaling',
+                                            value=self._values['input']['scale'],
+                                            logger=self._logger)
         # interpolation options
         intps = mc.intpmodels
-        wdg =  SelectInput(name='interp', label='Interpolation', 
+        wdg =  sw.SelectInput(name='interp', label='Interpolation', 
                            options = intps,
                            value = self._values['input']['interp'],
-                           width_label=80, width_drop=100)        
+                           width_label=80, width_drop=100,
+                           logger=self._logger)        
         self._widgets['interp'] = wdg
 
     def _create_ui(self, **kwargs): 
@@ -1608,9 +1608,9 @@ class UI_distribution(UI_base_list):
             self._widgets['scale'].redraw()
             self._was_displayed = True
     
-    def show(self, logger=None, **kwargs): 
+    def show(self, **kwargs): 
         """Display the input collection."""
-        super().show(logger=logger)
+        super().show()
         self._widgets['dist'].redraw()
         #self._widgets['dist'].sheet.layout.height='400px'
         #print(self._widgets['dist'].sheet.layout)
@@ -1659,34 +1659,38 @@ class UI_plot_scene(UI_base):
                 
     def _create_widgets(self):         
         # sampling selection
-        wdg = SelectInput(name='sampling', label='Sampling',
+        wdg = sw.SelectInput(name='sampling', label='Sampling',
                           options=self._options['sampling'], 
                           value=self._values['sampling'],
-                          width_label=100, width_drop=100)
+                          width_label=100, width_drop=100,
+                          logger=self._logger)
         #wdg = create_select(name='sampling', label='Sampling', 
         #                    options=self._options['sampling'], 
         #                    width_label=100, width_drop=100)
         self._widgets['sampling'] = wdg
         # orientation selection
-        wdg = SelectInput(name='geometry', label='Orientation',
+        wdg = sw.SelectInput(name='geometry', label='Orientation',
                           options=self._options['geometry'], 
                           value=self._values['geometry'],
-                          width_label=100, width_drop=100)
+                          width_label=100, width_drop=100,
+                          logger=self._logger)
         #wdg =  create_select(name='geometry', label='Orientation', 
         #                     options=self._options['geometry'], 
         #                     width_label=100, width_drop=100)
         self._widgets['geometry'] = wdg
         # number of events to plot        
-        wdg = ArrayInput(name='nrec', label='Events',
+        wdg = sw.ArrayInput(name='nrec', label='Events',
                          value=self._values['nrec'], hint='',
                          isInt=True, step=1000, lmin=1000,lmax=100000,
-                         width_label=100, width_num=100)        
+                         width_label=100, width_num=100,
+                         logger=self._logger)        
         self._widgets['nrec'] = wdg 
         # projection plane
-        wdg = SelectInput(name='proj', label='Projection: ',
+        wdg = sw.SelectInput(name='proj', label='Projection: ',
                           options=[('z,y',0),('x,z',1),('x,y',2)], 
                           value=self._values['proj'],
-                          width_label=100, width_drop=100)
+                          width_label=100, width_drop=100,
+                          logger=self._logger)
         self._widgets['proj'] = wdg 
         # plot range
         wdg = ipy.IntSlider(value=self._values['rang'], min=3, max=50, step=1, 
@@ -1799,53 +1803,57 @@ class UI_resolution(UI_base):
     def _create_widgets(self, **kwargs): 
 
         # sampling selection
-        wdg = SelectInput(name='sampling', label='Sampling',
+        wdg = sw.SelectInput(name='sampling', label='Sampling',
                           options=self._options['sampling'], 
                           value=self._values['sampling'],
-                          width_label=80, width_drop=100)
+                          width_label=80, width_drop=100,
+                          logger=self._logger)
         #wdg = create_select(name='sampling', label='Sampling', 
         #                    options=self._options['sampling'], 
         #                    width_label=80, width_drop=100)
         self._widgets['sampling'] = wdg
         # oreiantation selection
-        wdg = SelectInput(name='geometry', label='Orientation',
+        wdg = sw.SelectInput(name='geometry', label='Orientation',
                           options=self._options['geometry'], 
                           value=self._values['geometry'],
-                          width_label=80, width_drop=100)
+                          width_label=80, width_drop=100,
+                          logger=self._logger)
         #wdg =  create_select(name='geometry', label='Orientation', 
         #                     options=self._options['geometry'], 
         #                     width_label=80, width_drop=100)
         self._widgets['geometry'] = wdg
         # number of events to plot
-        wdg = ArrayInput(name='nrec', label='Events',
+        wdg = sw.ArrayInput(name='nrec', label='Events',
                          value=self._values['nrec'], hint='',
                          isInt=True, step=1000, lmin=1000,lmax=100000,
-                         width_label=80, width_num=100)   
+                         width_label=80, width_num=100,
+                         logger=self._logger)   
         self._widgets['nrec'] = wdg 
         # calculate pseudo-strain
-        wdg = create_checkbox(name='strain', label='Pseudo-strain', 
+        wdg = sw.create_checkbox(name='strain', label='Pseudo-strain', 
                               value=self._values['strain'],
                               width_label=100, width_box=20,
                               tooltip='Calculate psudo-strain',
                               indent=False)
         self._widgets['strain'] = wdg
         # calculate resolution
-        wdg = create_checkbox(name='resolution', label='Resolution', 
+        wdg = sw.create_checkbox(name='resolution', label='Resolution', 
                               value=self._values['resolution'],
                               width_label=100, width_box=20,
                               tooltip='Calculate resolution',
                               indent=False)
         self._widgets['resolution'] = wdg
         # scan range
-        wdg = ArrayInput(name='rang', 
+        wdg = sw.ArrayInput(name='rang', 
                    label='Scan range',
                    value=self._values['rang'], 
                    hint='',
                    step=0.1,
-                   width_label=80)
+                   width_label=80,
+                   logger=self._logger)
         self._widgets['rang'] = wdg
         # number of steps
-        wdg = ArrayInput(name='steps', 
+        wdg = sw.ArrayInput(name='steps', 
                    label='Steps',
                    value=self._values['steps'], 
                    hint='',
@@ -1853,7 +1861,8 @@ class UI_resolution(UI_base):
                    lmin=3,
                    lmax=201,
                    width_num=80,
-                   width_label=80)
+                   width_label=80,
+                   logger=self._logger)
         self._widgets['steps'] = wdg        
 
     def _create_ui(self, **kwargs):
@@ -1986,37 +1995,42 @@ class UI_fit_imodel(UI_base):
     def _create_widgets(self, **kwargs): 
 
         # sampling selection
-        wdg = SelectInput(name='data', label='Data',
+        wdg = sw.SelectInput(name='data', label='Data',
                           options=self._options['data'], 
                           value=self._values['data'],
-                          width_label=80, width_drop=100)
+                          width_label=80, width_drop=100,
+                          logger=self._logger)
         self._widgets['data'] = wdg
         # oreiantation selection
-        wdg = SelectInput(name='model', label='Model',
+        wdg = sw.SelectInput(name='model', label='Model',
                           options=self._options['model'], 
                           value=self._values['model'],
-                          width_label=80, width_drop=100)
+                          width_label=80, width_drop=100,
+                          logger=self._logger)
         #wdg =  create_select(name='geometry', label='Orientation', 
         #                     options=self._options['geometry'], 
         #                     width_label=80, width_drop=100)
         self._widgets['model'] = wdg
         # number of events to plot
-        wdg = ArrayInput(name='nrec', label='Events',
+        wdg = sw.ArrayInput(name='nrec', label='Events',
                          value=self._values['nrec'], 
                          hint='',
                          isInt=True, step=1000, lmin=1000,lmax=100000,
-                         width_label=80, width_num=100)   
+                         width_label=80, width_num=100,
+                         logger=self._logger)   
         self._widgets['nrec'] = wdg 
         # number of points on model curve
-        wdg = ArrayInput(name='npts', label='Points',
+        wdg = sw.ArrayInput(name='npts', label='Points',
                          value=self._values['npts'], 
                          hint='',
                          isInt=True, step=10, lmin=10,lmax=500,
-                         width_label=80, width_num=100)   
+                         width_label=80, width_num=100,
+                         logger=self._logger)   
         self._widgets['npts'] = wdg
         
         # fit control parameters
-        wdg = FitControl(name='fit', value=self._values['fit'])
+        wdg = sw.FitControl(name='fit', value=self._values['fit'],
+                            logger=self._logger)
         self._widgets['fit'] = wdg
 
     def _create_ui(self, **kwargs):
@@ -2105,41 +2119,49 @@ class UI_fit_imodel(UI_base):
         return ifit
     
     def _on_replot(self,b):
-        ifit = self._prepare()        
-        with self._out:
-            # create smeared curve: run without fitting, maxiter=0
-            comm.run_fit(ifit, maxiter=0, outname='')
+        try:
+            ifit = self._prepare()        
+            with self._out:
+                # create smeared curve: run without fitting, maxiter=0
+                comm.run_fit(ifit, maxiter=0, outname='')
+        except Exception as e:
+            self.exception(str(e))
         
     def _on_guess(self,b):
-        ifit = self._prepare()    
-        par = _uiconf.get(self.name)
-        with self._out:
-            # create smeared curve: run without fitting, maxiter=0
-            comm.run_fit_guess(ifit,
-                               maxiter=par['fit']['maxiter'], 
-                               areg=par['fit']['areg'],
-                               outname='')
+        try:
+            ifit = self._prepare()    
+            par = _uiconf.get(self.name)
+            with self._out:
+                # create smeared curve: run without fitting, maxiter=0
+                comm.run_fit_guess(ifit,
+                                   maxiter=par['fit']['maxiter'], 
+                                   areg=par['fit']['areg'],
+                                   outname='')
+        except Exception as e:
+            self.exception(str(e))
             
     def _on_fit(self,b):
-        ifit = self._prepare()  
-        par = _uiconf.get(self.name)
-        with self._out:
-            # create smeared curve: run without fitting, maxiter=0
-            comm.run_fit(ifit, 
-                         maxiter=par['fit']['maxiter'], 
-                         loops=par['fit']['loops'],
-                         areg=par['fit']['areg'],
-                         guess=par['fit']['guess'],
-                         bootstrap=par['fit']['loops']>2,
-                         outname=None)
-            # plot results
-            save = self.pgm_options['save']
-            if save:
-                fname = self._get_output_filename()
-            else:
-                fname = ''
-            comm.report_fit(ifit, fname)
-            
+        try:
+            ifit = self._prepare()  
+            par = _uiconf.get(self.name)
+            with self._out:
+                # create smeared curve: run without fitting, maxiter=0
+                comm.run_fit(ifit, 
+                             maxiter=par['fit']['maxiter'], 
+                             loops=par['fit']['loops'],
+                             areg=par['fit']['areg'],
+                             guess=par['fit']['guess'],
+                             bootstrap=par['fit']['loops']>2,
+                             outname=None)
+                # plot results
+                save = self.pgm_options['save']
+                if save:
+                    fname = self._get_output_filename()
+                else:
+                    fname = ''
+                comm.report_fit(ifit, fname)
+        except Exception as e:
+            self.exception(str(e))            
             
 #%% Top level UI class
 
@@ -2165,7 +2187,6 @@ class UI():
         self._note = ipy.Output(layout=ipy.Layout(width='100%', min_height='30px', border='none'))
         self._msg = ipy.Output(layout=msgl)
         self._prog = ipy.Output(layout=msgl)
-        #self._err = ipy.Output(layout=ipy.Layout(width='100%', min_height='200px', border='1px solid'))
         self._logger = dataio.logger()
         self._logger.output_short = self._note
         self._logger.output_msg = self._msg
@@ -2237,7 +2258,7 @@ class UI():
 
     
     def _on_save_input(self,b):
-        s = choose_file_save(initialdir=self.wk.path('work').as_posix(), 
+        s = sw.choose_file_save(initialdir=self.wk.path('work').as_posix(), 
                         initialfile=self._last_input_file,
                         filetypes=(('Setup files','*.inp')))
         if s:
@@ -2246,7 +2267,7 @@ class UI():
             self._last_input_file = p.name
             
     def _on_load_input(self,b):
-        s = choose_file(initialdir=self.wk.path('work').as_posix(), 
+        s = sw.choose_file(initialdir=self.wk.path('work').as_posix(), 
                         initialfile=self._last_input_file,
                         filetypes=(('Setup files','*.inp')))
         if s:
@@ -2348,7 +2369,7 @@ class UI():
                 for ui in tabs_data[key]['ui']:
                     with tabs[key]:
                         try:
-                            ui.show(logger=self._logger)
+                            ui.show()
                         except Exception as e:
                             print('Cannot add ui component: {}'.format(key))
                             raise(e)

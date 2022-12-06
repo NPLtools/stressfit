@@ -310,21 +310,24 @@ def shuffleEvents():
         _sampling.setRange(_sampling.sdata.shape[0])
 
 
-def convResol(x, xdir, iext, nev):
+def convResol(x, xdir, iext, nev, ifunc=None):
     """Calculate resolution parameters for given scan.
 
     Parameters
     ----------
-        x :  array
-            scan positions [mm] along xdir
-        xdir : array
-            scan direction in local coordinates
-        iext :  int
-            model for extinction
-            0 = small radius approximation (fast)
-            1 = exact (slow)
-        nev :  int
-            number of events from sdata to integrate
+    x :  array
+        scan positions [mm] along xdir
+    xdir : array
+        scan direction in local coordinates
+    iext :  int
+        model for extinction
+        0 = small radius approximation (fast)
+        1 = exact (slow)
+    nev :  int
+        number of events from sdata to integrate
+    ifunc : function
+        A function which returns scattering probability distribution
+        as a function of the information depth.
     
     Returns
     -------
@@ -376,7 +379,11 @@ def convResol(x, xdir, iext, nev):
         else:
             ex = getExtinction(r, ki, kf)
         # total weight including extinction and scattering probability
-        w = p*ex*ins
+        if ifunc is None:
+            I0 = np.ones(nx)
+        else:
+            I0 = ifunc(d)
+        w = p*ex*ins*I0
         sumw += w
         wd = w*d
         yd += wd
@@ -414,16 +421,19 @@ def convGauge(x, xdir, iext, nev, ifunc=None):
 
     Parameters
     ----------
-        x :  array
-            scan positions [mm] along xdir
-        xdir : array
-            scan direction in local coordinates
-        iext :  int
-            model for extinction
-            0 = small radius approximation (fast)
-            1 = exact (slow)
-        nev :  int
-            number of events from sdata to integrate
+    x :  array
+        scan positions [mm] along xdir
+    xdir : array
+        scan direction in local coordinates
+    iext :  int
+        model for extinction
+        0 = small radius approximation (fast)
+        1 = exact (slow)
+    nev :  int
+        number of events from sdata to integrate
+    ifunc : function
+        A function which returns scattering probability distribution
+        as a function of the information depth.
     
     Returns
     -------
