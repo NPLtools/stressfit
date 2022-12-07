@@ -131,6 +131,7 @@ class StressfitLogger():
         self._lm.setLevel(logging.INFO)
         self._hm = _log_handler()
         self._hm.setFormatter(_log_formatter())
+        self.clear_logger(self._lm)
         self._lm.addHandler(self._hm)
         # optional file handler
         self._hm_file = None
@@ -140,6 +141,7 @@ class StressfitLogger():
         self._lex.setLevel(logging.ERROR)
         self._lex.propagate = False
         self._hex = _log_handler_exc()
+        self.clear_logger(self._lex)
         self._lex.addHandler(self._hex)
         # optional file handler
         self._hex_file = None
@@ -149,6 +151,7 @@ class StressfitLogger():
         self._lprog.setLevel(logging.INFO)
         self._lprog.propagate = False
         self._hprog = _log_handler_prog()
+        self.clear_logger(self._lprog)
         self._lprog.addHandler(self._hprog)
         # optional file handler
         self._hprog_file = None
@@ -274,6 +277,12 @@ class StressfitLogger():
         """Add another handler to the message logger."""
         self._lm.addHandler(hnd)  
     
+    
+    def clear_logger(self, log):
+        """Remove all handlers for given logger."""
+        while log.hasHandlers(): 
+            log.removeHandler(log.handlers[0])
+            
     def remove_handler(self, hnd=None):
         """Remove given  handler from the message logger."""
         if hnd == None:
@@ -602,6 +611,7 @@ class _Setup():
     
     def __init__(self):
         self._data = {}
+        self._log = logger()
         self._create()
     
     @property
@@ -630,23 +640,57 @@ class _Setup():
             self._appdir.unlink()
             self._appdir.mkdir()
         
+        cont = load_config(_Setup._setup_file) # this is a template in resources
+        self.version = cont['version']
         # is there already the setup file?
         if self._appsetup.exists():
-            # load setup file
-            with open(self._appsetup, 'r') as f:
-                lines = f.readlines() 
-            content = json.loads('\n'.join(lines))            
-            self.verify(content)
-            wks = _str_to_workspace(content['workspace'])
-            content.update({'workspace':wks})
-            self._data.update(content)
+            self.load()
+            res = self.check_version(self._data['version'])
+            if res>0:
+                fmt = 'Version found in {} is higher than used {} version'
+                msg = 'WARNING: '+fmt.format(self._appsetup, 'stressfit')
+                self._log.warning(msg)
+                self._data['version'] = self.version
+            elif res<0:
+                self._log.info('Version updated in {}'.format(self._appsetup))
+                self.save()
         else:
-            # create content and save it
-            cont = load_config('setup.json') # this is a template in resources
             self.verify(cont)
             self._data.update(cont)
             self.reset_paths()  # set paths to default (using resources)
             self.save()
+    
+    def check_version(self, version):
+        """Compare given version with the current one.
+        
+        Assume version string in the format n.n.n for n<100.
+        Version strings like '1.1.23beta' are also allowed.
+                      
+        Parameters
+        ----------
+        version : str
+            Version string to compare with application version.
+
+        Returns
+        -------
+        out : int
+           >, = or  < 0 if version >, = or < application version
+
+        """
+        loc = self.version.split('.')
+        inp = version.split('.')
+        if len(loc) != len(inp):
+            msg = 'Wrong version string: {}'
+            msg += '\nCurrent version is {}'
+            self._log.error(msg.format(version, self._data['version']))
+        n = len(loc)
+        out = 0
+        for i in range(n):
+            if inp[i]>loc[i]:
+                out = 1
+            elif inp[i]<loc[i]:
+                out = -1
+        return out
     
     def verify(self, cont):
         """Verify setup file content."""
@@ -656,7 +700,7 @@ class _Setup():
         out = out and "license" in cont
         if not out:
             msg = "Invalid content of the application setup file ({}):\n{}"
-            raise Exception(_Setup._setup_file, msg.format(cont))
+            self._log.error(_Setup._setup_file, msg.format(cont))
         
     def reset_paths(self):
         """Reset workspace paths to package defaults.
@@ -690,10 +734,10 @@ class _Setup():
             with open(self._appsetup, 'w') as f:
                 f.write(txt)
         except Exception as e:
-            print('Cannot save application setup file: {}'.format(self._appsetup))
-            print(e)
+            fmt = 'Cannot save application setup file: {}\n{}'
+            self._log.exception(fmt.format(self._appsetup,str(e)))
 
-    def load(self):
+    def load(self):       
         """Load application setup file."""
         try:
             with open(self._appsetup, 'r') as f:
@@ -704,15 +748,14 @@ class _Setup():
             content['workspace'].update(wks)
             self._data.update(content)
         except Exception as e:
-            print('Cannot load application setup file: {}'.format(self._appsetup))
-            print(e)
+            fmt = 'Cannot load application setup file: {}\n{}'
+            self._log.exception(fmt.format(self._appsetup,str(e)))
             
     def info(self):
         fmt = '{}:\t{}'
+        self._log.info('stressfit configuration:')
         for key in self._data:
-            print(fmt.format(key, self._data[key]))
-
-
+            self._log.info(fmt.format(key, self._data[key]))
 
 class Workspace():
     """
@@ -1868,4 +1911,4 @@ def test():
 #except Exception as e: 
 #    log.exception('aaa')
 
-    
+test()
