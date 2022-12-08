@@ -336,7 +336,7 @@ def get_plot_comparison(simdata, expdata):
         corresponding item in expdata.
     expdata : dict
         Experimental data. Named list of data structures returned by 
-        :func:`stressfit.ui.config.uiconfig().data.get_scan`.
+        :func:`stressfit.ui.config.uiconfig().get_scan()`.
 
     Returns
     -------
@@ -517,7 +517,7 @@ def plot_comparison(simdata, expdata, title='', inline=True, save=False, file=''
         corresponding item in expdata.
     expdata : dict
         Experimental data. Named list of data structures returned by 
-        :func:`stressfit.ui.config.get_scan`.
+        :func:`stressfit.ui.config.uiconfig().get_scan()`.
 
     """
     coll = get_plot_comparison(simdata, expdata)

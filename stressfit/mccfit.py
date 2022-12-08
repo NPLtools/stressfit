@@ -306,7 +306,7 @@ def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
     if (bootstrap):
         res = runFitEx(model, maxiter=maxiter, loops=loops, areg=areg)
         return res
-    if not (_quiet or guess):
+    if not (_quiet or guess) and maxiter>0:
         _log.clear(what='prog')
         _log.progress('Starting fit for < {:d} iterations.'.format(maxiter))
     ndim = model.dist.shape[0]
@@ -348,7 +348,7 @@ def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
     if (model.avgrange is not None):
         av = getAverage(xdis, ydis, rang = model.avgrange)  
         model.avg = [av, 0.]
-    if not (_quiet or guess): _log.progress('runFit finished')
+    if not (_quiet or guess) and maxiter>0: _log.progress('runFit finished')
     if (model.result is not None):
         res = model.result.success
     else:
@@ -386,7 +386,7 @@ def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
         msg = 'Set value of {}.data.'.format(model.__class__.__name__)
         raise Exception('No data defined for fitting. '+msg)
     
-    if not (_quiet or guess):
+    if not (_quiet or guess) and maxiter>0:
         _log.clear(what='prog')
         fmt = 'Starting fit for < {:d} iterations'
         fmt += ' and {:d} loops for error estimate.'

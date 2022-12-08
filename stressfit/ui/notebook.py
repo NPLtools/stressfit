@@ -153,7 +153,7 @@ class UI_base:
         self.assign()
         for key in kwargs:
             if key in self._keys:
-                _uiconf.update(key,kwargs[key])
+                _uiconf.set_config(key,kwargs[key])
             
 # properties        
     @property
@@ -165,7 +165,7 @@ class UI_base:
 # public methods
     def assign(self):
         """Assign pointers to configuration data to self._values."""
-        self._values = _uiconf.get(self.name)
+        self._values = _uiconf.get_config(self.name)
 
     def notify(self):
         """Raise notification after change.
@@ -186,7 +186,7 @@ class UI_base:
         """
         vals = copy.deepcopy(values)
         self._clean_keys(vals)
-        _uiconf.update(self.name, vals)
+        _uiconf.set_config(self.name, vals)
 
     def get_values(self):
         """Return actual input values as dict."""
@@ -323,7 +323,7 @@ class UI_base_list(UI_base):
         If successful, updates the table and calls :meth:`notify`.
         """
         if key in self._values['list']:
-            _uiconf.data.delete(self.name, key)
+            _uiconf.delete_item(self.name, key)
             self._redraw_table()
             self.notify()
             
@@ -422,9 +422,9 @@ class UI_base_list(UI_base):
         
     def assign(self):
         """Assign values to global data."""
-        self._values['list'] = _uiconf.data.get_item(self.name)
-        self._values['input'] = _uiconf.data.inputs[self.name]
-        self._values['conf'] = _uiconf.get(self.name)
+        self._values['list'] = _uiconf.get_item(self.name)
+        self._values['input'] = _uiconf.get_input(self.name)
+        self._values['conf'] = _uiconf.get_config(self.name)
         self._keys_conf = []
 
     def set_values(self, values, item=None):
@@ -444,7 +444,7 @@ class UI_base_list(UI_base):
             list : dict, optional
                 Data sets to be added in the table. Each data set 
                 is given a unique key in values['list']. If item is
-                defined, values must contaiin only that item values.
+                defined, values must contain only that item values.
         item : str
             Item key to be updated for data list. If None, 
             updates all items given in values.
@@ -452,16 +452,16 @@ class UI_base_list(UI_base):
         if 'input' in values:
             vals = copy.deepcopy(values['input'])
             self._clean_keys(vals)
-            _uiconf.data.inputs[self.name].update(vals) 
+            _uiconf.set_input(self.name,vals)
         elif 'list' in values: 
             vals = copy.deepcopy(values['list'])
             for k in vals:
                 self._clean_keys(vals[k])
-            _uiconf.data.update(self.name, vals, item=item) 
+            _uiconf.set_item(self.name, vals, item=item) 
         elif 'conf' in values: 
             vals = copy.deepcopy(values['conf'])
             vals_filt = {k:vals[k] for k in self._keys_conf}
-            _uiconf.update(self.name, vals_filt)
+            _uiconf.set_config(self.name, vals_filt)
             
     def update_values(self):
         """Update input data from widgets."""
@@ -739,7 +739,7 @@ class UI_workspace(UI_base):
     def assign(self):
         """Do nothing.
         
-        Workspace is not linked to ui_config data. 
+        Workspace is not linked to config_ui data. 
         """
         pass
         
@@ -1005,7 +1005,7 @@ class UI_shape(UI_base):
  
     def assign(self):
         """Assign values to global data."""
-        self._values = _uiconf.data.get_item(self.name)   
+        self._values = _uiconf.get_item(self.name)   
  
     def update_widgets(self):
         """Update parameter input widgets from data."""
@@ -1190,7 +1190,7 @@ class UI_sampling(UI_base_list):
     
     def _get_display_record(self, key):
         """Return a list of values to be shown on the list for given key."""
-        s = _uiconf.data.get_item('sampling', item=key)['fdata']
+        s = _uiconf.get_item('sampling', item=key)['fdata']
         try:
             rec = [key, s.file, s.src['nrec'], s.src['wav'], s.src['tth'],
                        s.src['dmean'], list(s.src['width'])]
@@ -1205,8 +1205,8 @@ class UI_sampling(UI_base_list):
             super().add_data(item, data=data, update_ui=False)
             vals = copy.deepcopy(self._values['list'][item])
             #self._values['input'].update(vals)
-            _uiconf.data.load(self.name, item=item)
-            sampling = _uiconf.data.get_item(self.name, item=item)['fdata']
+            _uiconf.reload(self.name, item=item, force=True)
+            sampling = _uiconf.get_item(self.name, item=item)['fdata']
             s = sampling.src
             vals['file'] = {key: s[key] for key in ['file','path']}
             vals['nrec'] = s['nrec']
@@ -1279,7 +1279,7 @@ class UI_attenuation(UI_base):
 
     def assign(self):
         """Assign values to global data."""
-        self._values = _uiconf.data.get_item(self.name)
+        self._values = _uiconf.get_item(self.name)
         
     def show(self, **kwargs): 
         """Display the input collection."""
@@ -1323,7 +1323,7 @@ class UI_data(UI_base_list):
                          list_hdr=['name','strain', 'intensity',  
                                    'orientation','sampling'],
                          list_fmt=['{}'] + 2*['{}'] + 2*['{}']) 
-        self.pgm_options = _uiconf.get('options')   
+        self.pgm_options = _uiconf.get_config('options')   
         # output area for plots
         self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none'))
         self.uiparam['title'] = header
@@ -1334,8 +1334,8 @@ class UI_data(UI_base_list):
         self.uiparam['add_label'] = 'Data name'
               
         # select options
-        self._options['sampling'] = _uiconf.data.listkeys('sampling')
-        self._options['geometry'] = _uiconf.data.listkeys('geometry')
+        self._options['sampling'] = _uiconf.item_keys('sampling')
+        self._options['geometry'] = _uiconf.item_keys('geometry')
         # title
         self.uiparam['title'] = header
 
@@ -1406,7 +1406,7 @@ class UI_data(UI_base_list):
 
     def _get_display_record(self, key):
         """Return a list of values to be shown on the list for given ID key."""
-        dlist = _uiconf.data.get_item(self.name)
+        dlist = _uiconf.get_item(self.name)
         if key in dlist:   
             lst = dlist[key]
             ori = lst['geometry']
@@ -1463,7 +1463,7 @@ class UI_data(UI_base_list):
         """
         try:
             super().add_data(item, data=data, update_ui=False)
-            _uiconf.data.load('data', item=item)
+            _uiconf.reload('data', item=item, force=True)
             if update_ui:
                 self.update_widgets()
         except Exception:
@@ -1478,20 +1478,20 @@ class UI_data(UI_base_list):
         # update values from widgets
         self.update_values()
         # get command parameters
-        par = _uiconf.get(self.name)
-        _uiconf.data.reload_all()
+        par = _uiconf.get_config(self.name)
+        _uiconf.reload_all()
         if not _uiconf.is_ready():
             self.error('Input data not ready.')
             return
         # set attenuation
-        att = _uiconf.data.get_attenuation()
+        att = _uiconf.attenuation
         comm.set_attenuation(att)       
         # collect simulated pseudo-strains and experimental data to plot 
-        dlist = _uiconf.data.get_item(self.name)
+        dlist = _uiconf.get_item(self.name)
         expdata = {}
         simdata = {}
         for name in dlist:
-            scan = _uiconf.data.get_scan(name)
+            scan = _uiconf.get_scan(name)
             x = scan['eps'][:,0]        
             scan_range = [min(x), max(x), 2*len(x)+1]
             fname = self._get_output_filename(name=scan['epsfile'])       
@@ -1645,15 +1645,15 @@ class UI_plot_scene(UI_base):
     def __init__(self, name, rang=16, proj=1, nrec=3000):
         super().__init__(name, ['sampling','geometry','nrec','proj','rang'],
                          rang=rang, proj=proj, nrec=nrec)    
-        self.pgm_options = _uiconf.get('options')
+        self.pgm_options = _uiconf.get_config('options')
 
         # output area
         layout = ipy.Layout(width='100%', border='none', 
                             margin='0px 0px 0px 20px')
         self._out = ipy.Output(layout=layout) 
         # options linked to data lists
-        self._options['sampling'] = _uiconf.data.listkeys('sampling')
-        self._options['geometry'] = _uiconf.data.listkeys('geometry')
+        self._options['sampling'] = _uiconf.item_keys('sampling')
+        self._options['geometry'] = _uiconf.item_keys('geometry')
         # title
         self.uiparam['title'] = 'Plot scene'        
                 
@@ -1737,15 +1737,15 @@ class UI_plot_scene(UI_base):
         # update values from widgets
         self.update_values()
         # get command parameters
-        par = _uiconf.get(self.name)
-        _uiconf.data.reload('sampling', item=par['sampling'])
+        par = _uiconf.get_config(self.name)
+        _uiconf.reload('sampling', item=par['sampling'])
         if not _uiconf.is_ready():
             self._out.clear_output()
             self.error('Input data not ready.')
             return      
         # set selected sampling and geometry  
-        g = _uiconf.data.get_item('geometry',item=par['geometry'])
-        s = _uiconf.data.get_item('sampling',item=par['sampling'])['fdata']
+        g = _uiconf.get_item('geometry',item=par['geometry'])
+        s = _uiconf.get_item('sampling',item=par['sampling'])['fdata']
         comm.set_geometry(g)
         comm.set_sampling(s)
         # do plot
@@ -1791,12 +1791,12 @@ class UI_resolution(UI_base):
                          ['sampling','geometry','nrec','strain','resolution',
                           'rang','steps'],
                          rang=rang, steps=steps, nrec=nrec) 
-        self.pgm_options = _uiconf.get('options')        
+        self.pgm_options = _uiconf.get_config('options')        
         # output area
         self._out = ipy.Output(layout=ipy.Layout(border='none'))         
         # select options
-        self._options['sampling'] = _uiconf.data.listkeys('sampling')
-        self._options['geometry'] = _uiconf.data.listkeys('geometry')
+        self._options['sampling'] = _uiconf.item_keys('sampling')
+        self._options['geometry'] = _uiconf.item_keys('geometry')
         # title
         self.uiparam['title'] = 'Calculate resolution effects'         
 
@@ -1914,21 +1914,21 @@ class UI_resolution(UI_base):
         self.update_values()
         
         # get command parameters
-        par = _uiconf.get(self.name)
-        _uiconf.data.reload('sampling', item=par['sampling'])
-        _uiconf.data.reload('attenuation')
+        par = _uiconf.get_config(self.name)
+        _uiconf.reload('sampling', item=par['sampling'])
+        _uiconf.reload('attenuation')
         if not _uiconf.is_ready():
             self._out.clear_output()
             self.error('Input data not ready.')
             return
 
         # set selected sampling and geometry
-        g = _uiconf.data.get_item('geometry',item=par['geometry'])
-        s = _uiconf.data.get_item('sampling',item=par['sampling'])['fdata']
+        g = _uiconf.get_item('geometry',item=par['geometry'])
+        s = _uiconf.get_item('sampling',item=par['sampling'])['fdata']
         comm.set_geometry(g)
         comm.set_sampling(s)
         # set attenuation
-        att = _uiconf.data.get_attenuation()
+        att = _uiconf.attenuation
         comm.set_attenuation(att)
 
         # do plot
@@ -1983,12 +1983,12 @@ class UI_fit_imodel(UI_base):
     def __init__(self, name):
         super().__init__(name, 
                          ['data','model','nrec','npts', 'fit']) 
-        self.pgm_options = _uiconf.get('options')        
+        self.pgm_options = _uiconf.get_config('options')        
         # output area
         self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none'))         
         # select options
-        self._options['data'] = _uiconf.data.listkeys('data')
-        self._options['model'] = _uiconf.data.listkeys('imodel')
+        self._options['data'] = _uiconf.item_keys('data')
+        self._options['model'] = _uiconf.item_keys('imodel')
         # title
         self.uiparam['title'] = 'Fit intensity model'
 
@@ -2093,13 +2093,13 @@ class UI_fit_imodel(UI_base):
         # update values from widgets
         self.update_values()
         # reload all input data if needed
-        _uiconf.data.reload_all()
+        _uiconf.reload_all()
         # get command parameters
-        par = _uiconf.get(self.name)
+        par = _uiconf.get_config(self.name)
         # selected scan data 
-        scan = _uiconf.data.get_scan(par['data'])
+        scan = _uiconf.get_scan(par['data'])
         # selected model
-        model = _uiconf.data.get_item('imodel',item=par['model'])
+        model = _uiconf.get_item('imodel',item=par['model'])
         # scale parameters
         scale = model['scale']
         
@@ -2107,7 +2107,7 @@ class UI_fit_imodel(UI_base):
         # set scan parameters and sampling
         comm.set_scan(scan)        
         # set attenuation
-        att = _uiconf.data.get_attenuation()
+        att = _uiconf.attenuation
         comm.set_attenuation(att)        
         # create ifit object
         ifit = comm.define_ifit(scan, model['dist'], par['nrec'], 
@@ -2130,7 +2130,7 @@ class UI_fit_imodel(UI_base):
     def _on_guess(self,b):
         try:
             ifit = self._prepare()    
-            par = _uiconf.get(self.name)
+            par = _uiconf.get_config(self.name)
             with self._out:
                 # create smeared curve: run without fitting, maxiter=0
                 comm.run_fit_guess(ifit,
@@ -2143,7 +2143,7 @@ class UI_fit_imodel(UI_base):
     def _on_fit(self,b):
         try:
             ifit = self._prepare()  
-            par = _uiconf.get(self.name)
+            par = _uiconf.get_config(self.name)
             with self._out:
                 # create smeared curve: run without fitting, maxiter=0
                 comm.run_fit(ifit, 
@@ -2279,7 +2279,7 @@ class UI():
         self.clear_logs()
   
     def _on_reload_data(self,b):
-        _uiconf.data.reload_all()
+        _uiconf.reload_all()
         
     def _change(self, obj, **kwargs):
         if obj.name == 'shape':
@@ -2385,7 +2385,7 @@ class UI():
         try:
             for key in self.ui: 
                 self.ui[key].update_values()
-            out = _uiconf.export_json()
+            out = _uiconf.export_to()
             if filename:
                 with open(filename, 'w') as f:
                     f.write(out)
@@ -2403,7 +2403,7 @@ class UI():
                 lines=f.readlines()
                 f.close()
             # import into global input data
-            _uiconf.import_json(lines, reload=True)
+            _uiconf.import_from(lines, reload=True)
             if not _uiconf.is_ready():
                 self._error('Program input is not complete.')
                 return
