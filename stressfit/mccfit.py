@@ -32,6 +32,8 @@ _quiet = False
 
 _log = dataio.logger()
 
+_prog = dataio.FitProgressLogger()
+
 intpmodels = ['natural','clamped', 'PCHIP', 'Akima']
 
 def intClear():
@@ -251,8 +253,11 @@ def fitcallb(params, iteration, resid, *fcn_args, **fcn_kws):
     if (reg < _reg):
         _reg = reg
         _chi2 = chi
-        fmt = 'iter={:d}, chi2={:g}, reg={:g}'
-        if (not _quiet): _log.progress(fmt.format(max(0,iteration), chi, reg))
+        it = max(0,iteration)
+        args = {'iter': it, 'chi2': chi, 'reg': reg}
+        _prog.prog(**args)
+        #fmt = 'iter={:d}, chi2={:g}, reg={:g}'
+        #if (not _quiet): _log.progress(fmt.format(it, chi, reg))
 
 
 # define objective function for fitting: returns the array to be minimized
@@ -307,8 +312,9 @@ def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
         res = runFitEx(model, maxiter=maxiter, loops=loops, areg=areg)
         return res
     if not (_quiet or guess) and maxiter>0:
-        _log.clear(what='prog')
-        _log.progress('Starting fit for < {:d} iterations.'.format(maxiter))
+        _prog.start(**{'iter': maxiter})
+        #_log.clear(what='prog')
+        #_log.progress('Starting fit for < {:d} iterations.'.format(maxiter))
     ndim = model.dist.shape[0]
     ndata = model.data.shape[0]
     xdata = model.data[:,0]
@@ -348,14 +354,17 @@ def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
     if (model.avgrange is not None):
         av = getAverage(xdis, ydis, rang = model.avgrange)  
         model.avg = [av, 0.]
-    if not (_quiet or guess) and maxiter>0: _log.progress('runFit finished')
+    #if not (_quiet or guess) and maxiter>0: 
+        #_log.progress('runFit finished')
     if (model.result is not None):
         res = model.result.success
     else:
         res = True
     model.fitFinal()
-    if not res:
-        _log.progress('Fit not completed.')
+    if not guess and maxiter>0: 
+        _prog.finished(**{'completed':res, 'chi2':model.chi, 'reg': model.reg})
+    #if not res:
+    #    _log.progress('Fit not completed.')
     return res
 
 def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
@@ -387,10 +396,11 @@ def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
         raise Exception('No data defined for fitting. '+msg)
     
     if not (_quiet or guess) and maxiter>0:
-        _log.clear(what='prog')
-        fmt = 'Starting fit for < {:d} iterations'
-        fmt += ' and {:d} loops for error estimate.'
-        _log.progress(fmt.format(maxiter, loops))
+        #_log.clear(what='prog')
+        #fmt = 'Starting fit for < {:d} iterations'
+        #fmt += ' and {:d} loops for error estimate.'
+        #_log.progress(fmt.format(maxiter, loops))
+        _prog.start_loops(**{'iter': maxiter, 'loops': loops})
     ndim = model.dist.shape[0]
     # length of distribution model arrays (number of nodes):  
     # initialize arrays
@@ -450,10 +460,12 @@ def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
             avg += p*av
             avg2 += p*av**2
         #reg = costFnc(model.params, model, areg)
-        if not  model.result.success:
-            _log.progress('Fit not completed.')
+        #if not  model.result.success:
+        #    _log.progress('Fit not completed.')
         if not (_quiet or guess):
-            _log.progress('Loop {:d}: chi2={:g}, reg={:g}\n'.format(it, _chi2, _reg))
+            #_log.progress('Loop {:d}: chi2={:g}, reg={:g}\n'.format(it, _chi2, _reg))
+            args = {'loop':it, 'chi2':_chi2, 'reg':_reg}
+            _prog.finished_loop(completed=model.result.success, **args)
     model.data = data0
     model.chi  = chi0/sump
     model.reg = reg0/sump
@@ -495,7 +507,8 @@ def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
     model.avg = [avg, avg_err]
     if (model.result is not None):
         if not (_quiet or guess):
-            _log.progress('runFitEx weights: '+str(pval)+'\n')
+            #_log.progress('runFitEx weights: '+str(pval)+'\n')
+            _prog.log('Loop weights: '+str(pval)+'\n')
         res = model.result.success
     else:
         res = True

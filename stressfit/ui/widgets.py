@@ -61,42 +61,42 @@ def choose_file_save(initialdir=None, initialfile=None, filetypes=None, **kwargs
 #%% Adapted widgets
 # subclasses of ipywidgets: provide names to input widgets, and a button with value.
 class SText(ipy.Text): 
-    """Text with name atribute."""
+    """Text with name attribute."""
     
     def __init__(self, name='', *args, **kwargs):
         super(SText, self).__init__(*args, **kwargs)
         self.name = name
 
 class SBoundedFloatText(ipy.BoundedFloatText): 
-    """BoundedFloatText with name atribute."""
+    """BoundedFloatText with name attribute."""
     
     def __init__(self, name='', *args, **kwargs):
         super(SBoundedFloatText, self).__init__(*args, **kwargs)
         self.name = name
 
 class SBoundedIntText(ipy.BoundedIntText): 
-    """BoundedIntText with name atribute."""
+    """BoundedIntText with name attribute."""
     
     def __init__(self, name='', *args, **kwargs):
         super(SBoundedIntText, self).__init__(*args, **kwargs)
         self.name = name
 
 class SDropdown(ipy.Dropdown): 
-    """Dropdown with name atribute."""
+    """Dropdown with name attribute."""
     
     def __init__(self, name='', *args, **kwargs):
         super(SDropdown, self).__init__(*args, **kwargs)
         self.name = name
 
 class SIntText(ipy.IntText): 
-    """IntText with name atribute."""
+    """IntText with name attribute."""
     
     def __init__(self, name='', *args, **kwargs):
         super(SIntText, self).__init__(*args, **kwargs)
         self.name = name
 
 class SFloatText(ipy.FloatText): 
-    """FloatText with name atribute."""
+    """FloatText with name attribute."""
     
     def __init__(self, name='', *args, **kwargs):
         super(SFloatText, self).__init__(*args, **kwargs)
@@ -111,14 +111,14 @@ class SButton(ipy.Button):
         self.add_traits(value=traitlets.Any(value))
 
 class SCheckbox(ipy.Checkbox):
-    """Check box with name atribute."""
+    """Check box with name attribute."""
     
     def __init__(self, name='', *args, **kwargs):
         super(SCheckbox, self).__init__(*args, **kwargs)
         self.name = name
 
 class SRadioButtons(ipy.RadioButtons):
-    """RadioButton box with name atribute."""
+    """RadioButton box with name attribute."""
     
     def __init__(self, name='', *args, **kwargs):
         super(SRadioButtons, self).__init__(*args, **kwargs)
@@ -642,6 +642,10 @@ class ArrayInput(BasicInput):
         Width of numeric input widget in given units.
     unit : str
         Width units.
+    lmin : float
+        Minimum value. None sets limit to 1e-30.
+    lmax : float
+        Maximum value. None sets limit to 1e30.
     """
     
     def __init__(self, name='', value=[0.0,0.0,0.0], label='array', 
@@ -1396,6 +1400,7 @@ class FitControl(ComposedInput):
         Name of this component. 
     value : dict
         - maxiter : int, maximum iterations
+        - guess : bool, run guest fit first 
         - loops :int,  maximum number of bootstrap loops
         - areg : float, regularization parameter
     """
@@ -1411,6 +1416,7 @@ class FitControl(ComposedInput):
         self._value['guess'] = True
         self._value['loops'] = 1
         self._value['areg'] = 1e-7
+        
     
     def _create_widgets(self):
         """Create value widgets."""
@@ -1442,3 +1448,45 @@ class FitControl(ComposedInput):
         self._widgets['areg'] = areg
         self._widgets['guess'] = guess
 
+
+class StrainZeros(ComposedInput):
+    """Control strain scaling.
+    
+    Controls setting of position encoder shift (z0) and zero strain (eps0).
+       
+    Use the property 'value' to set or retrieve fit configuration data. 
+    
+    Parameters
+    ----------
+    name : str
+        Name of this component. 
+    value : dict
+        - z0 : float, encoder scale shift
+        - eps0 : float,  zero strain in 1e-6
+    """
+    
+    def __init__(self, name='', value=None, layout=None, **kwargs):
+        super().__init__(name, value, 
+                         align='vertical',
+                         layout=layout,
+                         **kwargs)
+                
+    def _create_values(self):
+        self._value['z0'] = 0.0
+        self._value['eps0'] = 0.0
+    
+    def _create_widgets(self):
+        """Create value widgets."""
+        z0 = ArrayInput(name='z0', 
+                             label=' ', 
+                             hint='Encoder zero shift [mm]',
+                             value=self._value['z0'],
+                             width_label=80, logger=self._log)
+        eps0 = ArrayInput(name='eps0', 
+                           label=' ', 
+                           hint='Zero strain [1e-6]',
+                           value=self._value['eps0'],
+                           width_label=80, logger=self._log)
+
+        self._widgets['z0'] = z0
+        self._widgets['eps0'] = eps0

@@ -811,7 +811,7 @@ def estimate_eps0(scan, z0, nev, nmin, nmax):
     return eps0
     
 
-def define_sfit(scan, nodes, nev, z0=0.0, constFnc=None, eps0=False, 
+def define_sfit(scan, nodes, nev, ndim=200, z0=0.0, eps0=False, constFnc=None, 
                 avgrange=None, **kwargs):
     """Define model for fitting strain scan.
 
@@ -823,10 +823,10 @@ def define_sfit(scan, nodes, nev, z0=0.0, constFnc=None, eps0=False,
         [x,y,fx,fy], where x,y are the node coordinates and fx,fy 
     nev : int
         Number of sampling events to be used for convolution.
+    ndim : int
+        Number of points for interpolated distribution function.        
     z0: float
-        Depth missfit of between data (encoder) and scan centre.
-    constFnc : function
-        Optional constraint function. Accepts dict with fit parameters.
+        Depth missfit between data (encoder) and scan centre.
     eps0: boolean or float, optional
         Subtract zero strain eps0 from the data. 
         If the value is boolean and True, then eps0 is calculated from the 
@@ -834,6 +834,8 @@ def define_sfit(scan, nodes, nev, z0=0.0, constFnc=None, eps0=False,
         parameters nmin, nmax then must be passed as other named arguments.
         They define the data range from which the average intrinsic eps0 
         is determined. 
+    constFnc : function
+        Optional constraint function. Accepts dict with fit parameters.
     avgrange : list(2) of int, optional
         If defined, an average strain is evaluated in the given range of depths.
     **kwargs : 
@@ -846,7 +848,10 @@ def define_sfit(scan, nodes, nev, z0=0.0, constFnc=None, eps0=False,
     """
     epsdata = scan['eps']
     set_geometry(scan)
-    [x,y,fx,fy] = nodes
+    if isinstance(nodes, dict):
+        [x,y,fx,fy] = [nodes[k] for k in ['x', 'y', 'fitx', 'fity']]
+    else:
+        [x,y,fx,fy] = nodes
     
     e0 = 0.0
     if eps0:
@@ -865,7 +870,7 @@ def define_sfit(scan, nodes, nev, z0=0.0, constFnc=None, eps0=False,
     # define strain distribution, dim=number of points for interpolation 
     # par = nodes [x,y] values
     # vary = corresponding flags for fixed (0) or free(1) variables.
-    sfit.defDistribution(par=[x, y], vary=[fx, fy], ndim=100, scaled=True)
+    sfit.defDistribution(par=[x, y], vary=[fx, fy], ndim=ndim, scaled=True)
 
     # define function scaling (amplitude, strain offset, depth-shift) 
     sfit.defScaling(par=[1., e0, z0], vary=[0, 0, 0])

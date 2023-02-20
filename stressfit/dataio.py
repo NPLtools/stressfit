@@ -114,10 +114,93 @@ def _print_loggers(full=False):
                     print('     +++',str(h.__class__)[8:-2] )
 
 
+class FitProgressLogger():
+    """Record progres of fitting procedure."""
+    
+    def __init__(self):
+        self._out = None
+        self._quiet = False
+    
+    
+    @property
+    def output(self): 
+        """Define output ipywidget."""
+        return self._out
+    
+    @output.setter
+    def output(self, value):
+        self._out = value
+        
+    @property
+    def quiet(self): 
+        """Define quiet mode."""
+        return self._quiet
+    
+    @quiet.setter
+    def quiet(self, value):
+        self._quiet = value
+
+    def _prn(self, msg):
+        if not self._quiet: 
+            if self._out is None:
+                print(msg)
+            else:
+                with self._out:
+                    print(msg)
+
+    def start(self, **kwargs):
+        """Start fitting run."""
+        if "iter" in kwargs:
+            msg = 'Starting fit for < {:d} iterations.'.format(kwargs['iter'])
+        else:
+            msg = 'Starting fit.'
+        self.clear()
+        self._prn(msg)
+    
+    def start_loops(self, **kwargs):
+        """Start fitting run with bootstrap loops."""
+        fmt = 'Starting fit for < {:d} iterations'
+        fmt += ' and {:d} loops for error estimate.'
+        args = [kwargs[k] for k in ["iter","loops"]]
+        msg = fmt.format(*args)
+        self.clear()
+        self._prn(msg)
+        
+    def prog(self, **kwargs):
+        """Show fit progress."""
+        args = [kwargs[k] for k in ["iter", "chi2", "reg"]]
+        msg = 'iter={:g}, chi2={:g}, reg={:g}'.format(*args)
+        self._prn(msg)    
+    
+    def finished(self, completed=True, **kwargs):
+        """Show fit finished."""
+        args = [kwargs[k] for k in ["chi2", "reg"]]
+        msg = 'Finished: chi2={:g}, reg={:g}'.format(*args)
+        self._prn(msg)
+        if not completed:
+            self._prn('Fit not completed.')
+
+    def finished_loop(self, completed=True, **kwargs):
+        """Show fit finished."""
+        args = [kwargs[k] for k in ["loop", "chi2", "reg"]]
+        msg = 'loop {:d}: chi2={:g}, reg={:g}.\n'.format(*args)
+        if not completed:
+            self._prn('Fit not completed.')
+        self._prn(msg)
+
+    def log(self, msg):
+        """Print message."""
+        self._prn(msg)
+        
+    def clear(self):
+        """Clear output."""
+        if self._out:
+            self._out.clear_output()
+        
+        
 class StressfitLogger():
     """Encapsulate python logging logger for Stressfit."""
     
-# TODO progress logger
     def __init__(self):
                 
         # define optional widget outputs for loggers

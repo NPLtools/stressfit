@@ -1062,7 +1062,7 @@ class UI_geometry(UI_base_list):
     """Dialog for sample geometry.
     
     This UI allows to set the sample and scan geometry and mainain
-    a named list of such oreiantations.
+    a named list of such orientations.
     
     Each geometry is defined by four vectors:    
     
@@ -1555,10 +1555,19 @@ class UI_distribution(UI_base_list):
                                           value=self._values['input']['dist'],
                                           border='1px solid',
                                           logger=self._logger)
+        
+        if self.dtype == 'imodel':
         # scale table
-        self._widgets['scale'] = sw.ScaleTable(name='scale', label='Scaling',
-                                            value=self._values['input']['scale'],
-                                            logger=self._logger)
+            self._widgets['scale'] = sw.ScaleTable(name='scale', 
+                                                   label='Scaling',
+                                                   value=self._values['input']['scale'],
+                                                   logger=self._logger)
+        elif self.dtype == 'emodel':
+        # setting of zeros
+            self._widgets['scale'] = sw.StrainZeros(name='scale', 
+                                                    value=self._values['input']['scale'],
+                                                    logger=self._logger)
+
         # interpolation options
         intps = mc.intpmodels
         wdg =  sw.SelectInput(name='interp', label='Interpolation', 
@@ -1587,12 +1596,14 @@ class UI_distribution(UI_base_list):
             x = lst['dist']['x']
             fitx = lst['dist']['fitx']
             fity = lst['dist']['fity']
-            fs = lst['scale']['fit']
+            
             nodes = len(x)
             rang = [x[0], x[nodes-1]]
             nfree = np.sum(fitx)
             nfree += np.sum(fity)
-            nfree += np.sum(fs)
+            if self.dtype == 'imodel':
+                fs = lst['scale']['fit']
+                nfree += np.sum(fs)
             intp = lst['interp']
         else:    
             nodes = 0
@@ -1605,7 +1616,8 @@ class UI_distribution(UI_base_list):
         """Redraw the model table."""
         if not self._was_displayed:
             self._widgets['dist'].redraw()
-            self._widgets['scale'].redraw()
+            if self.dtype == 'imodel':
+                self._widgets['scale'].redraw()
             self._was_displayed = True
     
     def show(self, **kwargs): 
@@ -1626,6 +1638,8 @@ class UI_plot_scene(UI_base):
     
     Parameters
     ----------
+    name : str
+        Unique name for the instance.
     rang : int
         Display range in mm. 
     proj : int
@@ -1769,6 +1783,8 @@ class UI_resolution(UI_base):
     
     Parameters
     ----------
+    name : str
+        Unique name for the instance.
     rang : int
         Display scan range in mm. 
     steps : int
@@ -1812,7 +1828,7 @@ class UI_resolution(UI_base):
         #                    options=self._options['sampling'], 
         #                    width_label=80, width_drop=100)
         self._widgets['sampling'] = wdg
-        # oreiantation selection
+        # orientation selection
         wdg = sw.SelectInput(name='geometry', label='Orientation',
                           options=self._options['geometry'], 
                           value=self._values['geometry'],
@@ -1963,19 +1979,14 @@ class UI_fit_imodel(UI_base):
     
     Parameters
     ----------
-    rang : int
-        Display scan range in mm. 
-    steps : int
-        number of steps for the scan
-    nrec : int
-        Number of sampling events to show.
+    name : str
+        Unique name for the instance.  
         
     Example
     -------
+    `ifit = UI_fit_imodel('ifit')`
     
-    `resol = UI_resolution('resolution')`
-    
-    `resol.show()`
+    `ifit.show()`
     
     
     """
@@ -2001,7 +2012,7 @@ class UI_fit_imodel(UI_base):
                           width_label=80, width_drop=100,
                           logger=self._logger)
         self._widgets['data'] = wdg
-        # oreiantation selection
+        # orientation selection
         wdg = sw.SelectInput(name='model', label='Model',
                           options=self._options['model'], 
                           value=self._values['model'],
@@ -2162,7 +2173,206 @@ class UI_fit_imodel(UI_base):
                 comm.report_fit(ifit, fname)
         except Exception as e:
             self.exception(str(e))            
+ 
             
+class UI_fit_emodel(UI_base):
+    """Fit strain model.
+    
+    Parameters
+    ----------
+    name : str
+        Unique name for the instance. 
+        
+    Example
+    -------
+    `efit = UI_fit_emodel('efit')`
+    
+    `efit.show()`
+    
+    """
+    
+    def __init__(self, name):
+        super().__init__(name, 
+                         ['data','model','nrec','npts', 'fit']) 
+        self.pgm_options = _uiconf.get_config('options')        
+        # output area
+        self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none'))         
+        # select options
+        self._options['data'] = _uiconf.item_keys('data')
+        self._options['model'] = _uiconf.item_keys('emodel')
+        # title
+        self.uiparam['title'] = 'Fit strain model'
+
+    def _create_widgets(self, **kwargs): 
+
+        # sampling selection
+        wdg = sw.SelectInput(name='data', label='Data',
+                          options=self._options['data'], 
+                          value=self._values['data'],
+                          width_label=80, width_drop=100,
+                          logger=self._logger)
+        self._widgets['data'] = wdg
+        # orientation selection
+        wdg = sw.SelectInput(name='model', label='Model',
+                          options=self._options['model'], 
+                          value=self._values['model'],
+                          width_label=80, width_drop=100,
+                          logger=self._logger)
+        #wdg =  create_select(name='geometry', label='Orientation', 
+        #                     options=self._options['geometry'], 
+        #                     width_label=80, width_drop=100)
+        self._widgets['model'] = wdg
+        # number of events to plot
+        wdg = sw.ArrayInput(name='nrec', label='Events',
+                         value=self._values['nrec'], 
+                         hint='',
+                         isInt=True, step=1000, lmin=1000,lmax=100000,
+                         width_label=80, width_num=100,
+                         logger=self._logger)   
+        self._widgets['nrec'] = wdg 
+        # number of points on model curve
+        wdg = sw.ArrayInput(name='npts', label='Points',
+                         value=self._values['npts'], 
+                         hint='',
+                         isInt=True, step=10, lmin=10,lmax=500,
+                         width_label=80, width_num=100,
+                         logger=self._logger)   
+        self._widgets['npts'] = wdg
+        
+        # fit control parameters
+        wdg = sw.FitControl(name='fit', value=self._values['fit'],
+                            logger=self._logger)
+        self._widgets['fit'] = wdg
+
+    def _create_ui(self, **kwargs):
+        
+        btn_run = ipy.Button(description='Plot',
+                                layout=ipy.Layout(width='80px'))
+        btn_run.on_click(self._on_replot)
+        self._buttons.append(btn_run)
+        
+        btn_guess = ipy.Button(description='Guess',
+                                layout=ipy.Layout(width='80px'))
+        btn_guess.on_click(self._on_guess)
+        self._buttons.append(btn_guess)
+        
+        btn_fit = ipy.Button(description='Fit',
+                                layout=ipy.Layout(width='80px'))
+        btn_fit.on_click(self._on_fit)
+        self._buttons.append(btn_fit)
+        
+        layout = ipy.Layout(margin='10px 10px 5px 10px')
+        box1 = ipy.VBox([self._widgets['data'].ui(), 
+                         self._widgets['model'].ui(), 
+                         self._widgets['nrec'].ui(),
+                         self._widgets['npts'].ui()],
+                         layout=layout)               
+        box2 = ipy.VBox([self._widgets['fit'].ui()],
+                         layout=layout) 
+        #box2 = ipy.VBox([self._widgets['strain'], 
+        #                 self._widgets['resolution']],
+        #                 layout=layout)
+        #layout=ipy.Layout(margin='10px 5px 5px 10px', min_width='30%')
+        #box3 = ipy.VBox([self._widgets['rang'].ui(), 
+        #                 self._widgets['steps'].ui()],
+        #                 layout=layout)
+        
+        #style = {'margin': '5px 5px 5px 50px'}
+        hbox = ipy.HBox([box1,box2])
+        box = ipy.VBox([hbox, self._out])
+        return box
+            
+    def _get_output_filename(self, ext=''):
+        """Generate base output filename."""
+        pfx = self.pgm_options['prefix']
+        dname = self._widgets['data'].value
+        
+        if pfx:
+            base = '{}_{}_emodel'.format(pfx, dname)
+        else:
+            base = '{}_emodel'.format(dname)
+        if ext:
+            fname = base + ext
+        else:
+            fname = base
+        return fname
+    
+    def _prepare(self):
+        """Make all settings necessary to run commands."""
+        self.clear('all')
+        self._out.clear_output()
+        # update values from widgets
+        self.update_values()
+        # reload all input data if needed
+        _uiconf.reload_all()
+        # get command parameters
+        par = _uiconf.get_config(self.name)
+        # selected scan data 
+        scan = _uiconf.get_scan(par['data'])
+        # selected model
+        model = _uiconf.get_item('emodel',item=par['model'])
+        # scale parameters
+        scale = model['scale']
+        
+        
+        # set scan parameters and sampling
+        comm.set_scan(scan)        
+        # set attenuation
+        att = _uiconf.attenuation
+        comm.set_attenuation(att)        
+        # create sfit object
+        sfit = comm.define_sfit(scan, model['dist'], par['nrec'], 
+                                ndim=par['npts'], 
+                                z0=scale['z0'],
+                                eps0=scale['eps0'])  
+        sfit.setInterpModel(model['interp'])
+        return sfit
+    
+    def _on_replot(self,b):
+        try:
+            sfit = self._prepare()        
+            with self._out:
+                # create smeared curve: run without fitting, maxiter=0
+                comm.run_fit(sfit, maxiter=0, outname='')
+        except Exception as e:
+            self.exception(str(e))
+        
+    def _on_guess(self,b):
+        try:
+            sfit = self._prepare()    
+            par = _uiconf.get_config(self.name)
+            with self._out:
+                # create smeared curve: run without fitting, maxiter=0
+                comm.run_fit_guess(sfit,
+                                   maxiter=par['fit']['maxiter'], 
+                                   areg=par['fit']['areg'],
+                                   outname='')
+        except Exception as e:
+            self.exception(str(e))
+            
+    def _on_fit(self,b):
+        try:
+            sfit = self._prepare()  
+            par = _uiconf.get_config(self.name)
+            with self._out:
+                # create smeared curve: run without fitting, maxiter=0
+                comm.run_fit(sfit, 
+                             maxiter=par['fit']['maxiter'], 
+                             loops=par['fit']['loops'],
+                             areg=par['fit']['areg'],
+                             guess=par['fit']['guess'],
+                             bootstrap=par['fit']['loops']>2,
+                             outname=None)
+                # plot results
+                save = self.pgm_options['save']
+                if save:
+                    fname = self._get_output_filename()
+                else:
+                    fname = ''
+                comm.report_fit(sfit, fname)
+        except Exception as e:
+            self.exception(str(e))            
+  
 #%% Top level UI class
 
 class UI():
@@ -2178,7 +2388,10 @@ class UI():
                       'resolution',
                       'data',
                       'imodel',
-                      'fit_imodel']
+                      'fit_imodel',
+                      'emodel',
+                      'fit_emodel'
+                      ]
     def __init__(self):    
         self._last_input_file = 'input.json'
         self.ui = {}
@@ -2187,6 +2400,8 @@ class UI():
         self._note = ipy.Output(layout=ipy.Layout(width='100%', min_height='30px', border='none'))
         self._msg = ipy.Output(layout=msgl)
         self._prog = ipy.Output(layout=msgl)
+        # assign progress panel to fitting log
+        mc._prog.output = self._prog
         self._logger = dataio.logger()
         self._logger.output_short = self._note
         self._logger.output_msg = self._msg
@@ -2206,6 +2421,8 @@ class UI():
         self._add_input_ui(UI_data('data'))
         self._add_input_ui(UI_distribution('imodel'))
         self._add_input_ui(UI_fit_imodel('fit_imodel'))
+        self._add_input_ui(UI_distribution('emodel'))
+        self._add_input_ui(UI_fit_emodel('fit_emodel'))
         
         # set event handlers
         self.ui['shape'].set_on_change(self._change)
@@ -2213,7 +2430,7 @@ class UI():
         self.ui['sampling'].set_on_change(self._change)
         self.ui['data'].set_on_change(self._change)
         self.ui['imodel'].set_on_change(self._change)
-
+        self.ui['emodel'].set_on_change(self._change)
     
     def _message(self, txt, clear=True):
         """Print info to the logger, if defined."""
@@ -2254,7 +2471,8 @@ class UI():
         idx = widget['new']
         if idx==6:
             self.ui['imodel'].refresh()
-        
+        if idx==7:
+            self.ui['emodel'].refresh()
 
     
     def _on_save_input(self,b):
@@ -2301,8 +2519,12 @@ class UI():
         # update other selection lists
         elif name == 'imodel':
             self.ui['fit_imodel'].update_options('model')
+        elif name == 'emodel':
+            self.ui['fit_emodel'].update_options('model')            
         elif name == 'data':
             self.ui['fit_imodel'].update_options('data')
+            self.ui['fit_emodel'].update_options('data')
+            
 
     def clear_logs(self):
         """Clear output area specified as a string argument."""
@@ -2333,6 +2555,9 @@ class UI():
         tabs_data['imodel'] = {'title':'Intensity',
                                   'ui':[self.ui['imodel'],
                                         self.ui['fit_imodel']]}
+        tabs_data['emodel'] = {'title':'Strain',
+                                  'ui':[self.ui['emodel'],
+                                        self.ui['fit_emodel']]}
         # create tab container
         tab = ipy.Tab() 
         
@@ -2409,7 +2634,7 @@ class UI():
                 return
             # Notification that data lists may have changed 
             # -> update dependent options
-            for key in ['geometry', 'sampling', 'data', 'imodel']:
+            for key in ['geometry', 'sampling', 'data', 'imodel', 'emodel']:
                 self._update_options(key)
             # re-assign global input to the ui components
             for key in self.ui:
