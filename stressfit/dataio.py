@@ -148,13 +148,14 @@ class FitProgressLogger():
                 with self._out:
                     print(msg)
 
-    def start(self, **kwargs):
+    def start(self, clearlog=True, **kwargs):
         """Start fitting run."""
         if "iter" in kwargs:
             msg = 'Starting fit for < {:d} iterations.'.format(kwargs['iter'])
         else:
             msg = 'Starting fit.'
-        self.clear()
+        if clearlog:
+            self.clear()
         self._prn(msg)
     
     def start_loops(self, **kwargs):
@@ -174,16 +175,16 @@ class FitProgressLogger():
     
     def finished(self, completed=True, **kwargs):
         """Show fit finished."""
-        args = [kwargs[k] for k in ["chi2", "reg"]]
-        msg = 'Finished: chi2={:g}, reg={:g}'.format(*args)
+        args = [kwargs[k] for k in ["FoM", "chi2", "reg"]]
+        msg = 'Finished: FoM={:g}, chi2={:g}, reg={:g}'.format(*args)
         self._prn(msg)
         if not completed:
             self._prn('Fit not completed.')
 
     def finished_loop(self, completed=True, **kwargs):
         """Show fit finished."""
-        args = [kwargs[k] for k in ["loop", "chi2", "reg"]]
-        msg = 'loop {:d}: chi2={:g}, reg={:g}.\n'.format(*args)
+        args = [kwargs[k] for k in ["loop", "FoM", "chi2", "reg"]]
+        msg = 'loop {:d}: FoM={:g}, chi2={:g}, reg={:g}.\n'.format(*args)
         if not completed:
             self._prn('Fit not completed.')
         self._prn(msg)
@@ -340,14 +341,14 @@ class StressfitLogger():
         self._lm.error(message)
         
     def exception(self, message):
-        """Print error message."""
+        """Print exception message."""
         if isinstance(message, list):
             message='\n'.join(message)
         self. _print_short(message, logging.ERROR)
         self._lex.error(message)
 
     def progress(self, message):
-        """Print error message."""
+        """Print progress message."""
         if isinstance(message, list):
             message='\n'.join(message)
         self._lprog.info(message)

@@ -34,6 +34,23 @@ _log = dataio.logger()
 
 _prog = dataio.FitProgressLogger()
 
+
+def set_progress_logger(logger):
+    """Set alternative fit progress logger.
+    
+    The logger must be an instance of dataio.FitProgressLogger
+    
+    """
+    global _prog
+    if isinstance(logger, dataio.FitProgressLogger):
+        _prog = logger
+
+def get_progress_logger():
+    """Return fit progress logger."""
+    global _prog
+    return _prog
+
+
 intpmodels = ['natural','clamped', 'PCHIP', 'Akima']
 
 def intClear():
@@ -254,20 +271,22 @@ def fitcallb(params, iteration, resid, *fcn_args, **fcn_kws):
         _reg = reg
         _chi2 = chi
         it = max(0,iteration)
-        args = {'iter': it, 'chi2': chi, 'reg': reg}
+        args = {'iter': it, 'FoM': reg, 'chi2': chi, 
+                'reg': (reg-chi)/fcn_args[1].areg, 'loop': fcn_args[1].loop}
         _prog.prog(**args)
         #fmt = 'iter={:d}, chi2={:g}, reg={:g}'
         #if (not _quiet): _log.progress(fmt.format(it, chi, reg))
 
 
 # define objective function for fitting: returns the array to be minimized
-def costFnc(params, model, areg, guess):
+def costFnc(params, model, fitstat):
     """Residual array to be passed to the minimizer: intensity scan."""
     model.params = params
-    res = model.calResid(guess=guess)
+    res = model.calResid(guess=fitstat.guess)
     nres = res.shape[0]
     nreg = 0
     # add regularization term
+    areg = fitstat.areg
     if (areg > 0):
         # model.updateDistribution()
         der = model.calDeriv()
@@ -281,7 +300,8 @@ def costFnc(params, model, areg, guess):
         res = np.concatenate((res, np.array([y])), axis=0)
     return res
 
-def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
+def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False,
+           clearlog=True):
     """Execute least square fit.
     
     Parameters
@@ -298,12 +318,23 @@ def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
             number of bootstrap loops
         guess : bool
             if true, run only the guess fit without deconvolution
+        clearlog : bool
+            clear log window at the start
     Returns
     -------
         results : boolean
                 success
     """
     global _chi2, _reg
+    
+    # fit status object
+    fitstat = type('obj', (object,), {})
+    fitstat.areg = areg
+    fitstat.guess = guess
+    fitstat.loop = 0
+    fitstat.ireg = 0
+    
+    
     if (model.data is None):
         msg = 'Set value of {}.data.'.format(model.__class__.__name__)
         raise Exception('No data defined for fitting. '+msg)
@@ -312,9 +343,7 @@ def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
         res = runFitEx(model, maxiter=maxiter, loops=loops, areg=areg)
         return res
     if not (_quiet or guess) and maxiter>0:
-        _prog.start(**{'iter': maxiter})
-        #_log.clear(what='prog')
-        #_log.progress('Starting fit for < {:d} iterations.'.format(maxiter))
+        _prog.start(**{'clearlog':clearlog,'iter': maxiter})
     ndim = model.dist.shape[0]
     ndata = model.data.shape[0]
     xdata = model.data[:,0]
@@ -328,7 +357,7 @@ def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
             iterf = None
         else:
             iterf = fitcallb
-        minner = Minimizer(costFnc, model.params, fcn_args=(model, areg, guess), iter_cb=iterf)
+        minner = Minimizer(costFnc, model.params, fcn_args=(model, fitstat), iter_cb=iterf)
         model.result = minner.minimize(method='leastsq', 
                         params=model.params, ftol=model.ftol, epsfcn=model.epsfcn, max_nfev=maxiter)
         model.params = model.result.params
@@ -354,17 +383,15 @@ def runFit(model, maxiter=200, areg=0., bootstrap=False, loops=3, guess=False):
     if (model.avgrange is not None):
         av = getAverage(xdis, ydis, rang = model.avgrange)  
         model.avg = [av, 0.]
-    #if not (_quiet or guess) and maxiter>0: 
-        #_log.progress('runFit finished')
     if (model.result is not None):
         res = model.result.success
     else:
         res = True
     model.fitFinal()
     if not guess and maxiter>0: 
-        _prog.finished(**{'completed':res, 'chi2':model.chi, 'reg': model.reg})
-    #if not res:
-    #    _log.progress('Fit not completed.')
+        args = {'completed':res, 'FoM': model.reg, 'chi2':model.chi, 
+                'reg': (model.reg-model.chi)/areg}
+        _prog.finished(**args)
     return res
 
 def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
@@ -391,15 +418,18 @@ def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
                     success
     """
     global _chi2, _reg
+    # fit status object
+    fitstat = type('obj', (object,), {})
+    fitstat.areg = areg
+    fitstat.guess = guess
+    fitstat.loop = 0
+    fitstat.ireg = 0
+    
     if (model.data is None):
         msg = 'Set value of {}.data.'.format(model.__class__.__name__)
         raise Exception('No data defined for fitting. '+msg)
     
     if not (_quiet or guess) and maxiter>0:
-        #_log.clear(what='prog')
-        #fmt = 'Starting fit for < {:d} iterations'
-        #fmt += ' and {:d} loops for error estimate.'
-        #_log.progress(fmt.format(maxiter, loops))
         _prog.start_loops(**{'iter': maxiter, 'loops': loops})
     ndim = model.dist.shape[0]
     # length of distribution model arrays (number of nodes):  
@@ -425,12 +455,13 @@ def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
     xdis = model.dist[:,0]
     model.fitInit()
     for it in range(loops):
+        fitstat.loop = it+1
         _chi2 = np.inf
         _reg = np.inf
         model.resetParams()
         sam.shuffleEvents()
         model.data = model.addNoise(data0)
-        minner = Minimizer(costFnc, model.params, fcn_args=(model, areg, guess), iter_cb=fitcallb)
+        minner = Minimizer(costFnc, model.params, fcn_args=(model, fitstat), iter_cb=fitcallb)
         model.result = minner.minimize(method='leastsq', 
                             params=model.params, ftol=model.ftol, epsfcn=model.epsfcn, max_nfev=maxiter)
         model.params = model.result.params
@@ -464,7 +495,8 @@ def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
         #    _log.progress('Fit not completed.')
         if not (_quiet or guess):
             #_log.progress('Loop {:d}: chi2={:g}, reg={:g}\n'.format(it, _chi2, _reg))
-            args = {'loop':it, 'chi2':_chi2, 'reg':_reg}
+            args = {'loop':it+1, 'chi2':_chi2, 'FoM':_reg, 
+                    'reg': (_reg-_chi2)/areg}
             _prog.finished_loop(completed=model.result.success, **args)
     model.data = data0
     model.chi  = chi0/sump
@@ -508,7 +540,7 @@ def runFitEx(model, maxiter=200, loops=5, areg=0, guess=False):
     if (model.result is not None):
         if not (_quiet or guess):
             #_log.progress('runFitEx weights: '+str(pval)+'\n')
-            _prog.log('Loop weights: '+str(pval)+'\n')
+            _prog.log('Loop weights: '+str(pval/sump)+'\n')
         res = model.result.success
     else:
         res = True
@@ -937,9 +969,13 @@ class MCCfit(ABC):
             if (self.result is not None):
                 ss += "# Method: " + self.result.method + "\n"
             ss += "# Interpolation: " + intpmodels[self.intpmod]  + "\n"
-            ss += "# Chi2: {:g}".format(self.chi)  + "\n"
-            ss += "# Reg: {:g}".format(self.reg)  + "\n"
-            ss += "# Areg: {:g}".format(self.areg)  + "\n"
+            
+            rec = self.get_fit_record()
+            for key in rec:
+                ss += "# {}: {:g}".format(key, rec[key])  + "\n"
+            #ss += "# Chi2: {:g}".format(self.chi)  + "\n"
+            #ss += "# Reg: {:g}".format(self.reg)  + "\n"
+            #ss += "# Areg: {:g}".format(self.areg)  + "\n"
             if (self.avgrange is not None):
                 sm = '# Integral over x in [{:g}, {:g}]: {:g} +- {:g}\n'
                 ss += sm.format(self.avgrange[0],self.avgrange[1], 
@@ -965,6 +1001,26 @@ class MCCfit(ABC):
             self._log.exception(msg)
             # raise RuntimeError(strmsg)
         return res
+
+    def format_reglog(self, reglog):
+        """Format a table with regularization results.
+        
+        Parameters
+        ----------
+        reglog : list
+            List of records returned by :meth:`get_fit_record`        
+        """
+        nr = len(reglog)
+        if nr<1: return None
+        nc = len(reglog[0])         
+        hdr = (nc-1)*'{}\t' + '{}\n'
+        fmt = (nc-1)*'{:g}\t' + '{:g}\n'
+        keys = list(reglog[0].keys())
+        ss = hdr.format(*keys)
+        for ia in range(nr):
+            vals = list(reglog[ia].values())
+            ss += fmt.format(*vals)
+        return ss
 
     def saveInfoDepth(self, outpath, fname):                        
         """Save info depth table - obsolete. Use savePseudoStrain."""
@@ -993,7 +1049,22 @@ class MCCfit(ABC):
                 f.write('# Resolution data: '+fname + "\n")
                 f.write(ss)
                 f.close
-                
+    
+    def get_fit_record(self, loop=None, ireg=None):
+        """Create a record with fit results."""
+        rec = {}
+        rec['areg'] = self.areg
+        rec['FoM'] = self.reg
+        rec['chi2'] = self.chi
+        rec['reg'] = (self.reg-self.chi)/self.areg
+        if loop:
+            rec['loop'] = loop
+        if ireg:
+            rec['ireg'] = loop
+        return rec
+    
+             
+    
     def saveResults(self, outpath, fname, reglog=None):
         """Save fit results.
         
@@ -1003,8 +1074,8 @@ class MCCfit(ABC):
             Output path.
         fname : str
             File name.
-        reglog : dict
-            Log data from the regularization loop if any.
+        reglog : list
+            List of records returned by :meth:`get_fit_record` 
         
         """
         hasData = (self.data is not None)
@@ -1038,8 +1109,7 @@ class MCCfit(ABC):
             
             if (reglog is not None):
                 ss += '# Regularization log:\n'
-                for ia in range(reglog.shape[0]):
-                    ss += '{:g}\t{:g}\t{:g}\n'.format(*reglog[ia,:])
+                ss += self.format_reglog(reglog)
             
             print('Log saved in '+fn)
             with open(fn, 'w') as f:
@@ -1378,8 +1448,8 @@ class Sfit(MCCfit):
             Output path.
         file : str
             Output file name.
-        reglog : dict
-            Log data from the regularization loop if any.
+        reglog : list
+            List of records returned by :meth:`get_fit_record` 
         **kwargs : 
             Not used in this version. 
 
@@ -1392,6 +1462,13 @@ class Sfit(MCCfit):
             saveit=False
             outpng=''
         
+        # Report averaged value
+        if (self.avgrange is not None):
+            fmt = 'Integral over x in [{:g}, {:g}]: {:g} +- {:g}\n' 
+            msg = fmt.format(self.avgrange[0], self.avgrange[1], self.avg[0], 
+                             self.avg[1])
+            if (not _quiet): self._log.info(msg)
+        
         # Plot result, fit & model
         
         gr.plot_fit(self, what='eps', toplot=['fit','model'], 
@@ -1399,12 +1476,6 @@ class Sfit(MCCfit):
         # Save results
         self.saveResults(outpath, file, reglog=reglog)
         
-        # Report averaged value
-        if (self.avgrange is not None):
-            fmt = 'Integral over x in [{:g}, {:g}]: {:g} +- {:g}\n' 
-            msg = fmt.format(self.avgrange[0], self.avgrange[1], self.avg[0], 
-                             self.avg[1])
-            if (not _quiet): self._log.info(msg)
         
     def intFnc(self,x):
         """Return interpolated strain function value."""

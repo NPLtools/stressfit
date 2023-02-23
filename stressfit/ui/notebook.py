@@ -44,6 +44,32 @@ def _has_keys(args, keys):
     """Verify that all args are in keys."""
     return all (k in args for k in keys)
 
+
+class NotebookFitLogger(dataio.FitProgressLogger):
+    """FitProgressLogger with output to label widgets.
+    
+    Parameters
+    ----------
+    status_bar : stressfit.ui.widgets.StatusBar
+        StatusBar object for interim progress output.
+    output : ipywidgets.Output
+        Area for other printed output. 
+    
+    """
+    
+    def __init__(self, status_bar, output):
+        if not isinstance(status_bar, sw.StatusBar):
+            msg = 'NotebookFitLogger requires stressfit.ui.widgets.StatusBar'
+            raise Exception(msg)
+        super().__init__()
+        self.status_bar = status_bar
+        self.output = output
+    
+    def prog(self, **kwargs):
+        """Show fit progress."""
+        self.status_bar.value = kwargs
+        
+
 #%% Base abstract classes for input collections
 
 class UI_base:
@@ -479,8 +505,6 @@ class UI_base_list(UI_base):
         
     def update_widgets(self):
         """Update input widgets from data."""
-        #if self.name=='imodel':
-        #    self.message('{} update_widgets'.format(self.name), clear=False)
         for key in self._keys:
             if key in self._widgets:
                 self._widgets[key].value = copy.deepcopy(self._values['input'][key])
@@ -1974,8 +1998,8 @@ class UI_resolution(UI_base):
                 self.exception(str(e))
 
 
-class UI_fit_imodel(UI_base):
-    """Fit intensity model.
+class UI_fit_distr(UI_base):
+    """Fit distribution model.
     
     Parameters
     ----------
@@ -1984,24 +2008,31 @@ class UI_fit_imodel(UI_base):
         
     Example
     -------
-    `ifit = UI_fit_imodel('ifit')`
+    `ifit = UI_fit_distr('ifit')`
     
     `ifit.show()`
-    
-    
+
     """
     
     def __init__(self, name):
+        self._set_const()
         super().__init__(name, 
-                         ['data','model','nrec','npts', 'fit']) 
+                         ['data','model','nrec','npts', 'fit', 'reg']) 
         self.pgm_options = _uiconf.get_config('options')        
         # output area
         self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none'))         
         # select options
         self._options['data'] = _uiconf.item_keys('data')
-        self._options['model'] = _uiconf.item_keys('imodel')
+        self._options['model'] = _uiconf.item_keys(self._cid)
         # title
-        self.uiparam['title'] = 'Fit intensity model'
+        self.uiparam['title'] = self._title
+        
+        self._fit_status = {'iter': 0, 'FoM': 0.0, 'chi2': 0.0, 'reg': 0.0, 
+                            'loop': 0}
+    
+    def _set_const(self):
+        self._title = 'Fit intensity model'
+        self._cid = 'imodel'
 
     def _create_widgets(self, **kwargs): 
 
@@ -2043,6 +2074,21 @@ class UI_fit_imodel(UI_base):
         wdg = sw.FitControl(name='fit', value=self._values['fit'],
                             logger=self._logger)
         self._widgets['fit'] = wdg
+        
+        # regularization control parameters
+        wdg = sw.RegControl(name='reg', value=self._values['reg'],
+                            logger=self._logger)
+        self._widgets['reg'] = wdg
+        
+        # create status bar
+        layout = ipy.Layout(width='80%', border='none',
+                            margin='10px 10px 5px 10px')
+        self.status_bar = sw.StatusBar(name='ifit_status', 
+                                       value=self._fit_status,
+                                       layout=layout)
+        self.fitlogger = NotebookFitLogger(self.status_bar, 
+                                           self._logger.output_prog)
+        
 
     def _create_ui(self, **kwargs):
         
@@ -2052,7 +2098,8 @@ class UI_fit_imodel(UI_base):
         self._buttons.append(btn_run)
         
         btn_guess = ipy.Button(description='Guess',
-                                layout=ipy.Layout(width='80px'))
+                               tooltip='First estimate excluding convolution',
+                               layout=ipy.Layout(width='80px'))
         btn_guess.on_click(self._on_guess)
         self._buttons.append(btn_guess)
         
@@ -2061,25 +2108,24 @@ class UI_fit_imodel(UI_base):
         btn_fit.on_click(self._on_fit)
         self._buttons.append(btn_fit)
         
+        btn_reg = ipy.Button(description='Run loop',
+                     tooltip='Run regularization loop',
+                     layout=ipy.Layout(width='80px'))
+        btn_reg.on_click(self._on_reg)
+        
         layout = ipy.Layout(margin='10px 10px 5px 10px')
         box1 = ipy.VBox([self._widgets['data'].ui(), 
                          self._widgets['model'].ui(), 
                          self._widgets['nrec'].ui(),
                          self._widgets['npts'].ui()],
-                         layout=layout)               
-        box2 = ipy.VBox([self._widgets['fit'].ui()],
-                         layout=layout) 
-        #box2 = ipy.VBox([self._widgets['strain'], 
-        #                 self._widgets['resolution']],
-        #                 layout=layout)
-        #layout=ipy.Layout(margin='10px 5px 5px 10px', min_width='30%')
-        #box3 = ipy.VBox([self._widgets['rang'].ui(), 
-        #                 self._widgets['steps'].ui()],
-        #                 layout=layout)
-        
-        #style = {'margin': '5px 5px 5px 50px'}
+                         layout=layout)                       
+        regbox = ipy.HBox([ipy.Label('Regularization'), btn_reg])             
+        box2 = ipy.VBox([self._widgets['fit'].ui(),
+                         regbox, 
+                         self._widgets['reg'].ui()], 
+                        layout=layout)
         hbox = ipy.HBox([box1,box2])
-        box = ipy.VBox([hbox, self._out])
+        box = ipy.VBox([hbox, self.status_bar.ui(), self._out])
         return box
             
     def _get_output_filename(self, ext=''):
@@ -2088,9 +2134,329 @@ class UI_fit_imodel(UI_base):
         dname = self._widgets['data'].value
         
         if pfx:
-            base = '{}_{}_imodel'.format(pfx, dname)
+            base = '{}_{}_{}'.format(self._cid, pfx, dname)
         else:
-            base = '{}_imodel'.format(dname)
+            base = '{}_{}'.format(self._cid, dname)
+        if ext:
+            fname = base + ext
+        else:
+            fname = base
+        return fname
+    
+    def _create_fitobj(self, scan, model, scale, par):
+        fitobj = comm.define_ifit(scan, model['dist'], par['nrec'], 
+                                ndim=par['npts'])        
+        # define scaling parameters and interpolation model
+        fitobj.defScaling(scale['values'], scale['fit'], 
+                        minval=[0., 0., -np.inf])
+        fitobj.setInterpModel(model['interp'])
+        return fitobj
+    
+    def _prepare(self):
+        """Make all settings necessary to run commands.
+        
+        Returns
+        -------
+        MCCFit object
+        
+        """
+        self.clear('all')
+        self._out.clear_output()
+        # update values from widgets
+        self.update_values()
+        # reload all input data if needed
+        _uiconf.reload_all()
+        # get command parameters
+        par = _uiconf.get_config(self.name)
+        # selected scan data 
+        scan = _uiconf.get_scan(par['data'])
+        # selected model
+        model = _uiconf.get_item(self._cid, item=par['model'])
+        # scale parameters
+        scale = model['scale']
+        # set scan parameters and sampling
+        comm.set_scan(scan)        
+        # set attenuation
+        att = _uiconf.attenuation
+        comm.set_attenuation(att)        
+        # create fit object
+        fitobj = self._create_fitobj(scan, model, scale, par)
+        return fitobj
+    
+    def _on_replot(self,b):
+        try:
+            fitobj = self._prepare()        
+            with self._out:
+                # create smeared curve: run without fitting, maxiter=0
+                comm.run_fit(fitobj, maxiter=0, outname='')
+        except Exception as e:
+            self.exception(str(e))
+        
+    def _on_guess(self,b):
+        try:
+            fitobj = self._prepare()    
+            par = _uiconf.get_config(self.name)
+            mc.set_progress_logger(self.fitlogger)
+            with self._out:
+                # run guess fit
+                comm.run_fit_guess(fitobj,
+                                   maxiter=par['fit']['maxiter'], 
+                                   ar=par['fit']['ar'],
+                                   outname='')
+        except Exception as e:
+            self.exception(str(e))
+            
+    def _on_fit(self,b):
+        try:
+            fitobj = self._prepare()  
+            par = _uiconf.get_config(self.name)
+            mc.set_progress_logger(self.fitlogger)
+            with self._out:
+                # run fit                
+                comm.run_fit(fitobj, 
+                             maxiter=par['fit']['maxiter'], 
+                             loops=par['fit']['loops'],
+                             ar=par['fit']['ar'],
+                             guess=par['fit']['guess'],
+                             bootstrap=par['fit']['loops']>2,
+                             outname=None)
+                # plot results
+                save = self.pgm_options['save']
+                if save:
+                    fname = self._get_output_filename()
+                else:
+                    fname = ''
+                comm.report_fit(fitobj, fname)
+        except Exception as e:
+            self.exception(str(e))            
+
+    def _on_reg(self,b):
+        try:
+            fitobj = self._prepare()  
+            par = _uiconf.get_config(self.name)
+            with self._out:
+                rang = par['reg']['range']
+                steps = par['reg']['steps']
+                dr = (rang[1]-rang[0])/(steps-1)
+                ar = steps*[0]
+                for i in range(steps):
+                    ar[i] = rang[0] + i*dr
+                save = self.pgm_options['save']
+                if save:
+                    fname = self._get_output_filename()
+                else:
+                    fname = ''
+                mc.set_progress_logger(self.fitlogger)
+                comm.run_fit_reg(fitobj, 
+                                 maxiter=par['fit']['maxiter'], 
+                                 ar=ar, 
+                                 guess=par['fit']['guess'],
+                                 outname=fname,
+                                 )
+        except Exception as e:
+            self.exception(str(e)) 
+        
+class UI_fit_imodel(UI_fit_distr):
+    """Fit intensity model.
+    
+    Parameters
+    ----------
+    name : str
+        Unique name for the instance.  
+        
+    Example
+    -------
+    `ifit = UI_fit_imodel('ifit')`
+    
+    `ifit.show()`
+    
+    """
+
+    def _set_const(self):
+        self._title = 'Fit intensity model'
+        self._cid = 'imodel'
+
+    def _create_fitobj(self, scan, model, scale, par):
+        fitobj = comm.define_ifit(scan, model['dist'], par['nrec'], 
+                                ndim=par['npts'])        
+        # define scaling parameters and interpolation model
+        fitobj.defScaling(scale['values'], scale['fit'], 
+                        minval=[0., 0., -np.inf])
+        fitobj.setInterpModel(model['interp'])
+        return fitobj
+         
+            
+class UI_fit_emodel(UI_fit_distr):
+    """Fit strain model.
+    
+    Parameters
+    ----------
+    name : str
+        Unique name for the instance. 
+        
+    Example
+    -------
+    `efit = UI_fit_emodel('efit')`
+    
+    `efit.show()`
+    
+    """
+    
+    def _set_const(self):
+        self._title = 'Fit strain model'
+        self._cid = 'emodel'
+
+    def _create_fitobj(self, scan, model, scale, par):       
+        # create sfit object
+        fitobj = comm.define_sfit(scan, model['dist'], par['nrec'], 
+                                ndim=par['npts'], 
+                                z0=scale['z0'],
+                                eps0=scale['eps0'])  
+        fitobj.setInterpModel(model['interp'])
+        
+        return fitobj
+    
+
+class old_UI_fit_imodel(UI_base):
+    """Fit intensity model.
+    
+    Parameters
+    ----------
+    name : str
+        Unique name for the instance.  
+        
+    Example
+    -------
+    `ifit = UI_fit_imodel('ifit')`
+    
+    `ifit.show()`
+    
+    
+    """
+    
+    def __init__(self, name):
+        self._set_const()
+        super().__init__(name, 
+                         ['data','model','nrec','npts', 'fit', 'reg']) 
+        self.pgm_options = _uiconf.get_config('options')        
+        # output area
+        self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none'))         
+        # select options
+        self._options['data'] = _uiconf.item_keys('data')
+        self._options['model'] = _uiconf.item_keys(self._cid)
+        # title
+        self.uiparam['title'] = self._title
+        
+        self._fit_status = {'iter': 0, 'FoM': 0.0, 'chi2': 0.0, 'reg': 0.0, 
+                            'loop': 0}
+    
+    def _set_const(self):
+        self._title = 'Fit intensity model'
+        self._cid = 'imodel'
+
+    def _create_widgets(self, **kwargs): 
+
+        # sampling selection
+        wdg = sw.SelectInput(name='data', label='Data',
+                          options=self._options['data'], 
+                          value=self._values['data'],
+                          width_label=80, width_drop=100,
+                          logger=self._logger)
+        self._widgets['data'] = wdg
+        # orientation selection
+        wdg = sw.SelectInput(name='model', label='Model',
+                          options=self._options['model'], 
+                          value=self._values['model'],
+                          width_label=80, width_drop=100,
+                          logger=self._logger)
+        #wdg =  create_select(name='geometry', label='Orientation', 
+        #                     options=self._options['geometry'], 
+        #                     width_label=80, width_drop=100)
+        self._widgets['model'] = wdg
+        # number of events to plot
+        wdg = sw.ArrayInput(name='nrec', label='Events',
+                         value=self._values['nrec'], 
+                         hint='',
+                         isInt=True, step=1000, lmin=1000,lmax=100000,
+                         width_label=80, width_num=100,
+                         logger=self._logger)   
+        self._widgets['nrec'] = wdg 
+        # number of points on model curve
+        wdg = sw.ArrayInput(name='npts', label='Points',
+                         value=self._values['npts'], 
+                         hint='',
+                         isInt=True, step=10, lmin=10,lmax=500,
+                         width_label=80, width_num=100,
+                         logger=self._logger)   
+        self._widgets['npts'] = wdg
+        
+        # fit control parameters
+        wdg = sw.FitControl(name='fit', value=self._values['fit'],
+                            logger=self._logger)
+        self._widgets['fit'] = wdg
+        
+        # regularization control parameters
+        wdg = sw.RegControl(name='reg', value=self._values['reg'],
+                            logger=self._logger)
+        self._widgets['reg'] = wdg
+        
+        # create status bar
+        layout = ipy.Layout(width='80%', border='none',
+                            margin='10px 10px 5px 10px')
+        self.status_bar = sw.StatusBar(name='ifit_status', 
+                                       value=self._fit_status,
+                                       layout=layout)
+        self.fitlogger = NotebookFitLogger(self.status_bar, 
+                                           self._logger.output_prog)
+        
+
+    def _create_ui(self, **kwargs):
+        
+        btn_run = ipy.Button(description='Plot',
+                                layout=ipy.Layout(width='80px'))
+        btn_run.on_click(self._on_replot)
+        self._buttons.append(btn_run)
+        
+        btn_guess = ipy.Button(description='Guess',
+                               tooltip='First estimate excluding convolution',
+                               layout=ipy.Layout(width='80px'))
+        btn_guess.on_click(self._on_guess)
+        self._buttons.append(btn_guess)
+        
+        btn_fit = ipy.Button(description='Fit',
+                                layout=ipy.Layout(width='80px'))
+        btn_fit.on_click(self._on_fit)
+        self._buttons.append(btn_fit)
+        
+        btn_reg = ipy.Button(description='Run loop',
+                     tooltip='Run regularization loop',
+                     layout=ipy.Layout(width='80px'))
+        btn_reg.on_click(self._on_reg)
+        
+        layout = ipy.Layout(margin='10px 10px 5px 10px')
+        box1 = ipy.VBox([self._widgets['data'].ui(), 
+                         self._widgets['model'].ui(), 
+                         self._widgets['nrec'].ui(),
+                         self._widgets['npts'].ui()],
+                         layout=layout)                       
+        regbox = ipy.HBox([ipy.Label('Regularization'), btn_reg])             
+        box2 = ipy.VBox([self._widgets['fit'].ui(),
+                         regbox, 
+                         self._widgets['reg'].ui()], 
+                        layout=layout)
+        hbox = ipy.HBox([box1,box2])
+        box = ipy.VBox([hbox, self.status_bar.ui(), self._out])
+        return box
+            
+    def _get_output_filename(self, ext=''):
+        """Generate base output filename."""
+        pfx = self.pgm_options['prefix']
+        dname = self._widgets['data'].value
+        
+        if pfx:
+            base = '{}_{}_{}'.format(self._cid, pfx, dname)
+        else:
+            base = '{}_{}'.format(self._cid, dname)
         if ext:
             fname = base + ext
         else:
@@ -2110,11 +2476,9 @@ class UI_fit_imodel(UI_base):
         # selected scan data 
         scan = _uiconf.get_scan(par['data'])
         # selected model
-        model = _uiconf.get_item('imodel',item=par['model'])
+        model = _uiconf.get_item(self._cid, item=par['model'])
         # scale parameters
         scale = model['scale']
-        
-        
         # set scan parameters and sampling
         comm.set_scan(scan)        
         # set attenuation
@@ -2131,36 +2495,38 @@ class UI_fit_imodel(UI_base):
     
     def _on_replot(self,b):
         try:
-            ifit = self._prepare()        
+            fitobj = self._prepare()        
             with self._out:
                 # create smeared curve: run without fitting, maxiter=0
-                comm.run_fit(ifit, maxiter=0, outname='')
+                comm.run_fit(fitobj, maxiter=0, outname='')
         except Exception as e:
             self.exception(str(e))
         
     def _on_guess(self,b):
         try:
-            ifit = self._prepare()    
+            fitobj = self._prepare()    
             par = _uiconf.get_config(self.name)
+            mc.set_progress_logger(self.fitlogger)
             with self._out:
-                # create smeared curve: run without fitting, maxiter=0
-                comm.run_fit_guess(ifit,
+                # run guess fit
+                comm.run_fit_guess(fitobj,
                                    maxiter=par['fit']['maxiter'], 
-                                   areg=par['fit']['areg'],
+                                   ar=par['fit']['ar'],
                                    outname='')
         except Exception as e:
             self.exception(str(e))
             
     def _on_fit(self,b):
         try:
-            ifit = self._prepare()  
+            fitobj = self._prepare()  
             par = _uiconf.get_config(self.name)
+            mc.set_progress_logger(self.fitlogger)
             with self._out:
-                # create smeared curve: run without fitting, maxiter=0
-                comm.run_fit(ifit, 
+                # run fit                
+                comm.run_fit(fitobj, 
                              maxiter=par['fit']['maxiter'], 
                              loops=par['fit']['loops'],
-                             areg=par['fit']['areg'],
+                             ar=par['fit']['ar'],
                              guess=par['fit']['guess'],
                              bootstrap=par['fit']['loops']>2,
                              outname=None)
@@ -2170,12 +2536,38 @@ class UI_fit_imodel(UI_base):
                     fname = self._get_output_filename()
                 else:
                     fname = ''
-                comm.report_fit(ifit, fname)
+                comm.report_fit(fitobj, fname)
         except Exception as e:
             self.exception(str(e))            
- 
+
+    def _on_reg(self,b):
+        try:
+            fitobj = self._prepare()  
+            par = _uiconf.get_config(self.name)
+            with self._out:
+                rang = par['reg']['range']
+                steps = par['reg']['steps']
+                dr = (rang[1]-rang[0])/(steps-1)
+                ar = steps*[0]
+                for i in range(steps):
+                    ar[i] = rang[0] + i*dr
+                save = self.pgm_options['save']
+                if save:
+                    fname = self._get_output_filename()
+                else:
+                    fname = ''
+                mc.set_progress_logger(self.fitlogger)
+                comm.run_fit_reg(fitobj, 
+                                 maxiter=par['fit']['maxiter'], 
+                                 ar=ar, 
+                                 guess=par['fit']['guess'],
+                                 outname=fname,
+                                 )
+        except Exception as e:
+            self.exception(str(e)) 
+        
             
-class UI_fit_emodel(UI_base):
+class old_UI_fit_emodel(UI_base):
     """Fit strain model.
     
     Parameters
@@ -2192,17 +2584,23 @@ class UI_fit_emodel(UI_base):
     """
     
     def __init__(self, name):
+        self._set_const()
         super().__init__(name, 
-                         ['data','model','nrec','npts', 'fit']) 
+                         ['data','model','nrec','npts', 'fit', 'reg']) 
         self.pgm_options = _uiconf.get_config('options')        
         # output area
         self._out = ipy.Output(layout=ipy.Layout(width='100%', border='none'))         
         # select options
         self._options['data'] = _uiconf.item_keys('data')
-        self._options['model'] = _uiconf.item_keys('emodel')
+        self._options['model'] = _uiconf.item_keys(self._cid)
         # title
-        self.uiparam['title'] = 'Fit strain model'
-
+        self.uiparam['title'] = self._title
+        self._fit_status = {'iter': 0, 'FoM': 0.0, 'chi2': 0.0, 'reg': 0.0, 
+                            'loop': 0}
+    def _set_const(self):
+        self._title = 'Fit strain model'
+        self._cid = 'emodel'
+        
     def _create_widgets(self, **kwargs): 
 
         # sampling selection
@@ -2243,43 +2641,59 @@ class UI_fit_emodel(UI_base):
         wdg = sw.FitControl(name='fit', value=self._values['fit'],
                             logger=self._logger)
         self._widgets['fit'] = wdg
+        
+        # regularization control parameters
+        wdg = sw.RegControl(name='reg', value=self._values['reg'],
+                            logger=self._logger)
+        self._widgets['reg'] = wdg
+        
+        # create status bar
+        layout = ipy.Layout(width='80%', border='none',
+                            margin='10px 10px 5px 10px')
+        self.status_bar = sw.StatusBar(name='efit_status', 
+                                       value=self._fit_status,
+                                       layout=layout)
+        self.fitlogger = NotebookFitLogger(self.status_bar, 
+                                           self._logger.output_prog)
 
     def _create_ui(self, **kwargs):
         
         btn_run = ipy.Button(description='Plot',
-                                layout=ipy.Layout(width='80px'))
+                             layout=ipy.Layout(width='80px'))
         btn_run.on_click(self._on_replot)
         self._buttons.append(btn_run)
         
         btn_guess = ipy.Button(description='Guess',
-                                layout=ipy.Layout(width='80px'))
+                               tooltip='First estimate excluding convolution',
+                               layout=ipy.Layout(width='80px'))
         btn_guess.on_click(self._on_guess)
         self._buttons.append(btn_guess)
         
         btn_fit = ipy.Button(description='Fit',
-                                layout=ipy.Layout(width='80px'))
+                             layout=ipy.Layout(width='80px'))
         btn_fit.on_click(self._on_fit)
         self._buttons.append(btn_fit)
+
+
+        btn_reg = ipy.Button(description='Run loop',
+                             tooltip='Run regularization loop',
+                             layout=ipy.Layout(width='80px'))
+        btn_reg.on_click(self._on_reg)
         
         layout = ipy.Layout(margin='10px 10px 5px 10px')
         box1 = ipy.VBox([self._widgets['data'].ui(), 
                          self._widgets['model'].ui(), 
                          self._widgets['nrec'].ui(),
                          self._widgets['npts'].ui()],
-                         layout=layout)               
-        box2 = ipy.VBox([self._widgets['fit'].ui()],
-                         layout=layout) 
-        #box2 = ipy.VBox([self._widgets['strain'], 
-        #                 self._widgets['resolution']],
-        #                 layout=layout)
-        #layout=ipy.Layout(margin='10px 5px 5px 10px', min_width='30%')
-        #box3 = ipy.VBox([self._widgets['rang'].ui(), 
-        #                 self._widgets['steps'].ui()],
-        #                 layout=layout)
-        
+                         layout=layout)  
+        regbox = ipy.HBox([ipy.Label('Regularization'), btn_reg])             
+        box2 = ipy.VBox([self._widgets['fit'].ui(),
+                         regbox, 
+                         self._widgets['reg'].ui()], 
+                        layout=layout)  
         #style = {'margin': '5px 5px 5px 50px'}
-        hbox = ipy.HBox([box1,box2])
-        box = ipy.VBox([hbox, self._out])
+        hbox = ipy.HBox([box1, box2])
+        box = ipy.VBox([hbox, self.status_bar.ui(), self._out])
         return box
             
     def _get_output_filename(self, ext=''):
@@ -2310,7 +2724,7 @@ class UI_fit_emodel(UI_base):
         # selected scan data 
         scan = _uiconf.get_scan(par['data'])
         # selected model
-        model = _uiconf.get_item('emodel',item=par['model'])
+        model = _uiconf.get_item(self._cid,item=par['model'])
         # scale parameters
         scale = model['scale']
         
@@ -2330,36 +2744,38 @@ class UI_fit_emodel(UI_base):
     
     def _on_replot(self,b):
         try:
-            sfit = self._prepare()        
+            fitobj = self._prepare()        
             with self._out:
                 # create smeared curve: run without fitting, maxiter=0
-                comm.run_fit(sfit, maxiter=0, outname='')
+                comm.run_fit(fitobj, maxiter=0, outname='')
         except Exception as e:
             self.exception(str(e))
         
     def _on_guess(self,b):
         try:
-            sfit = self._prepare()    
+            fitobj = self._prepare()    
             par = _uiconf.get_config(self.name)
+            mc.set_progress_logger(self.fitlogger)
             with self._out:
                 # create smeared curve: run without fitting, maxiter=0
-                comm.run_fit_guess(sfit,
+                comm.run_fit_guess(fitobj,
                                    maxiter=par['fit']['maxiter'], 
-                                   areg=par['fit']['areg'],
+                                   ar=par['fit']['ar'],
                                    outname='')
         except Exception as e:
             self.exception(str(e))
             
     def _on_fit(self,b):
         try:
-            sfit = self._prepare()  
+            fitobj = self._prepare()  
             par = _uiconf.get_config(self.name)
+            mc.set_progress_logger(self.fitlogger)
             with self._out:
-                # create smeared curve: run without fitting, maxiter=0
-                comm.run_fit(sfit, 
+                # run fit 
+                comm.run_fit(fitobj, 
                              maxiter=par['fit']['maxiter'], 
                              loops=par['fit']['loops'],
-                             areg=par['fit']['areg'],
+                             ar=par['fit']['ar'],
                              guess=par['fit']['guess'],
                              bootstrap=par['fit']['loops']>2,
                              outname=None)
@@ -2369,10 +2785,37 @@ class UI_fit_emodel(UI_base):
                     fname = self._get_output_filename()
                 else:
                     fname = ''
-                comm.report_fit(sfit, fname)
+                comm.report_fit(fitobj, fname)
         except Exception as e:
             self.exception(str(e))            
-  
+
+    def _on_reg(self,b):
+        try:
+            fitobj = self._prepare()  
+            par = _uiconf.get_config(self.name)
+            with self._out:
+                rang = par['reg']['range']
+                steps = par['reg']['steps']
+                dr = (rang[1]-rang[0])/(steps-1)
+                ar = steps*[0]
+                for i in range(steps):
+                    ar[i] = rang[0] + i*dr
+                save = self.pgm_options['save']
+                if save:
+                    fname = self._get_output_filename()
+                else:
+                    fname = ''
+                mc.set_progress_logger(self.fitlogger)
+                comm.run_fit_reg(fitobj, 
+                                 maxiter=par['fit']['maxiter'], 
+                                 ar=ar, 
+                                 guess=par['fit']['guess'],
+                                 outname=fname,
+                                 )
+        except Exception as e:
+            self.exception(str(e))    
+
+
 #%% Top level UI class
 
 class UI():
@@ -2401,7 +2844,7 @@ class UI():
         self._msg = ipy.Output(layout=msgl)
         self._prog = ipy.Output(layout=msgl)
         # assign progress panel to fitting log
-        mc._prog.output = self._prog
+        mc.get_progress_logger().output = self._prog
         self._logger = dataio.logger()
         self._logger.output_short = self._note
         self._logger.output_msg = self._msg

@@ -51,14 +51,13 @@ def get_plot_pseudostrain(mcfit):
     """
     data = mcfit.infodepth
     result = {}
-    sres = {}
-    ires = {}
+    sres = _plot_data_template()
+    ires = _plot_data_template()
     # strain
-    sres['type'] = 'graph'
     sres['title'] = 'Pseudo-strain'
     sres['xlabel'] = 'Scan position, mm'
     sres['ylabel'] = 'Strain,  1e-6'
-    sres['grid'] = True
+    sres['legend'] = False
     item = {}
     item['x'] = data[:,0]
     item['y'] = data[:,4]
@@ -67,11 +66,10 @@ def get_plot_pseudostrain(mcfit):
     sres['items'] = [item]
     result['strain'] = sres
     # intensity
-    ires['type'] = 'graph'
     ires['title'] = 'Sampling intensity'
     ires['xlabel'] = 'Scan position, mm'
     ires['ylabel'] = 'Intensity, rel. units'
-    ires['grid'] = True
+    ires['legend'] = False
     item = {}
     item['x'] = data[:,0]
     item['y'] = data[:,3]
@@ -240,8 +238,7 @@ def get_plot_depth(mcfit):
         
     """ 
     data = None
-    toplot = {}
-    toplot['items'] = []
+    toplot = _plot_data_template()
     toplot['type'] = 'twinx'
     if mcfit.resolution is not None:
         data = mcfit.resolution
@@ -258,7 +255,6 @@ def get_plot_depth(mcfit):
         toplot['xlabel'] = 'Scan position, mm'
         toplot['ylabel'] = ['Information depth,  mm']
         toplot['ylabel'].append('Sampling width,  mm')
-        toplot['legend'] = True
         item = {}
         item['iax'] = 0
         item['fmt'] = 'bo-'
@@ -286,13 +282,11 @@ def get_plot_cog(mcfit):
     Return
     ------
     dict
-        Data structure prepared for plotting by :func:`plot_twins`
+        Data structure prepared for plotting by :func:`plot_graph`
         
     """ 
     data = None
-    toplot = {}
-    toplot['type'] = 'graph'
-    toplot['items'] = []
+    toplot = _plot_data_template()
     if mcfit.resolution is None:
         return toplot
     x = mcfit.resolution['x']
@@ -300,7 +294,6 @@ def get_plot_cog(mcfit):
     toplot['title'] = 'Centre of gravity'
     toplot['xlabel'] = 'Scan position, mm'
     toplot['ylabel'] = 'Centre of gravity, mm'
-    toplot['legend'] = True
     
     fmts = ['ro-','bo-','go-']
     labels = ['x','y','z']
@@ -346,12 +339,10 @@ def get_plot_comparison(simdata, expdata):
     """
     def exp_to_dict(expdata, what='int'):
         # convert exp. data do dict for plotting
-        out = {}
+        out = _plot_data_template()
         edata = {}
-        out['type'] = 'graph'
-        out['title'] = ''
-        out['grid'] = True
-        out['legend'] = True
+        edata['label'] = 'experiment'
+        edata['fmt'] = 'ko'
         out['xlabel'] = 'Scan position, mm'
         if what=='int':
             out['title'] = expdata['intfile']
@@ -365,8 +356,8 @@ def get_plot_comparison(simdata, expdata):
             edata['x'] = expdata['eps'][:,0]
             edata['y'] = expdata['eps'][:,1]
             edata['yerr'] = expdata['eps'][:,2]
-        out['items'] = []
-        return out, edata
+        out['items'].append(edata)
+        return out
     
     def scale(data, A=1, B=0, x0=0):
         """Scale intensity data."""
@@ -387,27 +378,13 @@ def get_plot_comparison(simdata, expdata):
         else:
             dsim = None
         # strain
-        toplot, edata = exp_to_dict(dexp, what='eps')
-        item = {}
-        item['label'] = 'experiment'
-        item['fmt'] = 'ko' 
-        item['x'] = edata['x']
-        item['y'] = edata['y']
-        item['yerr'] = edata['yerr']
-        toplot['items'].append(item)
+        toplot = exp_to_dict(dexp, what='eps')
         if dsim and 'strain' in dsim:
             toplot['items'].extend(dsim['strain']['items'])
         coll[key+'_s'] = toplot            
         # intensity
         if 'int' in dexp and dexp['int'] is not None:
-            toplot, edata  = exp_to_dict(dexp, what='int')
-            item = {}
-            item['label'] = 'experiment'
-            item['fmt'] = 'ko' 
-            item['x'] = edata['x']
-            item['y'] = edata['y']
-            item['yerr'] = edata['yerr']
-            toplot['items'].append(item)
+            toplot  = exp_to_dict(dexp, what='int')
             if dsim and 'intensity' in dsim:
                 # try to scale intensity to match the data
                 for item in dsim['intensity']['items']:
@@ -420,6 +397,60 @@ def get_plot_comparison(simdata, expdata):
                     toplot['items'].append(item_scaled)
             coll[key+'_i'] = toplot      
     return coll    
+
+def get_plot_reglog(reglog):
+    """Collect data for regularization plot.
+    
+    Parameters
+    ----------
+    reglog : list
+            List of records returned by :meth:`get_fit_record` of mccfit.   
+    Return
+    ------
+    dict
+        Data structure prepared for plotting by :func:`plot_twins`
+        
+    """ 
+    toplot = _plot_data_template()
+    toplot['type'] = 'twinx'
+    toplot['title'] = 'Regularization scan'
+    toplot['xlabel'] = 'a_r = log10(areg)+10'
+    toplot['ylabel'] = ['chi2']
+    toplot['ylabel'].append('Reg. term value')    
+    # collect data
+    nr = len(reglog)
+    ar = nr*[0]
+    chi = nr*[0]
+    reg = nr*[0]
+    for i in range(nr):
+        areg = reglog[i]['areg']
+        ar[i] = np.log10(areg)+10
+        chi[i] = reglog[i]['chi2']
+        reg[i] = reglog[i]['reg']    
+    # chi2
+    item = {}
+    item['iax'] = 0
+    item['fmt'] = 'ro-'
+    item['x'] = ar
+    item['y'] = chi
+    item['label'] = 'chi2'
+    toplot['items'].append(item)
+    # regularization term
+    item = {}
+    item['iax'] = 1
+    item['fmt'] = 'b^-'
+    item['x'] = ar
+    item['y'] = reg
+    item['label'] = 'reg'
+    toplot['items'].append(item)    
+
+    toplot['yscale'] = 'log'
+    toplot['grid'] = {}
+    toplot['grid']['minor'] = {'color':'0.7','linestyle': '-'}
+    toplot['grid']['major'] = {'color':'0.7','linestyle': '-'}
+   
+    return toplot
+
     
 #%% Top level plot functions        
 
@@ -501,7 +532,7 @@ def plot_fit(mcfit, what='int', toplot=['fit','model'],
 
     
 def plot_comparison(simdata, expdata, title='', inline=True, save=False, file=''):
-    """Plotcomparison of experimental and simulated data.
+    """Plot comparison of experimental and simulated data.
 
     Lists of experimental and simulated data sets are provided as  
     arguments (dict). The keys of simdata and expdata must match in 
@@ -525,6 +556,24 @@ def plot_comparison(simdata, expdata, title='', inline=True, save=False, file=''
         plot_collection(coll, dim=2, inline=inline, title=title,
                         save=save, file=file)      
     
+
+    
+def plot_reglog(reglog, save=False, file=''):
+    """Plot results of regularization scan.
+    
+    Parameters
+    ----------
+    reglog : list
+            List of records returned by :meth:`get_fit_record` of mccfit.
+    save : boolean
+       Save plot as PNG.
+    file : str
+        File name for saved plot.
+    """
+    toplot = get_plot_reglog(reglog)
+    plot_twins(toplot, save=save, file=file)
+    
+
 
 #%% General plot functions using dict structures on input
 
@@ -779,6 +828,13 @@ def plot_graph(data, ax=None, save=False, file=''):
         ax1.set_xlim(data['xlim'])
     if 'ylim' in data:
         ax1.set_ylim(data['ylim'])
+        
+    if 'xscale' in data:    
+        ax1.set_xscale(data['xscale']) 
+    if 'yscale' in data:    
+        ax1.set_yscale(data['yscale']) 
+    
+    # don't show/save if it makes part of a multi-cell plot 
     if ax is None:
         fn = str(file)
         if (save and fn):
@@ -849,14 +905,32 @@ def plot_twins(data, ax=None, save=False, file=''):
                 labs.append(args[''])
     if 'xlim' in data:
         ax1.set_xlim(data['xlim'])
+    if 'xscale' in data:    
+        ax1.set_xscale(data['xscale'])         
     if 'ylim' in data:
-        ax1.set_ylim(data['ylim'])
+        for iax in [0,1]:
+            ax[iax].set_ylim(data['ylim'])
+    if 'yscale' in data: 
+        for iax in [0,1]:
+            axes[iax].set_yscale(data['yscale']) 
     if 'legend' in data:
         if isinstance(data['legend'], str):
             loc = data['legend']
         else:
             loc = 'best'
         ax1.legend(lns, labs, loc=loc, frameon=True)
+
+    if 'grid' in data:
+        if isinstance(data['grid'], dict):
+            if 'major' in data['grid']:
+                if 'minor' in data['grid']:
+                    ax1.minorticks_on()
+                    ax1.grid(b=True, which='minor', **data['grid']['minor'])
+                ax1.grid(b=True, which='major', **data['grid']['major'])
+            else:
+                ax1.grid(**data['grid'])
+        else:
+            ax1.grid()
     
     if ax is None:
         fn = str(file)
@@ -958,7 +1032,6 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
     """
     has_sampling = sampling is not None
     
-    
     # centre in local coord.
     rc = shape.getLocalPos([0., 0., 0.])
     if (proj == 0):
@@ -974,8 +1047,6 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
     xmax = +0.5*rang[0] + rc[ix]
     ymin = -0.5*rang[1] + rc[iy]
     ymax = +0.5*rang[1] + rc[iy]
-    
-    
     
     if has_sampling:
         nd = sampling.nev

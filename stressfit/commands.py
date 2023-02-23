@@ -3,6 +3,7 @@
 """Top-level functions useful for running stressfit scripts."""
 
 import numpy as np
+from contextlib import nullcontext
 import stressfit.sample as sam
 import stressfit.mccfit as mc
 import stressfit.graphs as gr
@@ -876,7 +877,7 @@ def define_sfit(scan, nodes, nev, ndim=200, z0=0.0, eps0=False, constFnc=None,
     sfit.defScaling(par=[1., e0, z0], vary=[0, 0, 0])
     return sfit
 
-def run_fit_guess(model, maxiter=100, areg=1e-5, outname=None):
+def run_fit_guess(model, maxiter=100, ar=5.0, outname=None, **kwargs):
     """Run guess fit.
      
     Fast fit which neglects smearing, only subtracts pseudo-strains. 
@@ -887,20 +888,26 @@ def run_fit_guess(model, maxiter=100, areg=1e-5, outname=None):
         Instance of a model class from ``stressfit.mccfit`` (Ifit or Sfit)
     maxiter : int, optional
         Maximum number of iterations. 
-    areg : array of float
-        Regularization parameters.The length of the array defines the number of
-        fits.
+    ar : float
+        Regularization parameter. Since version 1.1, the values are defined 
+        as log10(a)+10, where a is actual regularization coefficient.
     outname: str, optional
         Filename for output data.
         Set to empty string to suppress output except of plots. 
         Set to None to suppress any output.
     """
-    mc.runFit(model, maxiter=maxiter, areg=areg, guess=True);
+    # handle backward compatibility, obsolete areg
+    if 'areg' in kwargs:
+        a = kwargs['areg']
+        ar = np.log10(a)+10
+    else:
+        a = 10**(ar-10)
+    mc.runFit(model, maxiter=maxiter, areg=a, guess=True);
     if outname is not None:
         report_fit(model, outname)
         
-def run_fit(model, maxiter=100, areg=1e-5, outname=None, guess=False, 
-            bootstrap=False, loops=3):
+def run_fit(model, maxiter=100, ar=5.0, outname=None, guess=False, 
+            bootstrap=False, loops=3, **kwargs):
     """Run fit on given model.
 
     Parameters
@@ -909,11 +916,10 @@ def run_fit(model, maxiter=100, areg=1e-5, outname=None, guess=False,
         Instance of a model class from ``stressfit.mccfit`` (Ifit or Sfit)
     maxiter : int, optional
         Maximum number of iterations. 
-    areg : float
-        Regularization parameter.
-    outname: str, optional
-        Filename for output data. A prefix 'a(n)_' will be added for yeach loop.
-        Set to empty string to suppress output except of intermediate plots. 
+    ar : float
+        Regularization parameter. Since version 1.1, the values are defined 
+        as log10(a)+10, where a is actual regularization coefficient.
+    outname: str, optional 
         Set to None to suppress any output.
     guess : bool, optional
         If True, run first a guess fit. It is fast, but neglects smearing, 
@@ -925,19 +931,25 @@ def run_fit(model, maxiter=100, areg=1e-5, outname=None, guess=False,
         Number of cycles for the bootstrap method.
 
     """
+    # handle backward compatibility, obsolete areg
+    if 'areg' in kwargs:
+        a = kwargs['areg']
+        ar = np.log10(a)+10
+    else:
+        a = 10**(ar-10)
     # choose randomly a subset of sampling events
     sam.shuffleEvents()
     
     if guess:
-        run_fit_guess(model, maxiter=maxiter, areg=areg, outname=None)
-    
-    mc.runFit(model, maxiter=maxiter, areg=areg, bootstrap=bootstrap, 
+        run_fit_guess(model, maxiter=maxiter, areg=ar, outname=None)    
+    mc.runFit(model, maxiter=maxiter, areg=a, bootstrap=bootstrap, 
                         loops=loops);
  
     if outname is not None:
         report_fit(model, outname, use_int=True) 
             
-def run_fit_reg(model, maxiter=100, areg=[1e-5, 1e-4], outname=None, guess=True):
+def run_fit_reg(model, maxiter=100, ar=[5.0, 6.0], outname=None, 
+                guess=True, **kwargs):
     """Run regularization loop with fitting of given model.
 
     Parameters
@@ -946,37 +958,63 @@ def run_fit_reg(model, maxiter=100, areg=[1e-5, 1e-4], outname=None, guess=True)
         Instance of a model class from ``stressfit.mccfit`` (Ifit or Sfit)
     maxiter : int, optional
         Maximum number of iterations. 
-    areg : array of float
-        Regularization parameters.The length of the aray defines the number of
-        fits. 
+    ar : array of float
+        Regularization parameters. The length of the array defines the number of
+        fits. Since version 1.1, the values are defined as log10(a)+10, 
+        where a is actual regularization coefficient.
     outname: str, optional
-        Filename for output data. A prefix 'a(n)_' will be aded for yeach loop.
+        Filename for output data. A prefix 'a(n)_' will be added for each loop.
         Set to empty string to suppress output except of intermediate plots. 
-        Set to None to suppress any output.
+        Set to None to suppress any graphic output.
     guess : bool, optional
         If True, run first a guess fit. It is fast, but neglects smearing, 
         only subtracts pseudo-strains. 
     """
-    na = len(areg)
+    # handle backward compatibility, obsolete areg
+    if 'areg' in kwargs:
+        a = kwargs['areg']
+        na = len(a)
+        ar = na*[0]
+        for ia in range(na): 
+            ar[ia] = np.log10(a[ia])+10
+            
+    na = len(ar)
     if guess:
-        ia = min(max(0,int(na/2)),na-1)  
-        run_fit_guess(model, maxiter=maxiter, areg=areg[ia], outname=None)
+        ia = min(max(0,int(na/2)),na-1)
+        run_fit_guess(model, maxiter=maxiter, areg=ar[ia], outname=None)
 
-    reglog = np.zeros((na,3))
-    for ia in range(na):    
-        mc.runFit(model, maxiter=maxiter, areg=areg[ia]);
-        reglog[ia] = [areg[ia], model.chi, model.reg]
-        ss = '[areg, chi2, reg] = {:g}\t{:g}\t{:g}\n'.format(*reglog[ia,:])
-        print(ss)
-        sfx = 'a{:g}_'.format(areg[ia])
-        if outname is not None:
-            if len(str(outname))>0:
-                report_fit(model, sfx+outname, reglog=reglog) 
-            else:
-                report_fit(model, '') 
+    logger = dataio.logger()
+    logger.clear(what='prog')
+    reglog = []   
+    lout = logger.output_prog
     
+    outp = (outname is not None)
+    save = outp and (len(str(outname))>0)
+    if lout is None:
+        lout = nullcontext()
+    with lout:
+        for ia in range(na):    
+            ss = 'Loop {}/{}, ar={:g}'.format(ia+1, na, ar[ia])
+            logger.progress(ss)
+            a = 10**(ar[ia]-10)
+            mc.runFit(model, maxiter=maxiter, areg=a, clearlog=False);
+            rec = model.get_fit_record()
+            reglog.append(rec)
+            sfx = 'a{:g}_'.format(ar[ia])
+            if outp:
+                if save:
+                    report_fit(model, sfx+outname, reglog=reglog)
+                else:
+                    report_fit(model, '')
+            print(' ')          
+        # plot reglog
+        if outp:
+            if save:
+                f = dataio.derive_filename(outname, ext='png', sfx='reglog')
+                outpng = dataio.get_output_file(f)
+            else:
+                outpng = None
+            gr.plot_reglog(reglog, save=save, file=outpng)
     # report the table with regularization progress:
-    ss = 'areg\tchi2\treg\n'
-    for ia in range(na):
-        ss += '{:g}\t{:g}\t{:g}\n'.format(*reglog[ia,:])
-    print(ss)
+    ss = model.format_reglog(reglog)
+    logger.progress(ss)

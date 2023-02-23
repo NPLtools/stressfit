@@ -754,6 +754,60 @@ class ArrayInput(BasicInput):
         box = ipy.GridBox(wdg, layout=grid_layout)          
         return box   
 
+class RangeInput(ArrayInput):
+    """Set numeric range.
+    
+    Like ArratInput, but requires only 2-element value. 
+    Provides range checking on values (value[0]<value[1]). 
+    
+    Parameters
+    ----------
+    name : str
+        Name of this component. 
+    value : list(2)
+        Minimum and maximum values
+    kwargs : dict
+        Other named arguments passed to ArrayInput
+    
+    """
+    
+    def __init__(self, name='', value=[0.0, 1.0], **kwargs):         
+        super().__init__(name=name, value=self._check_input(value), **kwargs)
+
+    def _check_input(self, value):
+        if not len(value)==2:
+            raise Exception('RangeInput requires 2-element list as a value.')        
+        if value[1]<value[0]:
+            value[0], value[1] = value[1], value[0] 
+        return value
+
+    @property
+    def value(self):
+        """Get values from the widgets."""
+        return self._value 
+    
+    @value.setter
+    def value(self, value):
+        """Set values to the widgets."""
+        value = self._check_input(value)
+        super().value(value)
+    
+        
+    def _validate(self, change):
+        iswp = [1, 0]
+        sgn = [1, -1]
+        i = change['owner'].name
+        i2 = iswp[i]
+        valid = sgn[i]*change['new'] < sgn[i]*self._value[i2]
+        if not valid:
+            change['owner'].value = change['old']
+        return valid
+    
+    def _on_change(self, change):
+        """Value change - update value."""
+        if change['name']=='value':
+            if self._validate(change):
+                super()._on_change(change)
 
 class SelectInput(BasicInput):
     """Dropdown input set.
@@ -889,6 +943,53 @@ class SelectInput(BasicInput):
         wdg.append(hint)
         box = ipy.GridBox(wdg, layout=grid_layout)          
         return box  
+
+
+class StatusBar(ComposedInput):
+    """Display a horizontal bar with updatable values.
+    
+    Parameters
+    ----------
+    name : str
+        Name of this component. 
+    value : dict
+        Any hash map with values. Must be provided at initiation. Later
+        updates must include the same keys and value types.
+    kwargs : dict
+        Other named arguments passed to ComposedInput
+    """
+    
+    def __init__(self, name='', value=None, **kwargs):
+        if not isinstance(value, dict):
+            raise Exception("StatusBar requires dict value on construction.")
+        self._input = value    
+        super().__init__(name, value, align='horizontal', **kwargs)
+                
+    def _create_values(self):
+        self._value.clear()
+        self._value.update(self._input)
+ 
+    def _create_widgets(self):
+        """Create value widgets."""
+        n = len(self._value)
+        keys = list(self._value.keys())
+        wstr = '{:d}%'.format(int(80/n))
+        for i in range(n):
+            key = keys[i]
+            wdg = ipy.Label(value='', layout=ipy.Layout(min_width=wstr)) 
+         #                  layout=ipy.Layout(width=width))
+            self._widgets[key] = wdg
+        self._update_widgets()
+
+    def _update_values(self):
+        """Update values from widgets."""
+        pass
+    
+    def _update_widgets(self):
+        """Update widgets from values."""
+        for key in self._widgets:
+            if key in self._value:
+                self._widgets[key].value = '{}: {:g}'.format(key, self._value[key])
 
 
 class DistTable(BasicInput):
@@ -1402,20 +1503,19 @@ class FitControl(ComposedInput):
         - maxiter : int, maximum iterations
         - guess : bool, run guest fit first 
         - loops :int,  maximum number of bootstrap loops
-        - areg : float, regularization parameter
+        - ar : float, regularization parameter    
+    kwargs : dict
+        Other named arguments passed to ComposedInput
     """
     
-    def __init__(self, name='', value=None, layout=None, **kwargs):
-        super().__init__(name, value, 
-                         align='vertical',
-                         layout=layout,
-                         **kwargs)
+    def __init__(self, name='', value=None, **kwargs):
+        super().__init__(name, value, align='vertical', **kwargs)
                 
     def _create_values(self):
         self._value['maxiter'] = 200
         self._value['guess'] = True
         self._value['loops'] = 1
-        self._value['areg'] = 1e-7
+        self._value['ar'] = 3.0
         
     
     def _create_widgets(self):
@@ -1432,11 +1532,11 @@ class FitControl(ComposedInput):
                            value=self._value['loops'],
                            isInt=True, step=1, lmin=1, lmax=10,
                            width_label=80)
-        areg = ArrayInput(name='areg', 
-                           label='A_reg', 
-                           hint='Regularization parameter',
-                           value=self._value['areg'],
-                           width_label=80)     
+        ar = ArrayInput(name='ar', 
+                        label='a_r', 
+                        hint='Regularization parameter',
+                        value=self._value['ar'],
+                        width_label=80)     
         guess = create_checkbox(name='guess', 
                                 label='Guess',
                                 value=self._value['guess'], 
@@ -1445,7 +1545,7 @@ class FitControl(ComposedInput):
                                 tooltip='Quick approximation before fit')
         self._widgets['maxiter'] = maxiter
         self._widgets['loops'] = loops
-        self._widgets['areg'] = areg
+        self._widgets['ar'] = ar
         self._widgets['guess'] = guess
 
 
@@ -1463,13 +1563,12 @@ class StrainZeros(ComposedInput):
     value : dict
         - z0 : float, encoder scale shift
         - eps0 : float,  zero strain in 1e-6
+    kwargs : dict
+        Other named arguments passed to ComposedInput
     """
     
-    def __init__(self, name='', value=None, layout=None, **kwargs):
-        super().__init__(name, value, 
-                         align='vertical',
-                         layout=layout,
-                         **kwargs)
+    def __init__(self, name='', value=None, **kwargs):
+        super().__init__(name, value, align='vertical', **kwargs)
                 
     def _create_values(self):
         self._value['z0'] = 0.0
@@ -1490,3 +1589,45 @@ class StrainZeros(ComposedInput):
 
         self._widgets['z0'] = z0
         self._widgets['eps0'] = eps0
+
+class RegControl(ComposedInput):
+    """Control of regularization loop.
+    
+    Set regularization parameters range and number of loops to scan. 
+    
+    Parameters
+    ----------
+    name : str
+        Name of this component. 
+    value : dict
+        - range : float(2), range of regularization parameters
+        - steps : int, number of steps
+    kwargs : dict
+        Other named arguments passed to ComposedInput
+    """
+    
+    def __init__(self, name='', value=None, **kwargs):
+        super().__init__(name, value, align='vertical', **kwargs)
+                
+    def _create_values(self):
+        self._value['range'] = [0.0, 4.0]
+        self._value['steps'] = 5
+    
+    def _create_widgets(self):
+        """Create value widgets."""
+        rang = RangeInput(name='range', 
+                             label='Range', 
+                             hint='Regularization range (log10 scale)',
+                             value=self._value['range'],   
+                             lmin=-10.0, lmax=20.0, step=0.5,
+                             width_label=80, logger=self._log)
+        steps = ArrayInput(name='steps', 
+                           label='Steps', 
+                           hint='Number of steps',
+                           value=self._value['steps'],
+                           isInt=True, step=1, lmin=2, lmax=64,
+                           width_label=80, logger=self._log)
+
+        self._widgets['range'] = rang
+        self._widgets['steps'] = steps
+                
