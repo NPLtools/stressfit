@@ -790,8 +790,7 @@ class RangeInput(ArrayInput):
     def value(self, value):
         """Set values to the widgets."""
         value = self._check_input(value)
-        super().value(value)
-    
+        super(RangeInput, type(self)).value.fset(self, value)   
         
     def _validate(self, change):
         iswp = [1, 0]

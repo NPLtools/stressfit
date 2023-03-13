@@ -1301,8 +1301,20 @@ class UI_attenuation(UI_base):
             self._widgets['table'].disabled = is_value
             self._widgets['value'].disabled = not is_value            
 
+    def set_values(self, values):
+        """Set values.
+        
+        Replace the UI_base.set_values method. Attenuation
+        data are in data section instead of config.
+        """
+        vals = copy.deepcopy(values)
+        self._clean_keys(vals)
+        # call set_input instead of set_config
+        _uiconf.set_item(self.name, vals)
+
     def assign(self):
         """Assign values to global data."""
+        # link to data item instead of config.
         self._values = _uiconf.get_item(self.name)
         
     def show(self, **kwargs): 
@@ -2921,7 +2933,7 @@ class UI():
     def _on_save_input(self,b):
         s = sw.choose_file_save(initialdir=self.wk.path('work').as_posix(), 
                         initialfile=self._last_input_file,
-                        filetypes=(('Setup files','*.inp')))
+                        filetypes=(('Setup files','*.json')))
         if s:
             self.save(filename=s)
             p = _Path(s)
@@ -2930,7 +2942,7 @@ class UI():
     def _on_load_input(self,b):
         s = sw.choose_file(initialdir=self.wk.path('work').as_posix(), 
                         initialfile=self._last_input_file,
-                        filetypes=(('Setup files','*.inp')))
+                        filetypes=(('Setup files','*.json')))
         if s:
             self.load(filename=s)
             p = _Path(s)
