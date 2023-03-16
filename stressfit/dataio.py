@@ -1412,14 +1412,18 @@ def get_input_file(filename, kind='data', path=None, **kwargs):
         Full path specification.
     """
     f = _Path(filename)
+    p = None
     if not f.is_absolute():
         wks = workspace()
         if path:
             p = _Path(path)
-        elif kind in _wks_keys:
-            p = wks.full_path(kind, as_posix=False)
-        else:
-            p = f.cwd()
+            if not p.is_absolute():
+                p = None
+        if p is None:
+            if (kind in _wks_keys):
+                p = wks.full_path(kind, as_posix=False)
+            else:
+                p = f.cwd()
         f = p.joinpath(f)
     return f
 

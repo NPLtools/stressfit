@@ -55,11 +55,11 @@ class ShapePlateCurved(ShapeAbstract):
     def update(self, **kwargs):
         """Update parameters."""
         if 'thickness' in kwargs:
-            self.thickness = kwargs['thickness']
+            self.t = kwargs['thickness']
         if 'length' in kwargs:
-            self.size = np.array([kwargs['length'],self.height])
+            self.size = np.array([kwargs['length'],self.size[1]])
         if 'height' in kwargs:
-            self.size = np.array([self.length, kwargs['height']])
+            self.size = np.array([self.size[0], kwargs['height']])
         if 'rho1' in kwargs:
             self.rho1 = np.array(kwargs['rho1'])
         if 'rho2' in kwargs:

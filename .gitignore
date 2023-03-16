@@ -13,3 +13,4 @@ _build
 work
 build
 .pylint*
+*.ffs_db

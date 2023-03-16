@@ -724,6 +724,9 @@ class UI_workspace(UI_base):
         self._values.update(self.wk.get_paths())
         self.update_widgets()
         self.update_values()
+        self._call_change()
+        # update workspace root for file widgets !
+        sw.set_workspace(self.wk.path(key='work', as_posix=True))
     
     def _on_path_change(self, inp):
         key = inp['name']
@@ -734,7 +737,11 @@ class UI_workspace(UI_base):
                 self.wk.change_workspace(root=value, create_tree=False, 
                                          save=False, verbose=True)            
             else:
-                self.wk.set_paths(**{key:value})
+                paths = {key:value}
+                # keep path to instruments equal to input data
+                if key == 'data':
+                    paths['instruments'] = value
+                self.wk.set_paths(**paths)
             self.set_from_wks()
     
     def _on_reset(self, b):
@@ -919,7 +926,7 @@ class UI_shape(UI_base):
             if isinstance(value, str):
                 wgt = sw.FileInput(name=key, 
                        file=value, 
-                       path=dataio.workspace().path('data'),
+                       path=dataio.workspace().full_path('data',as_posix=True),
                        #fileonly=True,
                        filetypes=(('Setup files','*.json')),
                        label=desc,
@@ -1481,7 +1488,15 @@ class UI_data(UI_base_list):
         else:
             fname = base
         return fname        
-        
+
+    def update_workspace(self, **kwargs):
+        """Update file input paths when workspace changed."""
+        fpath = self.wk.full_path('data', as_posix=True)
+        if 'intensity' in self._widgets:
+            self._widgets['intensity']._path = fpath
+        if 'strain' in self._widgets:
+            self._widgets['strain']._path = fpath
+
     def add_data(self, item, data=None, update_ui=False):
         """Add a dataset to the list.
         
@@ -1743,7 +1758,7 @@ class UI_plot_scene(UI_base):
                           logger=self._logger)
         self._widgets['proj'] = wdg 
         # plot range
-        wdg = ipy.IntSlider(value=self._values['rang'], min=3, max=50, step=1, 
+        wdg = ipy.IntSlider(value=self._values['rang'], min=3, max=100, step=1, 
                             description='Range: ')
         self._widgets['rang'] = wdg 
         
@@ -2026,6 +2041,11 @@ class UI_fit_distr(UI_base):
 
     """
     
+    def _raise_abs_class(fncname):
+        msg = 'UI_fit_distr is an abstract class.'
+        msg += 'Descendants must override {}.'
+        raise Exception(msg.format(fncname))
+
     def __init__(self, name):
         self._set_const()
         super().__init__(name, 
@@ -2043,8 +2063,31 @@ class UI_fit_distr(UI_base):
                             'loop': 0}
     
     def _set_const(self):
-        self._title = 'Fit intensity model'
-        self._cid = 'imodel'
+        """Set _title and _cid string constants.
+        
+        Abstract class, to be adapted by descendants.
+        
+        """
+        UI_fit_distr._raise_abs_class('_set_const')
+
+    def _create_fitobj(self, scan, model, scale, par):
+        """Create MCCfit object for given parameters.
+        
+        Abstract class, to be adapted by descendants.
+        
+        Parameters
+        ----------
+        par : dict
+            Command parameters returned by _uiconf.get_config(self.name)
+        scan : obj
+            Scan data returned by _uiconf.get_scan(par['data'])
+        model : obj
+            Model distribution returned by 
+            _uiconf.get_item(self._cid, item=par['model'])
+        scale : obj
+            Distribution scaling returned by model['scale']     
+        """
+        UI_fit_distr._raise_abs_class('_create_fitobj')
 
     def _create_widgets(self, **kwargs): 
 
@@ -2154,16 +2197,7 @@ class UI_fit_distr(UI_base):
         else:
             fname = base
         return fname
-    
-    def _create_fitobj(self, scan, model, scale, par):
-        fitobj = comm.define_ifit(scan, model['dist'], par['nrec'], 
-                                ndim=par['npts'])        
-        # define scaling parameters and interpolation model
-        fitobj.defScaling(scale['values'], scale['fit'], 
-                        minval=[0., 0., -np.inf])
-        fitobj.setInterpModel(model['interp'])
-        return fitobj
-    
+
     def _prepare(self):
         """Make all settings necessary to run commands.
         
@@ -2851,6 +2885,7 @@ class UI():
         self._last_input_file = 'input.json'
         self.ui = {}
         self.wk = dataio.workspace()
+        sw.set_workspace(self.wk.path(key='work', as_posix=True))
         msgl = ipy.Layout(width='100%', min_height='200px', border='none')
         self._note = ipy.Output(layout=ipy.Layout(width='100%', min_height='30px', border='none'))
         self._msg = ipy.Output(layout=msgl)
@@ -2880,6 +2915,7 @@ class UI():
         self._add_input_ui(UI_fit_emodel('fit_emodel'))
         
         # set event handlers
+        self.ui['workspace'].set_on_change(self._change)
         self.ui['shape'].set_on_change(self._change)
         self.ui['geometry'].set_on_change(self._change)
         self.ui['sampling'].set_on_change(self._change)
@@ -2963,6 +2999,8 @@ class UI():
             else:
                 if self.ui['shape'].select != 'File':
                     comm.set_shape(None,**kwargs)
+        if obj.name == 'workspace':
+            self.ui['data'].update_workspace(**kwargs)
         # update selection lists: geometry and sampling
         self._update_options(obj.name)
 
@@ -3099,6 +3137,8 @@ class UI():
                     # self.ui[key].notify()
                 except Exception:
                     self._exception('Cannot set values for {}:'.format(key))
+            # update shape data
+            self.ui['shape'].notify()
 
         except Exception:
             self._exception('Cannot load program configuration {}.'.format(filename))

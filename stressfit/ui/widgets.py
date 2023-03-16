@@ -12,6 +12,36 @@ import numpy as np
 import ipysheet
 from IPython.display import display
 
+# Information about working root directory is required to convert 
+# relative paths to absolute and vice versa.
+
+
+_workspace = {'root': _Path.cwd().as_posix()}
+
+def set_workspace(workspace):
+    """Set workspace information.
+
+    Parameters
+    ----------
+    workspace : dict or str
+        Information about user environment. 
+        Currently only 'work' item with absolute path 
+        to workspace root directory is accepted.
+    """ 
+    global _workspace
+    if isinstance(workspace, dict) and 'work' in workspace:
+        w = _Path(workspace['root'])
+    elif isinstance(workspace, str):
+        w = _Path(workspace)
+    else:
+        raise Exception('Only str and dict are accepted as workspace input')
+    
+    if w.is_absolute():
+        _workspace['root'] = w
+    else:
+        raise Exception('Workspace directory must be an absolute path.')
+
+
 def choose_path(initialdir=None):
     """Choose directory dialog using tkinter."""
     from tkinter import Tk, filedialog
@@ -482,7 +512,7 @@ class FileInput(BasicInput):
         self._path = path
         self._fileonly = fileonly
         self._filetypes = filetypes
-        self._set_file(file)
+        self._set_file(file, path=path)
         self.label = label
         self.tooltip = tooltip
         w_lbl = '{}px'.format(width_label)
@@ -518,9 +548,9 @@ class FileInput(BasicInput):
         
         """
         if self._fileonly:
-            return self._value['file']
+            return self._file
         else:
-            return self._value
+            return self. _to_dict()
     
     @value.setter
     def value(self, value):
@@ -537,17 +567,17 @@ class FileInput(BasicInput):
             str is iterpreted as file name. 
          
         """
-        _path = self._path
-        if isinstance(value, dict):
-            if 'path' in value and value['path'] is not None:
-                self._path = value['path']
-            f = value['file']
-        else:
-            f = value
-        try:    
-            self._set_file(f)
+        try:
+            if isinstance(value, dict):
+                if 'path' in value and value['path'] is not None:
+                    p = value['path']
+                else:
+                    p = self._path
+                f = value['file']
+                self._set_file(f, path=p)
+            else:
+                self._set_file(value)
         except Exception as e:
-            self._path = _path
             self._log.exception(str(e))
         # temporary switch off calling of observe.
         en = self._call_enabled
@@ -555,39 +585,62 @@ class FileInput(BasicInput):
         self.txt.value = self._file
         self._call_enabled = en
     
-    def _set_file(self, file):
+    def fullname(self):
+        """Return absolute path to the file."""
+        p = _Path(self._path)
+        if not p.is_absolute():
+            p = _workspace['root'].joinpath(p)
+        return p.joinpath(self._file)
+    
+    def _to_dict(self):
+        """Return filename and path info as dict.
+        
+        Use current workspace info and try to derive relative paths to it.
+        
+        Set local _path and _file fields.
+        
+        Return
+        ------
+        dict
+            path annd file values
+        
+        """       
+        f = self.fullname()   
+        try:
+            rel = f.relative_to(_workspace['root'])
+            path = rel.parent
+            name = rel.name
+        except:
+            path = f.parent
+            name = f.name
+        # keep local variables updated, because workspace might have changed ... 
+        self._path = path.as_posix()
+        self._file = name
+        return {'path': self._path, 'file': self._file}      
+        
+    def _set_file(self, file, path=None):
         """Set new file name.
         
-        1. Define full name. If file is relative, join it with 
-           `self._path`.  
-        2. Try to set `self._file` relative to `self._path`. If not possible, 
-           then: if not `fileonly`,  define new `self._path`, else
-           raise exception.
+        Derive also path using the path info and workspace root.
+
         """
-        f = _Path(file)
-        p = _Path(self._path)
+        f = _Path(file)      
+        self._file = f.name      
         if f.is_absolute():
-            fullname = f
-        else:
-            fullname = p.joinpath(file)
-        try:
-            _file = fullname.relative_to(p).as_posix()
-        except:
-            if not self._fileonly:
-                p = f.parent
-                _file = f.name
-            else:
-                msg = 'File name must be relative to {}'
-                raise Exception(msg.format(p.as_posix()))
-        self._fullname = fullname
-        self._path = p.as_posix()
-        self._file = _file
-        self._value = {'path': self._path, 'file': self._file}                    
+            self._path = f.parent.as_posix()
+        elif path:
+            p = _Path(path).joinpath(f)
+            self._path = p.parent.as_posix()        
+        # _path is set as possibly absolute path
+        # _to_dict() would tyr and replace it as relative to workspace root 
+        out = self._to_dict()
+        self._value = out
         
     def _on_button(self,ex):
         """Open path dialog and save result."""
-        s = choose_file(initialdir=self._fullname.parent.as_posix(), 
-                        initialfile=self._fullname.name,
+        full = self.fullname()
+        s = choose_file(initialdir=full.parent.as_posix(), 
+                        initialfile=full.name,
                         filetypes=self._filetypes)
         if s:
             try:
@@ -790,7 +843,7 @@ class RangeInput(ArrayInput):
     def value(self, value):
         """Set values to the widgets."""
         value = self._check_input(value)
-        super(RangeInput, type(self)).value.fset(self, value)   
+        super(RangeInput, type(self)).value.fset(self, value)
         
     def _validate(self, change):
         iswp = [1, 0]

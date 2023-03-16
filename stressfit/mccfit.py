@@ -25,6 +25,12 @@ import stressfit.sample as sam
 import stressfit.graphs as gr
 import stressfit.dataio as dataio
 
+
+# version of regularization function
+#_reg_version = 1 # minimizes 1st derivative
+_reg_version = 2 # minimizes 2nd derivative
+
+
 _chi2 = np.inf
 _reg = np.inf
 _ispline = None # spline interpolator for intensity, used by SFit
@@ -280,7 +286,9 @@ def fitcallb(params, iteration, resid, *fcn_args, **fcn_kws):
 
 # define objective function for fitting: returns the array to be minimized
 def costFnc(params, model, fitstat):
-    """Residual array to be passed to the minimizer: intensity scan."""
+    """Residual array to be passed to the minimizer."""
+    if _reg_version==2:
+        return costFnc2(params, model, fitstat)
     model.params = params
     res = model.calResid(guess=fitstat.guess)
     nres = res.shape[0]
@@ -290,6 +298,31 @@ def costFnc(params, model, fitstat):
     if (areg > 0):
         # model.updateDistribution()
         der = model.calDeriv()
+        reg =np.sqrt(areg)*np.absolute(der)
+        nreg = reg.shape[0]       
+        w = np.sqrt(1.0*abs(nres + nreg - model.nvar)/abs(nres - model.nvar))
+        res = np.concatenate((res, reg), axis=0)*w
+    if (model.constraint is not None):
+        w = np.sqrt(1.0*abs(nres + nreg - model.nvar))
+        y = w*model.constraint(params)
+        res = np.concatenate((res, np.array([y])), axis=0)
+    return res
+
+
+def costFnc2(params, model, fitstat):
+    """Residual array to be passed to the minimizer.
+    
+    version 2 with 2nd derivative regularization.
+    """
+    model.params = params
+    res = model.calResid(guess=fitstat.guess)
+    nres = res.shape[0]
+    nreg = 0
+    # add regularization term
+    areg = fitstat.areg
+    if (areg > 0):
+        # model.updateDistribution()
+        der = model.calDeriv2()
         reg =np.sqrt(areg)*np.absolute(der)
         nreg = reg.shape[0]       
         w = np.sqrt(1.0*abs(nres + nreg - model.nvar)/abs(nres - model.nvar))
@@ -813,6 +846,20 @@ class MCCfit(ABC):
             res[i] = dy/dx
         return res
 
+    def calDeriv2(self):
+        """Calculate 2nd derivative of the distribution."""
+        nx = self.dist.shape[0]
+        res = np.zeros(nx-2)
+        x = self.dist[:,0]
+        y = self.dist[:,1]
+        for i in range(nx-2):
+            dx1 = x[i+1] - x[i]
+            dx2 = x[i+2] - x[i+1]
+            dy1 = y[i+1] - y[i] 
+            dy2 = y[i+2] - y[i+1]
+            res[i] = 2*(dy1/dx1 - dy2/dx2)/(dx1+dx2)
+        return res
+    
     def formatResultModel(self):
         """Format a table with deconvoluted curves.
         
@@ -1061,9 +1108,7 @@ class MCCfit(ABC):
             rec['loop'] = loop
         if ireg:
             rec['ireg'] = loop
-        return rec
-    
-             
+        return rec             
     
     def saveResults(self, outpath, fname, reglog=None):
         """Save fit results.
@@ -1083,7 +1128,6 @@ class MCCfit(ABC):
         if (hasData and hasFit and fname):  
             f = dataio.derive_filename(fname, ext='dat', sfx='model')
             fn = str(dataio.get_output_file(f, path=outpath))
-            # fn = deriveFilename(outpath+fname, ext='dat', sfx='model')
             ss = self.formatResultModel()
             print('Model saved in '+fn)
             with open(fn, 'w') as f:
@@ -1093,7 +1137,6 @@ class MCCfit(ABC):
             # Save original data and fit 
             f = dataio.derive_filename(fname, ext='dat', sfx='fit')
             fn = str(dataio.get_output_file(f, path=outpath))
-            #fn = deriveFilename(outpath+fname, ext='dat', sfx='fit')
             ss = self.formatResultFit()
             print('Fit saved in '+fn)
             with open(fn, 'w') as f:
@@ -1104,7 +1147,6 @@ class MCCfit(ABC):
             # Save log with parameters 
             f = dataio.derive_filename(fname, ext='log', sfx='')
             fn = str(dataio.get_output_file(f, path=outpath))
-            # fn = deriveFilename(outpath+fname, ext='log', sfx='')
             ss = self.formatResultLog()
             
             if (reglog is not None):
@@ -1436,6 +1478,63 @@ class Sfit(MCCfit):
         y = A*res + B
         ey = A*err
         return [y, ey, pos]
+
+
+    def formatIntensityModel(self):
+        """Format a table with intensity model attached to the strain model.
+        
+        If there is no intensity model defined, or is constant, return emty string.
+        
+        Returns
+        -------
+            String
+                tab-delimited table
+        """
+        has_it = (_ispline is not None) and (self.dist is not None)
+        if has_it:
+            x = self.dist[:,0]
+            y = self.intFnc(x)
+            y0 = y[0]
+            dy = y - y0
+            has_it = dy.any()
+        if not has_it:
+            return ''        
+        ss = "# Intensity model for strain fit\n"    
+        ss += "# Date: " + str(datetime.datetime.now()) + "\n"
+        hdr = ['xi', 'yi']
+        ss += '# Header: ' + '\t'.join(f for f in hdr) + '\n'
+        fmt = '{:g}\t{:g}\n'
+        for i in range(len(x)):
+            ss += fmt.format(x[i], y[i])
+        return ss
+
+    def saveResults(self, outpath, fname, reglog=None):
+        """Save fit results.
+        
+        Parameters
+        ----------
+        outpath : str
+            Output path.
+        fname : str
+            File name.
+        reglog : list
+            List of records returned by :meth:`get_fit_record` 
+        
+        """
+        super().saveResults(outpath, fname, reglog=reglog)
+        
+        hasData = (self.data is not None)
+        hasFit = (self.fit is not None)
+        if (hasData and hasFit and fname):  
+            ss = self.formatIntensityModel()
+            if ss:
+                f = dataio.derive_filename(fname, ext='dat', sfx='imodel')
+                fn = str(dataio.get_output_file(f, path=outpath))            
+                print('Related intensity model saved in '+fn)
+                with open(fn, 'w') as f:
+                    f.write('# Fitted data: '+fname + "\n")
+                    f.write(ss)
+                    f.close
 
     def reportFit(self, outpath='', file='', reglog=None, **kwargs):
         """Report on the fit results.
