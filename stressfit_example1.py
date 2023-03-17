@@ -58,7 +58,7 @@ $( document ).ready(code_toggle);
 
 # Set the workspace directory. None for the current directory.
 workspace = None
-workspace = r'D:\Saroun\git\test\stressfit\test'
+# workspace = r'D:\Saroun\git\test\stressfit\test'
 # Set the other input/output folders (can be absolute or relative).
 # Relative paths should exist under the workspace directory.
 # Set to None for searching in package resources.
@@ -275,7 +275,7 @@ bootstrap = False
 # Set loops for the number of bootstrap cycles.
 loops = 3
 # regularization
-areg = 1e-3
+areg = 3
 # Set False to skip intensity fit
 runIFit = True
 
@@ -293,8 +293,7 @@ ifit.setInterpModel(interpolation)
 # Run guess fit with given parameters (see docs for run_fit_guess)
 if runIFit:
     print('Check the fit estimate and iprove the model if necessary:')
-    comm.run_fit_guess(ifit, maxiter=100, areg=areg)
-    
+    comm.run_fit_guess(ifit, maxiter=100, a=areg, outname='')
 
 
 # ### Run fit
@@ -304,9 +303,8 @@ if runIFit:
 
 
 if runIFit:
-    comm.run_fit(ifit, maxiter=maxiter, areg=areg, bootstrap=bootstrap, 
-                 loops=loops)
-    comm.report_fit(ifit, scan['intfile'], plotSampling=True)
+    comm.run_fit(ifit, maxiter=maxiter, ar=areg, bootstrap=bootstrap, 
+                 loops=loops, outname=scan['intfile'])
 
 
 # ## Fit strain distribution
@@ -357,7 +355,7 @@ bootstrap = True
 # Set loops for the number of bootstrap cycles.
 loops = 5
 # Define a list of regularization factors:
-aregs = [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4]
+aregs = [1, 2, 3, 4, 5]
 # maximum iterations for guess fit
 maxguess = 100
 # maximum iterations for fit
@@ -382,7 +380,8 @@ sfit.setInterpModel(interpolation)
 
 # Run guess fit with given parameters (see docs for run_fit_guess)
 if runSFit:
-    comm.run_fit_guess(sfit, maxiter=maxguess, areg=areg)
+    comm.run_fit_guess(sfit, maxiter=maxguess, ar=areg)
+    comm.report_fit(sfit, '')
 
 
 # ## Run fit
@@ -399,7 +398,7 @@ if runSFit:
 
 # Run fit with regularization
 if runSFit and runReg:
-    comm.run_fit_reg(sfit, maxiter=maxiter, areg=aregs, outname='')
+    comm.run_fit_reg(sfit, maxiter=maxiter, ar=aregs, outname='')
 
 
 # ### Run the final fit
@@ -409,9 +408,9 @@ if runSFit and runReg:
 # In[9]:
 
 
-areg = 1e-7
+areg = 2.5
 if runSFit:
-    comm.run_fit(sfit, maxiter=maxiter, areg=areg, outname=scan['epsfile'], 
+    comm.run_fit(sfit, maxiter=maxiter, ar=areg, outname=scan['epsfile'], 
                  bootstrap=bootstrap, loops=loops)
 
 

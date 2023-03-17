@@ -21,7 +21,7 @@ def validate_workspace(verbose=True):
         dataio.workspace().validate_paths()
         if verbose:
             print('Workspace setting:')
-            dataio.workspace().print_info(absolute=True)
+            dataio.workspace().info(absolute=True)
     except Exception as e:
         print('ERROR:')
         print(e)

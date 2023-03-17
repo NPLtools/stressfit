@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
+# In[1]:
 
 
 import numpy as np
@@ -53,12 +53,12 @@ $( document ).ready(code_toggle);
 # </p>
 # 
 
-# In[ ]:
+# In[2]:
 
 
 # Set the workspace directory. None for the current directory.
 workspace = None
-workspace = r'D:\Saroun\git\test\stressfit\test'
+# workspace = r'D:\Saroun\git\test\stressfit\test'
 # Set the other input/output folders (can be absolute or relative).
 # Relative paths should exist under the workspace directory.
 # Set to None for searching in package resources.
@@ -84,25 +84,27 @@ comm.validate_workspace()
 # ### Sample shape
 # Sample dimensions depend on the selected shape. Choose one of the classes defined in the Shapes folder of the package:
 # 
-# <code> S.create('Plate', thickness=10.0) </code> <br />
+# <code>import stressfit.shapes as S</code><br />
+#
+# <code> S.create(S.Plate, thickness=10.0) </code> <br />
 # An infinitely large flat plate of given thickness.
 # 
-# <code> S.create('PlateCurved',thickness=5.0, length=50.0, height=15.0, rho1=[0.02, 0.0], rho2=[0.02, 0.0]) </code><br />
+# <code> S.create(S.PlateCurved,thickness=5.0, length=50.0, height=15.0, rho1=[0.02, 0.0], rho2=[0.02, 0.0]) </code><br />
 # A curved plate of given thickness (z), length (x) and height (y). <code>rho1</code> are curvature radii along x and y of the front surcae (z>0). <code>rho2</code> are the radii for the rear surface.
 # 
-# <code> S.create('Cylinder', radius=4.0, height=30.0) </code><br />
+# <code> S.create(S.Cylinder, radius=4.0, height=30.0) </code><br />
 # A cylindrical shape with axis along y-axis.
 # 
-# <code> S.create('Tube', Rin=4.0, Rout=8.0, height=30.0, ctr=[0,0], sref=1) </code><br /> 
+# <code> S.create(S.Tube, Rin=4.0, Rout=8.0, height=30.0, ctr=[0,0], sref=1) </code><br /> 
 # A hollow cylinder with axis along y-axis. 
 # - Rin, Rout are the inner and outer radii.
 # - ctr is the x,z position of the hole centre
 # - sref defines the reference surface for depth calculation (0/1 for the inner/outer surface)
 # 
-# <code> S.create('Sphere', radius=8.0) </code> <br />
+# <code> S.create(S.Sphere, radius=8.0) </code> <br />
 # A spherical sample.
 # 
-# <code> S.create('ETubes', a=8.0, b=8.0, angle=0.0, height=30.0, holes=[], sdir=[0,0,1], sctr=[0,0,0]) </code><br />
+# <code> S.create(S.ETubes, a=8.0, b=8.0, angle=0.0, height=30.0, holes=[], sdir=[0,0,1], sctr=[0,0,0]) </code><br />
 # A cylinder with axis || y and multiple coaxial elliptic holes.
 # 
 #     a : float
@@ -124,6 +126,10 @@ comm.validate_workspace()
 #     sctr : array_like
 #         Scan origin in local coordinates. 
 # 
+# For complete help on sample shapes, use
+#
+# <code>S.help()</code>
+#
 # ### Input data
 # The input experimental data are integral peak intensities and strains measured as a function of scan depth. They are provided as text files with three columns: depth [mm], intensity [any unit] or strain [$\mu\epsilon = 10^{-6}$], and error (std. deviation). 
 # 
@@ -132,7 +138,7 @@ comm.validate_workspace()
 # ## User input
 # The next block in this template defines a tube: a hollow cylinder with inner radius 4 mm, outer radius 8 mm and height 50 mm. Zero scan position corresponds to the instrumental gauge volume centered at the surface. Measured strain direction is defined by the angle <code>omega</code>.
 
-# In[ ]:
+# In[3]:
 
 
 # USER INPUT:
@@ -142,7 +148,7 @@ comm.validate_workspace()
 radius1 = 4.
 radius2 = 8
 height = 50.0
-shape = S.create('Tube', Rin=4.0, Rout=8.0, height=50.0)
+shape = S.create(S.Tube, Rin=4.0, Rout=8.0, height=50.0)
 
 # Define input data for measured strain and intensity
 # 3-column text format with scan position, value and error
@@ -182,7 +188,7 @@ scene_projection = 1
 
 # ## Initialization commands
 
-# In[ ]:
+# In[4]:
 
 
 
@@ -194,7 +200,8 @@ scan = comm.load_input(strain, intensity=intensity,scandir=scandir,
 # Load and set sampling distribution
 sampling = comm.load_sampling(sampling_file, path=sampling_path, maxn=nev_load)
 sampling.print_properties()
-comm.set_sampling(sampling)
+scan['sampling'] = sampling
+# comm.set_sampling(sampling)
 
 # Set beam attenuation
 comm.set_attenuation(att)    
@@ -210,7 +217,7 @@ comm.set_scan(scan)
 # 
 # The following command plots the sample and sampling events in requested projection. The <b>red arrow defines the scan direction</b> (where the events move in the sample during the scan). The color scale shows pseudo-strains associated with each event.
 
-# In[ ]:
+# In[5]:
 
 
 comm.plot_scene(nev_plot, scan=scan['epsfile'], rang=scene_range, proj=scene_projection)
@@ -228,7 +235,7 @@ comm.plot_scene(nev_plot, scan=scan['epsfile'], rang=scene_range, proj=scene_pro
 # 
 # <b>Provide the fit model settings below:</b>
 
-# In[ ]:
+# In[6]:
 
 
 # USER INPUT for intensity fit 
@@ -268,7 +275,7 @@ bootstrap = False
 # Set loops for the number of bootstrap cycles.
 loops = 3
 # regularization
-areg = 1e-3
+areg = 3
 # Set False to skip intensity fit
 runIFit = True
 
@@ -286,20 +293,20 @@ ifit.setInterpModel(interpolation)
 # Run guess fit with given parameters (see docs for run_fit_guess)
 if runIFit:
     print('Check the fit estimate and iprove the model if necessary:')
-    comm.run_fit_guess(ifit, maxiter=100, areg=areg)
-    
+    comm.run_fit_guess(ifit, maxiter=100, a=areg)
+    comm.report_fit(ifit, "")
 
 
 # ### Run fit
 # Is the above estimate good? Then execute the following box to run fitting procedure and plot results.
 
-# In[ ]:
+# In[7]:
 
 
 if runIFit:
-    comm.run_fit(ifit, maxiter=maxiter, areg=areg, bootstrap=bootstrap, 
+    comm.run_fit(ifit, maxiter=maxiter, ar=areg, bootstrap=bootstrap, 
                  loops=loops)
-    comm.report_fit(ifit, scan['intfile'], plotSampling=True)
+    comm.report_fit(ifit, scan['intfile'])
 
 
 # ## Fit strain distribution
@@ -311,7 +318,7 @@ if runIFit:
 # 
 # <b>Provide the fit model settings below:</b>
 
-# In[ ]:
+# In[8]:
 
 
 # USER INPUT for strain fit 
@@ -350,7 +357,7 @@ bootstrap = True
 # Set loops for the number of bootstrap cycles.
 loops = 5
 # Define a list of regularization factors:
-aregs = [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4]
+aregs = [1, 2, 3, 4, 5]
 # maximum iterations for guess fit
 maxguess = 100
 # maximum iterations for fit
@@ -375,7 +382,8 @@ sfit.setInterpModel(interpolation)
 
 # Run guess fit with given parameters (see docs for run_fit_guess)
 if runSFit:
-    comm.run_fit_guess(sfit, maxiter=maxguess, areg=areg)
+    comm.run_fit_guess(sfit, maxiter=maxguess, ar=areg)
+    comm.report_fit(sfit, '')
 
 
 # ## Run fit
@@ -392,19 +400,19 @@ if runSFit:
 
 # Run fit with regularization
 if runSFit and runReg:
-    comm.run_fit_reg(sfit, maxiter=maxiter, areg=aregs, outname='')
+    comm.run_fit_reg(sfit, maxiter=maxiter, ar=aregs, outname='')
 
 
 # ### Run the final fit
 # 
 # Choose the optimum value of <code>areg</code> (regularization coefficient) and run the command below.
 
-# In[ ]:
+# In[9]:
 
 
-areg = 1e-7
+areg = 2
 if runSFit:
-    comm.run_fit(sfit, maxiter=maxiter, areg=areg, outname=scan['epsfile'], 
+    comm.run_fit(sfit, maxiter=maxiter, ar=areg, outname=scan['epsfile'], 
                  bootstrap=bootstrap, loops=loops)
 
 
