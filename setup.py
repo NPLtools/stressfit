@@ -12,7 +12,8 @@ stressfit_data = ['resources/*/*']
 other_data = ['stressfit_example1.py', 
                 'LICENSE', 
                 'README.md', 
-                'CHANGELOG']
+                'CHANGELOG',
+				'VERSION']
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -36,8 +37,8 @@ setup(
     ],
     platforms=['any'],
     keywords='residual stress, neutron, pseudo-strain, surface effect', 
-    python_requires='>=3.6',
-    install_requires=['numpy', 'matplotlib'],
+    python_requires='>=3.7',
+    install_requires=['numpy', 'matplotlib', 'lmfit', 'pathlib'],
     packages=find_packages(),
     package_data={'stressfit': stressfit_data}, 
     data_files=[('.',other_data)]
