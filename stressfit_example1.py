@@ -28,17 +28,33 @@ $( document ).ready(code_toggle);
 # # STRESSFIT
 # <p>
 # <i>Written by:</i> Jan Saroun, Nuclear Physics Institute CAS, Rez, saroun@ujf.cas.cz<br/>
-# <i>Date:</i> 03/02/2022<br/>
-# <i>Source:</i> https://github.com/NPLtools/stressfit
+# <i>Date:</i> 03/20/2023<br/>
+# <i>Source:</i> <a href='https://github.com/NPLtools/stressfit'>https://github.com/NPLtools/stressfit</a>
 # </p>
 # <p>
-# This script permits to treat pseudo strains in neutron residual strain measurements. Pseudo strains due to partial immersion of sampling volume in the sample, steep intrinsic strain gradients and heterogeneous distribution of scattering probability can be treated. The script employs Monte Carlo convolution method, which uses sampling points produced by Monte Carlo ray-tracing simulation of the diffractometer to model smearing of intrinsic sample properties by instrumental response. Each point has all available information about a scattering event: position, initial and final neutron wave vector, probability and dhkl value associated with this sampling point. Such a sampling distribution can be simulated rather quickly for any instrument setup, for example by the ray-tracing program SIMRES (http://neutron.ujf.cas.cz/restrax). The sampling distribution is then reused to cary out the convolution with any sample shape, position, orientation and strain distribution. This decoupling of MC ray-tracing simulation from the convolution procedure permits to write a code which is rather fast (typically about 1s per one scan at 1 CPU). It is therefore possible to use the MC integration as a part of cost function for least squares fitting.
+# This script implements common workflow for the data treatment with StressFit. On the input, STRESFIT uses a list of neutron scattering events with associated data (position, wave vectors, weight factor and "as-measured" lattice spacing - $d_{hkl}$}) accessible at given instrument setup. This list describes the instrumental sampling distribution independently on the sample. It can be obtained by ray-tracing simulation of the instrument using appropriate software, such as McStas (<a href='http://mcstas.org'>http://mcstas.org</a>) or SIMRES (<a href='https://github.com/saroun/simres'>https://github.com/saroun/simres</a>). 
+# 
+# STRESSFIT provides tools for 3D convolution of such a sampling list with the sample model and permits to calculate: 
+# 
+# - “centre of gravity” and size of the neutron sampling volume as a function of sample position (in 3D),
+# - variation of intensity and position of diffraction peaks due to the perturbation of sampling distribution (material boundaries, absorption, composition and texture gradients),
+# - “as measured” (smeared) intensity and strain distributions including the pseudo-strain effects,
+# - least-squares fit of intrinsic strain and intensity distributions.
+# 
 # </p><p>
-# Development of a Python library STRESSFIT aims at providing tools for analysis of residual stress measurements, where pseudo strains can't be avoided and must be taken into account in data processing. Currently, STRESSFIT enables to model pseudo strains for several basic sample shapes (curved plates, full and hollow cylinders and spheres). It also enables least squares fitting of measured scans for a single strain component. Simultaneous fitting of multiple components with a single stress distribution model is envisaged in future versions. 
-# </p>
+# STRESSFIT enables to model pseudo-strains for several sample shapes such as curved plates, cylinders, spheres, tubes (both single- and multi-channel) and polygonal rods. Neutron attenuation tables for several common materials generated with the help of the NCrystal library (<a href='https://github.com/mctools/ncrystal'>https://github.com/mctools/ncrystal</a>) are provided as a part of the package resources. Currently, STRESSFIT allows for least squares fitting of measured scans for a single strain component. Simultaneous fitting of multiple strain or stress tensor components is envisaged in future versions.
+# </p>    
 # 
 # ## Jupyter viewer
-# Examples with output of STRESSFIT are also available via Jupyter viewer server:
+# 
+# User interface based on Jupyter notebook widgets can be launched by executing the code:
+# <code>  
+# import stressfit.ui.notebook as nb  
+# ui = nb.UI()  
+# ui.display()  
+# </code> 
+#     
+# Script examples with output of STRESSFIT are also available via Jupyter viewer server:
 # <p>
 # <a href='http://nbviewer.jupyter.org/url/neutron.ujf.cas.cz/restrax/download/stressfit/stressfit_example1.ipynb'>
 # Example 1</a>: ECNS2019, Fitting of strain gradient under the inner surface of a tube, test on synthetic data for STRESS-SPEC.
@@ -46,19 +62,18 @@ $( document ).ready(code_toggle);
 # 
 # ## Documentation
 # <p>
-# For more information, see: <br/>
-# <a href='http://neutron.ujf.cas.cz/restrax/download/stressfit/saroun_MECASENS_2017.pdf'>MECASENS 2017 poster</a><br/>
+# For more information and use examples, see: <br/>
 # <a href='http://neutron.ujf.cas.cz/restrax/download/stressfit/ECRS2018_stressfit.pdf'>ECRS10, 2018, slides</a><br/>
 # <a href='http://neutron.ujf.cas.cz/restrax/download/stressfit/saroun_ECNS2019_poster.pdf'>ECNS 2019, poster</a> <br/>
+# <a href='http://neutron.ujf.cas.cz/restrax/download/stressfit/stressfit_ECNS2023_poster.pdf'>ECNS 2023, poster</a> <br/>
 # </p>
-# 
 
 # In[2]:
 
 
 # Set the workspace directory. None for the current directory.
 workspace = None
-# workspace = r'D:\Saroun\git\test\stressfit\test'
+# workspace = r'my_workspace_root'
 # Set the other input/output folders (can be absolute or relative).
 # Relative paths should exist under the workspace directory.
 # Set to None for searching in package resources.
@@ -84,27 +99,25 @@ comm.validate_workspace()
 # ### Sample shape
 # Sample dimensions depend on the selected shape. Choose one of the classes defined in the Shapes folder of the package:
 # 
-# <code>import stressfit.shapes as S</code><br />
-#
-# <code> S.create(S.Plate, thickness=10.0) </code> <br />
+# <code> S.create('Plate', thickness=10.0) </code> <br />
 # An infinitely large flat plate of given thickness.
 # 
-# <code> S.create(S.PlateCurved,thickness=5.0, length=50.0, height=15.0, rho1=[0.02, 0.0], rho2=[0.02, 0.0]) </code><br />
+# <code> S.create('PlateCurved',thickness=5.0, length=50.0, height=15.0, rho1=[0.02, 0.0], rho2=[0.02, 0.0]) </code><br />
 # A curved plate of given thickness (z), length (x) and height (y). <code>rho1</code> are curvature radii along x and y of the front surcae (z>0). <code>rho2</code> are the radii for the rear surface.
 # 
-# <code> S.create(S.Cylinder, radius=4.0, height=30.0) </code><br />
+# <code> S.create('Cylinder', radius=4.0, height=30.0) </code><br />
 # A cylindrical shape with axis along y-axis.
 # 
-# <code> S.create(S.Tube, Rin=4.0, Rout=8.0, height=30.0, ctr=[0,0], sref=1) </code><br /> 
+# <code> S.create('Tube', Rin=4.0, Rout=8.0, height=30.0, ctr=[0,0], sref=1) </code><br /> 
 # A hollow cylinder with axis along y-axis. 
 # - Rin, Rout are the inner and outer radii.
 # - ctr is the x,z position of the hole centre
 # - sref defines the reference surface for depth calculation (0/1 for the inner/outer surface)
 # 
-# <code> S.create(S.Sphere, radius=8.0) </code> <br />
+# <code> S.create('Sphere', radius=8.0) </code> <br />
 # A spherical sample.
 # 
-# <code> S.create(S.ETubes, a=8.0, b=8.0, angle=0.0, height=30.0, holes=[], sdir=[0,0,1], sctr=[0,0,0]) </code><br />
+# <code> S.create('ETubes', a=8.0, b=8.0, angle=0.0, height=30.0, holes=[], sdir=[0,0,1], sctr=[0,0,0]) </code><br />
 # A cylinder with axis || y and multiple coaxial elliptic holes.
 # 
 #     a : float
@@ -126,10 +139,6 @@ comm.validate_workspace()
 #     sctr : array_like
 #         Scan origin in local coordinates. 
 # 
-# For complete help on sample shapes, use
-#
-# <code>S.help()</code>
-#
 # ### Input data
 # The input experimental data are integral peak intensities and strains measured as a function of scan depth. They are provided as text files with three columns: depth [mm], intensity [any unit] or strain [$\mu\epsilon = 10^{-6}$], and error (std. deviation). 
 # 
@@ -138,7 +147,7 @@ comm.validate_workspace()
 # ## User input
 # The next block in this template defines a tube: a hollow cylinder with inner radius 4 mm, outer radius 8 mm and height 50 mm. Zero scan position corresponds to the instrumental gauge volume centered at the surface. Measured strain direction is defined by the angle <code>omega</code>.
 
-# In[3]:
+# In[4]:
 
 
 # USER INPUT:
@@ -148,7 +157,7 @@ comm.validate_workspace()
 radius1 = 4.
 radius2 = 8
 height = 50.0
-shape = S.create(S.Tube, Rin=4.0, Rout=8.0, height=50.0)
+shape = S.create('Tube', Rin=4.0, Rout=8.0, height=50.0)
 
 # Define input data for measured strain and intensity
 # 3-column text format with scan position, value and error
@@ -188,7 +197,7 @@ scene_projection = 1
 
 # ## Initialization commands
 
-# In[4]:
+# In[5]:
 
 
 
@@ -200,8 +209,7 @@ scan = comm.load_input(strain, intensity=intensity,scandir=scandir,
 # Load and set sampling distribution
 sampling = comm.load_sampling(sampling_file, path=sampling_path, maxn=nev_load)
 sampling.print_properties()
-scan['sampling'] = sampling
-# comm.set_sampling(sampling)
+comm.set_sampling(sampling)
 
 # Set beam attenuation
 comm.set_attenuation(att)    
@@ -217,7 +225,7 @@ comm.set_scan(scan)
 # 
 # The following command plots the sample and sampling events in requested projection. The <b>red arrow defines the scan direction</b> (where the events move in the sample during the scan). The color scale shows pseudo-strains associated with each event.
 
-# In[5]:
+# In[6]:
 
 
 comm.plot_scene(nev_plot, scan=scan['epsfile'], rang=scene_range, proj=scene_projection)
@@ -235,7 +243,7 @@ comm.plot_scene(nev_plot, scan=scan['epsfile'], rang=scene_range, proj=scene_pro
 # 
 # <b>Provide the fit model settings below:</b>
 
-# In[6]:
+# In[7]:
 
 
 # USER INPUT for intensity fit 
@@ -293,13 +301,14 @@ ifit.setInterpModel(interpolation)
 # Run guess fit with given parameters (see docs for run_fit_guess)
 if runIFit:
     print('Check the fit estimate and iprove the model if necessary:')
-    comm.run_fit_guess(ifit, maxiter=100, a=areg, outname='')
+    comm.run_fit_guess(ifit, maxiter=100, ar=areg, outname='')
+    
 
 
 # ### Run fit
 # Is the above estimate good? Then execute the following box to run fitting procedure and plot results.
 
-# In[7]:
+# In[8]:
 
 
 if runIFit:
@@ -316,7 +325,7 @@ if runIFit:
 # 
 # <b>Provide the fit model settings below:</b>
 
-# In[8]:
+# In[9]:
 
 
 # USER INPUT for strain fit 
@@ -380,8 +389,7 @@ sfit.setInterpModel(interpolation)
 
 # Run guess fit with given parameters (see docs for run_fit_guess)
 if runSFit:
-    comm.run_fit_guess(sfit, maxiter=maxguess, ar=areg)
-    comm.report_fit(sfit, '')
+    comm.run_fit_guess(sfit, maxiter=maxguess, ar=areg, outname='')
 
 
 # ## Run fit
@@ -393,7 +401,7 @@ if runSFit:
 # - A bootstrap cycle, if defined, is applied to estimate confidence limit.
 # - A regularization cycle for given number of are coefficients is executed if requested. 
 
-# In[ ]:
+# In[11]:
 
 
 # Run fit with regularization
@@ -405,7 +413,7 @@ if runSFit and runReg:
 # 
 # Choose the optimum value of <code>areg</code> (regularization coefficient) and run the command below.
 
-# In[9]:
+# In[12]:
 
 
 areg = 2.5

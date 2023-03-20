@@ -6,7 +6,7 @@
             "instruments": "",
             "output": ""
 },
-"version": "1.1.0",
+"version": "1.1.1",
 "license": "Mozilla Public License Version 2.0",
 "author": "Jan Saroun, Nuclear Physics Institute CAS, Rez, saroun@ujf.cas.cz",
 "repository": "https://github.com/NPLtools/stressfit"

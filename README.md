@@ -62,15 +62,11 @@ You can of course use any other alternative to install stressfit into a suitable
 An experimental version of GUI is available. It runs in Jupyter notebook using [ipywidgets](https://ipywidgets.readthedocs.io).
 
 To start it, execite the following code in the Jupyter notebook in your browser:
-<code>
-
-import stressfit.ui.notebook as nb
-
-ui = nb.UI()
-
-ui.display()
-
-</code>
+<code>  
+import stressfit.ui.notebook as nb  
+ui = nb.UI()  
+ui.display()  
+</code>  
 
 It is assumed that the Jupyter server runs on localhost (running on remote server is not supported) and stressfit has to be installed in the same environment. The GUI implements all main features of the STRESSFIT package. On startup, it creates default workspace in the user's profile and loads test data from resources. It is thus ready to run all commands, such as plotting the 2D view o experiment geometry with the sampling distribution, evaluate the spatial resolutiona and pseudo-strain characteristics, compare the test data with pseudo-strain distributions and also fit intensity and strain distributions. The GUI also allows to save/load complete setup data for later use.
 

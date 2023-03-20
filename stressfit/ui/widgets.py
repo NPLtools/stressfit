@@ -1576,7 +1576,7 @@ class FitControl(ComposedInput):
                              label='Iterations', 
                              hint='',
                              value=self._value['maxiter'],
-                             isInt=True, step=10, lmin=1, lmax=1000,
+                             isInt=True, step=10, lmin=0, lmax=1000,
                              width_label=80)
         loops = ArrayInput(name='loops', 
                            label='Loops', 

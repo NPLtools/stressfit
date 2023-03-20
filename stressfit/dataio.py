@@ -737,6 +737,7 @@ class _Setup():
                 self._data['version'] = self.version
             elif res<0:
                 self._log.info('Version updated in {}'.format(self._appsetup))
+                self._data['version'] = self.version
                 self.save()
         else:
             self.verify(cont)
@@ -816,7 +817,9 @@ class _Setup():
             content['workspace'].update(wks)
             txt = json.dumps(content, indent=4)
             with open(self._appsetup, 'w') as f:
-                f.write(txt)
+                f.write(txt)  
+            #msg = 'Application setup file saved in {}'
+            #self._log.info(msg.format(self._appsetup))
         except Exception as e:
             fmt = 'Cannot save application setup file: {}\n{}'
             self._log.exception(fmt.format(self._appsetup,str(e)))
@@ -885,6 +888,7 @@ class Workspace():
     def __init__(self):
         # set application default workspace
         self._logger = logger()
+        self._paths = {}
         self.reset_paths(create_tree=True, save=True)
     
     @property
@@ -950,12 +954,43 @@ class Workspace():
         
     def reset_paths(self, create_tree=False, save=False):
         """Reset workspace paths to package defaults."""
+        self._paths.clear()
         stp = _setup()
-        self._paths = copy.deepcopy(stp.workspace)
+        self._paths.update(stp.workspace)
+        self._set_workspace_root(stp.workspace['work'], create=True)
+                 
         self.change_workspace(root=self._paths['work'], 
                               create_tree=create_tree,
                               save=save,
                               verbose=False)
+
+    def _set_workspace_root(self, root, create=False):
+        """Define new workspace root. 
+        
+        Parameters
+        ----------
+        root : str
+            Root directory as absolute path. If relative, current 
+            directory is taken as parent.
+        create : bool
+            If True and root does not exist, create it (including parent tree).
+        """
+        p = _Path(root)
+        if not p.is_absolute():
+            p = p.cwd().joinpath(p)
+        if p.is_file():
+            msg = "File {} already exists.\nCannot create workspace " 
+            msg += "root directory with the same name."
+            raise Exception(msg.format(p.as_posix()))       
+        if not p.exists():
+            if create:
+                p.mkdir(parents=True)
+                msg = 'Created new workspace root directory:\n{}'
+                self._logger.info(msg.format(p.as_posix()))
+            else:
+                msg = "Workspace root directory {} does not exist."
+                raise Exception(msg.format(p.as_posix()))               
+        self._paths['work'] = p
         
     def change_workspace(self, root=None, create_tree=True, save=True, 
                          verbose=True):
@@ -982,27 +1017,16 @@ class Workspace():
             Print info about new workspace.
             
         """
-        err_msg = 'Cannot create a new workspace.'
-        
-        # set workspace path and verify
-        if root is None:
-            p = _Path.cwd()
-        else:
-            p = _Path(root)
-        if not p.is_absolute():
-            msg = 'Cannot use relative workspace directory: {}\n{}'
-            raise Exception(msg.format(root,err_msg))        
-        if (not p.exists()) or p.is_file():
-            msg = 'Directory does not exist: {}\n{}'
-            raise Exception(msg.format(root,err_msg))
-        self._paths['work'] = p
+        #err_msg = 'Cannot create a new workspace.'        
+        # set workspace root and verify
         self._logger.clear()
-        if verbose:
-            self._logger.info('Workspace switched to {}'.format(self._paths['work']))
-            #print('Workspace switched to {}'.format(self._paths['work']))        
+        if root is not None:
+            self._set_workspace_root(root, create=False)
+            if verbose:
+                msg = 'Workspace switched to {}'
+                self._logger.info(msg.format(self._paths['work']))        
         # try to load workspace file
-        wks = self._load()
-        
+        wks = self._load()       
         # Cannot load workspace file?
         if wks is None:
             # make paths relative to the new workspace
@@ -1020,14 +1044,11 @@ class Workspace():
             if verbose:
                 fn = self._get_workspace_file()
                 self._logger.info('Loaded workspace setting from {}'.format(fn))
-                # print('Loaded workspace setting from {}'.format(fn))
             self._paths.update(wks)
+            # create subdirectories if needed
+            if create_tree:
+                _create_workspace_tree(self._paths) 
         
-        # create subdirectories if needed
-        if create_tree:
-            _create_workspace_tree(self._paths) 
-        
-
     def full_path(self, key, as_posix=False):
         """Return full path for given directory key.
         
@@ -1123,6 +1144,7 @@ class Workspace():
     
     def validate_paths(self):
         """Check that the workspace paths exist."""
+        _create_workspace_tree(self._paths)
         fmt = 'Path not found: {}'
         for key in self.keys:
             f = self.full_path(key, as_posix=False)
@@ -1142,6 +1164,7 @@ class Workspace():
             txt = json.dumps(out,indent=4)
             with open(file, 'w') as f:
                 f.write(txt)
+            #self._logger.info('Workspace info saved in {}'.format(file))
         except Exception as e:
             print(e)
 
