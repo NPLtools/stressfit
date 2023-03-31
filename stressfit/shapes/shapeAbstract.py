@@ -6,7 +6,7 @@ Created on Tue Aug 15 13:44:06 2017
 @author: Jan Saroun, saroun@ujf.cas.cz
 
 """
-
+# TODO: rewrite the sample and shapes modules to work with the Geometry class.
 import abc
 import numpy as np
 from numpy.linalg import norm
@@ -141,15 +141,28 @@ class ShapeAbstract:
         
         with open(filename, 'w') as f:
             f.write(txt)
-        
 
+    def set_geometry(self, geom):
+        """Apply given geometry data to the shape.
+        
+        Angles are given in deg. 
+        
+        Parameters
+        ----------
+        geom : dict
+            The geometry data: angles, scanorig, scandir
+        
+        """
+        self.reset()
+        self.rotate(*list(geom['angles']*np.pi/180))
+        self.moveTo(-geom['scanorig'])
+        self.set_scan(geom['scandir'], np.zeros(3))
         
     def set_scan(self, sdir, sctr):
         """Set scan direction and centre.
 
         Parameters
-        ----------
-        
+        ----------        
         sdir : array_like
             Scan direction in local coordinates.
         sctr : array_like
@@ -165,18 +178,15 @@ class ShapeAbstract:
         """Calculate depths under the surface in lab coordinates.
         
         Parameters
-        ----------
-        
+        ----------  
         r: array
             position coordinates
 
         Returns
-        --------
-        
+        -------
         array
             Depths under the nearest surface for each position.
-        """
-        
+        """        
         v = self.getLocalPos(r)
         return self.depthLocal(v)
 
@@ -250,9 +260,8 @@ class ShapeAbstract:
             res.append([ic, pin, pout])
         return res
 
-    def getRotation(self, omega, chi, phi):
-        """ Generate YXY Euler matrix. """
-        
+    def _get_rotation(self, omega, chi, phi):
+        """Generate YXY Euler matrix."""
         s, c = np.sin(omega), np.cos(omega)
         R1 = np.array([[c, 0., -s], [0., 1., 0.], [s, 0., c]])
         s, c = np.sin(chi), np.cos(chi)
@@ -263,23 +272,20 @@ class ShapeAbstract:
         return R
 
     def reset(self):
-        """Set position and orientation to zero."""
-        
+        """Set position and orientation to zero."""  
         self._R = np.eye(3, 3)
         self._isRot = False
         self._pos = np.zeros(3)
 
     def rotate(self, omega, chi, phi):
-        """ Rotate shape using YXY Euler system. """
-        
-        R = self.getRotation(omega, chi, phi)
+        """Rotate shape using YXY Euler system."""
+        R = self._get_rotation(omega, chi, phi)
         self._R = R.dot(self._R)
         self._pos = self._R.dot(self._pos)
         self._isRot = self._R.trace() < 3.0
 
     def moveTo(self, r):
-        """Move shape by r. """
-        
+        """Move shape by r."""     
         self._pos += np.array(r)
         
     def moveToAbs(self, r):

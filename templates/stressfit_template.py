@@ -1,422 +1,385 @@
 #!/usr/bin/env python
 # coding: utf-8
+"""Template script for standard workflow when using StressFit.
 
-# In[1]:
+This script executes in sequence the tasks usually needed when fitting the 
+neutron strain mapping data. The data are assumed to be the 3-column
+text files with scan position [mm], strain [1e-6] or intensity, and errors 
+(stdev). 
 
+The script should work as is with the input data provided by the package 
+resources. However, it is intended for use as a template for real work. 
+Individual steps are explained in the comments below. 
 
-import numpy as np
-import stressfit.shapes as S
-import stressfit.mccfit as mc
+It is expected that the script is executed interactively, section by section, 
+from suitable environment such as Spyder or Jupyter notebook. With the default 
+values, it should run as a single command
+
+`python -m stressfit_template.py`
+
+Note that the script includes fiting in several loops for regularization and
+error estimate, therefore the execution time may be long.
+
+@author: Jan Saroun, saroun@ujf.cas.cz
+"""
 import stressfit.commands as comm
-from IPython.display import HTML
-deg = np.pi/180.
-HTML('''<script>
-code_show=false; 
-function code_toggle() {
- if (code_show){
- $('div.input').hide();
- } else {
- $('div.input').show();
- }
- code_show = !code_show
-} 
-$( document ).ready(code_toggle);
-</script>
-<b>To hide/show the code blocks, click <a href="javascript:code_toggle()">here</a>.</b>''')
+import stressfit.shapes as shapes
 
-
-# # STRESSFIT
-# <p>
-# <i>Written by:</i> Jan Saroun, Nuclear Physics Institute CAS, Rez, saroun@ujf.cas.cz<br/>
-# <i>Date:</i> 03/02/2022<br/>
-# <i>Source:</i> https://github.com/NPLtools/stressfit
-# </p>
-# <p>
-# This script permits to treat pseudo strains in neutron residual strain measurements. Pseudo strains due to partial immersion of sampling volume in the sample, steep intrinsic strain gradients and heterogeneous distribution of scattering probability can be treated. The script employs Monte Carlo convolution method, which uses sampling points produced by Monte Carlo ray-tracing simulation of the diffractometer to model smearing of intrinsic sample properties by instrumental response. Each point has all available information about a scattering event: position, initial and final neutron wave vector, probability and dhkl value associated with this sampling point. Such a sampling distribution can be simulated rather quickly for any instrument setup, for example by the ray-tracing program SIMRES (http://neutron.ujf.cas.cz/restrax). The sampling distribution is then reused to cary out the convolution with any sample shape, position, orientation and strain distribution. This decoupling of MC ray-tracing simulation from the convolution procedure permits to write a code which is rather fast (typically about 1s per one scan at 1 CPU). It is therefore possible to use the MC integration as a part of cost function for least squares fitting.
-# </p><p>
-# Development of a Python library STRESSFIT aims at providing tools for analysis of residual stress measurements, where pseudo strains can't be avoided and must be taken into account in data processing. Currently, STRESSFIT enables to model pseudo strains for several basic sample shapes (curved plates, full and hollow cylinders and spheres). It also enables least squares fitting of measured scans for a single strain component. Simultaneous fitting of multiple components with a single stress distribution model is envisaged in future versions. 
-# </p>
-# 
-# ## Jupyter viewer
-# Examples with output of STRESSFIT are also available via Jupyter viewer server:
-# <p>
-# <a href='http://nbviewer.jupyter.org/url/neutron.ujf.cas.cz/restrax/download/stressfit/stressfit_example1.ipynb'>
-# Example 1</a>: ECNS2019, Fitting of strain gradient under the inner surface of a tube, test on synthetic data for STRESS-SPEC.
-# </p>
-# 
-# ## Documentation
-# <p>
-# For more information, see: <br/>
-# <a href='http://neutron.ujf.cas.cz/restrax/download/stressfit/saroun_MECASENS_2017.pdf'>MECASENS 2017 poster</a><br/>
-# <a href='http://neutron.ujf.cas.cz/restrax/download/stressfit/ECRS2018_stressfit.pdf'>ECRS10, 2018, slides</a><br/>
-# <a href='http://neutron.ujf.cas.cz/restrax/download/stressfit/saroun_ECNS2019_poster.pdf'>ECNS 2019, poster</a> <br/>
-# </p>
-# 
-
-# In[2]:
-
-
-# Set the workspace directory. None for the current directory.
+#%% Workspace definition
+"""Set the root workspace directory. Use None for the current directory."""
 workspace = None
-# workspace = r'D:\Saroun\git\test\stressfit\test'
-# Set the other input/output folders (can be absolute or relative).
-# Relative paths should exist under the workspace directory.
-# Set to None for searching in package resources.
-output_path = './output' # output data
-input_path = None # input data
-tables_path = None # lookup tables etc.
-sampling_path = None # directory with simulated sampling points 
+#workspace = r'your workspace root directory'
+
+
+"""
+Set the other input/output folders (can be absolute or relative).
+Relative paths should exist under the workspace directory.
+Set to None for searching in package resources.
+"""
+env = {'output': './output', # output path (./output is the default if None)
+       'data': None,         # input path for sampling and experimental data 
+       'tables': None        # input path for lookup tables etc.
+      }
 
 # Set workspace and validate
 comm.set_workspace(workspace)
-comm.set_environment(data=input_path, output=output_path, tables=tables_path)
+comm.set_environment(**env)
 comm.validate_workspace()
 
 
-# ## Sample definition
-# Following block defines the <b>sample shape, position and orientation.</b>
-# ### Coordinates
-# The laboratory frame is defined by y-axis vertical and z-axis pointing along the incident beam.
-# The positioning includes rotation by YXY Euler angles ($\omega$, $\chi$, $\phi$) and a linear shift (multiple commands <code>rotate</code> and <code>moveTo</code> are possible to achieve required position).
-# 
-# Imported MC events are defined in the laboratory frame, with the origin at the centre of the instrumental gauge volume. Sample position and orientation thus define zero scan position and scan direction in the sample.
-# 
-# ### Sample shape
-# Sample dimensions depend on the selected shape. Choose one of the classes defined in the Shapes folder of the package:
-# 
-# <code>import stressfit.shapes as S</code><br />
-#
-# <code> S.create(S.Plate, thickness=10.0) </code> <br />
-# An infinitely large flat plate of given thickness.
-# 
-# <code> S.create(S.PlateCurved,thickness=5.0, length=50.0, height=15.0, rho1=[0.02, 0.0], rho2=[0.02, 0.0]) </code><br />
-# A curved plate of given thickness (z), length (x) and height (y). <code>rho1</code> are curvature radii along x and y of the front surcae (z>0). <code>rho2</code> are the radii for the rear surface.
-# 
-# <code> S.create(S.Cylinder, radius=4.0, height=30.0) </code><br />
-# A cylindrical shape with axis along y-axis.
-# 
-# <code> S.create(S.Tube, Rin=4.0, Rout=8.0, height=30.0, ctr=[0,0], sref=1) </code><br /> 
-# A hollow cylinder with axis along y-axis. 
-# - Rin, Rout are the inner and outer radii.
-# - ctr is the x,z position of the hole centre
-# - sref defines the reference surface for depth calculation (0/1 for the inner/outer surface)
-# 
-# <code> S.create(S.Sphere, radius=8.0) </code> <br />
-# A spherical sample.
-# 
-# <code> S.create(S.ETubes, a=8.0, b=8.0, angle=0.0, height=30.0, holes=[], sdir=[0,0,1], sctr=[0,0,0]) </code><br />
-# A cylinder with axis || y and multiple coaxial elliptic holes.
-# 
-#     a : float
-#         First semi-axis of the sample basis, parallel to x if angle=0. 
-#     b : float
-#         Second semi-axis of the sample basis, parallel to z if angle=0.  
-#     angle : float
-#         Angle of the semiaxis a with respect to x [deg]
-#     height : float
-#         Height in [mm].
-#     holes : list of dict
-#         Each item defines a hole. 
-#         The parameters are
-#             x, z : coordinates of the centre
-#             a, b : ellipse semi-axes
-#             angle : angle of the semiaxis a with respect to x [deg].
-#     sdir : array_like
-#         Scan direction in local coordinates.
-#     sctr : array_like
-#         Scan origin in local coordinates. 
-# 
-# For complete help on sample shapes, use
-#
-# <code>S.help()</code>
-#
-# ### Input data
-# The input experimental data are integral peak intensities and strains measured as a function of scan depth. They are provided as text files with three columns: depth [mm], intensity [any unit] or strain [$\mu\epsilon = 10^{-6}$], and error (std. deviation). 
-# 
-# 
+#%% Sample definition
 
-# ## User input
-# The next block in this template defines a tube: a hollow cylinder with inner radius 4 mm, outer radius 8 mm and height 50 mm. Zero scan position corresponds to the instrumental gauge volume centered at the surface. Measured strain direction is defined by the angle <code>omega</code>.
+"""
+Define sample shape. Dimensions are in mm.
+See docstring for comm.set_shape. 
+"""
+shape = shapes.Tube
+# sref=0 means that the depth is measured from the outer surface ...
+shape_param = {'Rin':4.0, 'Rout':8.0, 'height':50.0, 'sref':1}
+# execute
+comm.set_shape(shape, **shape_param)
 
-# In[3]:
-
-
-# USER INPUT:
-
-# Create sample shape (see comment above).
-# Dimensions [mm]
-radius1 = 4.
-radius2 = 8
-height = 50.0
-shape = S.create(S.Tube, Rin=4.0, Rout=8.0, height=50.0)
-
-# Define input data for measured strain and intensity
-# 3-column text format with scan position, value and error
-strain = 'eps_SS_rad.dat'
-intensity='int_SS_rad.dat'
-
-# Define scan geometry
+"""Define scan geometry."""
+geom = {
 # Scan direction in sample coordinates (where the gauge moves)
-scandir=[0., 0., -1.]
+'scandir': [0., 0., -1.],
 # Sample orientation (Euler angles YXY) in deg
-angles=[135, 0, 0]
+'angles': [135, 0, 0],
 # Scan origin (encoder = 0) in sample coordinates
-scanorig=[0, 0, 0]
+'scanorig':[0, 0, 0],
 # Sample rotation centre (sample coordinates)
-rotctr=[0, 0, 0]
-
-# Define material attenuation, either of:
-# File name: A table with 2 columns: wavelength [A], attenuation [1/cm]
-# Float number: attenuation [1/cm]:
-att = 'Fe_mu.dat'
-
-# file with the sampling points  
-sampling_file = 'events_S_1mm.dat' 
-# number of sampling points to load from the file
-nev_load = 3000
-# number of sampling points to plot
-nev_plot = 3000
-# number of sampling points to use in concolution
-nev_use = 3000
-
-# 2D plot of experiment geometry:
-# scene width,height in [mm]
-scene_range = [16, 16]  
-# projection plane (zy=0, xz=1, xy=2)
-scene_projection = 1 
+'rotctr': [0, 0, 0]
+}
+# execute
+comm.set_geometry(geom)
 
 
-# ## Initialization commands
+"""
+Define material attenuation, either of:
+    
+- File name: A table with 2 columns: wavelength [A], attenuation [1/cm]
+- Float number: attenuation [1/cm]
 
-# In[4]:
+Example data files can be found in the package resources.
+"""
+comm.set_attenuation('mu_Fe_gamma.dat')
 
 
+"""
+Load file with the sampling event list.
+
+Provide filename and number of events to loaad.
+The file should be placed in the data input directory of the current workspace.
+"""
+comm.set_sampling(filename='events_S_1mm.dat', nev=10000)
+comm.get_sampling().print_properties()
 
 
-# Load the data and save it in the scan variable with all meta-data. 
-scan = comm.load_input(strain, intensity=intensity,scandir=scandir,
-                       scanorig=scanorig, rotctr=rotctr, angles=angles)
+#%% Show the experiment geometry
+"""
+Plot the 2D scene with the sample shape and sampling events projection.
+Provide the number of events to plot as the 1st argument.
+Other optional arguments are:
+    filename : png file to save the plot
+    rang : range of the plotted area in mm
+    proj : projetion plane, eg. xz, zy, etc.
+    
+You may need to adapt sample/geometry above to match the required setup.
+"""
+comm.plot_scene(3000, filename='scene.png', rang=[16, 16], proj='xz')
 
-# Load and set sampling distribution
-sampling = comm.load_sampling(sampling_file, path=sampling_path, maxn=nev_load)
-sampling.print_properties()
-scan['sampling'] = sampling
-# comm.set_sampling(sampling)
 
-# Set beam attenuation
-comm.set_attenuation(att)    
+#%% Calculate resolution and pseudostrain 
 
-# Set sample shape
-comm.set_shape(shape)
+"""Define scan range in mm: minimum, maximum and number of steps."""
+scan_range = [-9, -3, 31]
 
-# Set experiment geometry 
+"""
+Calculate and plot pseudo-strains for given scan range.
+
+This function calculates the "as-measured" strain and intensity
+by making convolution of the sampling events with the sample, assuming zero
+intrinsic strain and uniform scattering intensity.
+
+Provide the range and output filename as the 1st and 2nd arguments.
+Other optional arguments are:
+    nev : number of events to use
+    intensity : if true, show also the intensity profile.
+"""
+comm.report_pseudo_strains(scan_range, '', nev=3000, intensity=True)
+
+"""
+Calculate and plot spatial resolution characteristics.
+
+This function calculates the size and centre of gravity (CoG)
+of the actual sampling distribution at given scan positions.
+
+Provide the range and output filename as the 1st and 2nd arguments.
+Other optional arguments are:
+    nev : number of events to use
+    cog : if true, plot also the xyz positions of the sampling CoG.
+"""
+comm.report_resolution(scan_range, '', nev=3000, cog=True)
+                    
+
+#%% Load input data
+"""
+Define input data for measured strain and intensity.
+
+3-column text format with scan position, value and error
+"""
+strain = 'eps_SS_rad.dat'
+intensity = 'int_SS_rad.dat'
+
+"""
+Load the data and associated meta-data (scan geometry, sampling).
+
+By default, the previously defined geometry and sampling are used.
+You can associate the data with other geometry/sampling by providing the 
+values as optional keyward arguments, or afterwards by setting corresponding 
+values to the scan variable. 
+
+For example: scan['scandir'] = [1,0,0]
+"""
+scan = comm.load_input(strain, intensity=intensity)
 comm.set_scan(scan)   
 
+"""Calculate pseudo-strains and intensities and compare with the data."""
+comm.report_data_comparison(scan, nev=3000)
+ 
 
-# ## Sampling distribution
-# 
-# The following command plots the sample and sampling events in requested projection. The <b>red arrow defines the scan direction</b> (where the events move in the sample during the scan). The color scale shows pseudo-strains associated with each event.
+#%% Fit intensities - setup model
 
-# In[5]:
+"""
+Fitting of intensities allows to determine the variation of scattering 
+probability and extinction with scan depth. It can also help to correct 
+for any missfit between the encoder positions (stored in the data file) 
+and true surface position. 
 
-
-comm.plot_scene(nev_plot, scan=scan['epsfile'], rang=scene_range, proj=scene_projection)
-
-
-# ## Fit intensities
-# Fitting of intensities allows to determine the variation of scattering probability and extinction with scan depth. It can also help to correct for any missfit between the encoder positions (stored in the data file) and true surface position. Note that sometimes these effects can't be distinguished from each other. With a strong variation of scattering probability (e.g. due to a greadient in texture or composition near the surface), it is not possible to reliably determine the surface position and extinction just from the intensity variation. Then some of the parameters must be determined independently and fixed for fitting. On the other hand, it is the product of extinction and scattering probability distributions which affects pseudo-strains, therefore they do not need to be exactly distinguished.
-# 
-# NOTE:<br/>
-# Scattering probability and strain distributions are defined on the depth scale. Definition of the <i>depth</i> depends on the sample shape. For plates, it is the distance to the upper surface (in local coordinates of the sample). For sphers and cylinders, it is the distance from the curved surface (the outer one in the case of hollow shapes). For complex samples like ETubes, the 'depth' is a position inside the sample projected on the scan direction.
-# 
-# ### Define initial values
-# 
-# The depth distributions are modelled as a set of points interpolated by splines of selected order (1 to 3). Define below a minimum number of depth and intensity values which gives a satisfactory estimate of the intensity variation. Obviously, the intensity values should be kept constant for homogeneous materials.
-# 
-# <b>Provide the fit model settings below:</b>
-
-# In[6]:
+Note that sometimes these effects can't be distinguished from each other. 
+With a strong variation of scattering probability 
+(e.g. due to a greadient in texture or composition near the surface), 
+it is not possible to reliably determine the surface position and extinction 
+just from the intensity variation. Then some of the parameters must be 
+determined independently and fixed for fitting. 
+On the other hand, it is the product of extinction and scattering probability 
+distributions which affects pseudo-strains, therefore they do not need to be 
+exactly distinguished.
 
 
-# USER INPUT for intensity fit 
-#--------------------------------------------------------------------
-# Give initial values, followed by flags (0|1), fx=1 means a free variable, 0 for fixed. 
+NOTE:
+    
+Scattering probability and strain distributions are defined on the depth scale.
+Definition of the <i>depth</i> depends on the sample shape. For plates, it is 
+the distance to the upper surface (in local coordinates of the sample). 
+For sphers and cylinders, it is the distance from the curved surface 
+(the outer one in the case of hollow shapes). 
+For complex samples like ETubes, the 'depth' is a position inside the sample 
+projected on the scan direction.
+"""
 
-# depth values [mm]
-x =  [0., 1., 2.5, 3.5, 4]
-fx = [0, 0, 0, 0, 0]
 
-# intrinsic scattering intensity [rel. units]
-y = [1., 1.0, 1.0, 1., 1.]
-fy = [0, 0, 0, 0, 0]
+"""
+Define initial intensity distribution model.
 
-# Set the method for interpolation between the nodes.
-# Use one of 'natural','clamped', 'PCHIP', 'Akima'
-interpolation = 'PCHIP' # PCHIP = Piecewise cubic Hermitian interpolation polynomial
+The depth distributions are modelled as a set of points interpolated by 
+splines of selected order (1 to 3). Define below a minimum number of depth 
+and intensity values which gives a satisfactory estimate of the intensity 
+variation. Obviously, the intensity values should be kept constant for 
+homogeneous materials.
 
-# Background and amplitude
-A = 33000
-B = 0
-# fixed (0) or free (1):
-fA = 1
-fB = 0
 
-# zero encoder position = position of the front surface in encoder scale
-# = where is the surface position in the data table ...
-zc = 0.05
-# fixed (0) or free (1):
-fzc = 1
+Define the x,y distribution values and associated fit-flags. For example,
+fitx=1 means a free x-variable, 0 means fixed.
 
-# Define fit options
+x = depth values [mm]
+y = intrinsic scattering intensity [rel. units]
+
+"""
+distribution = {
+    'x':    [0., 1., 2.5, 3.5, 4],
+    'fitx': [0, 0, 0, 0, 0],
+    'y':    [1., 1., 1., 1., 1.],
+    'fity': [0, 0, 0, 0, 0]
+    }
+
+"""
+Set the method for interpolation between the nodes.
+Use one of 'natural','clamped', 'PCHIP', 'Akima'
+See documentation in the lmfit package. 
+"""
+interpolation = 'natural'
+
+"""
+Set scaling parameters and corresponding fit-flags.
+
+The scaling formula is y_scaled = A*y(z-zc) + B
+"""
+scaling = {
+    'A':  20000,
+    'B':  0,
+    'zc': 0.05
+    }
+f_scaling = {
+    'fA':  1,
+    'fB':  0,
+    'fzc': 1
+    }    
+
+"""Commands to define the fitting model."""
+ifit = comm.define_ifit(scan, distribution, 3000)
+comm.define_scaling(ifit, scaling, f_scaling)
+ifit.setInterpModel(interpolation)
+
+"""
+Define fit options.
+"""
 # Maximum number of iterations
 maxiter = 100
 # Use bootstrap method for estimation of confidence limits?
 bootstrap = False
 # Set loops for the number of bootstrap cycles.
 loops = 3
-# regularization
+# regularization parameter
 areg = 3
 # Set False to skip intensity fit
 runIFit = True
 
-#---------------------------------------------------------------------
-# Guess fit
-# If necessary, adjust the above parameters to improve the initial model.
-#----------------------------------------------------------------------
-ifit = comm.define_ifit(scan, [x,y,fx,fy], nev_use)
+"""
+Guess fit
+If necessary, adjust the above parameters to improve the initial model.
+The guess fit is the fast method neglecting de-smearing.
 
-# define scaling (background, amplitude and depth shift). minval,maxval=limits of these parameters.
-ifit.defScaling([A, B, zc], [fA, fB, fzc], minval=[0., 0., -np.inf])
-# set the interpolation method
-ifit.setInterpModel(interpolation)
+If necessary, adjust the above model parameters to improve the initial model.
+"""
 
 # Run guess fit with given parameters (see docs for run_fit_guess)
 if runIFit:
-    print('Check the fit estimate and iprove the model if necessary:')
-    comm.run_fit_guess(ifit, maxiter=100, a=areg)
-    comm.report_fit(ifit, "")
+    comm.run_fit_guess(ifit, maxiter=maxiter, ar=areg, outname='')
 
-
-# ### Run fit
-# Is the above estimate good? Then execute the following box to run fitting procedure and plot results.
-
-# In[7]:
-
-
+#%% Fit intensities - run and report results
+    
 if runIFit:
     comm.run_fit(ifit, maxiter=maxiter, ar=areg, bootstrap=bootstrap, 
-                 loops=loops)
-    comm.report_fit(ifit, scan['intfile'])
+                 loops=loops, outname=scan['intfile'])
+
+#%% Fit strain - setup model
+
+"""
+Fitting of strain depth distribution is similar to the above procedure for 
+fitting intensities. The scattering probability distribution determined 
+above will be automatically taken into account in modelling of 
+pseudo-strains below.
+
+The depth distributions are modelled as a set of points 
+[depth, strain] interpolated by splines of selected order (1 to 3).
+ Define below a minimum number of depth and strain values which is required
+ to gives a satisfactory estimate of the strain distribution. 
+"""
 
 
-# ## Fit strain distribution
-# Fitting of strain depth distribution is similar to the above procedure for fitting intensities. The scattering probability distribution determined above will be automatically taken into account in modelling of pseudo-strains below.
-# 
-# ### Define initial values
-# 
-# The depth distributions are modelled as a set of points [depth, $\epsilon$(depth)] interpolated by splines of selected order (1 to 3). Define below a minimum number of depth and strain values which gives a satisfactory estimate of the strain distribution. 
-# 
-# <b>Provide the fit model settings below:</b>
+"""
+Define the x, y distribution values and associated fit-flags. For example,
+fitx=1 means a free x-variable, 0 means fixed.
 
-# In[8]:
+x = depth values [mm]
+y = strain in 1e-6 units
 
+the 1st and last x-value should always be fixed ...
 
-# USER INPUT for strain fit 
-#--------------------------------------------------------------------
-# Give initial values, followed by flags (0|1), fx=1 means a free variable, 0 for fixed. 
-# initial depth values [mm]
-x =  [0., 1., 2.0 , 2.5, 3.0 , 3.5 , 3.7 ,  4.]
-fx = len(x)*[1]
-fx[0] = 0
-fx[-1] = 0
+"""
+distribution = {
+    'x':   [0., 1., 2.0 , 2.5, 3.0 , 3.5 , 3.7 ,  4.],
+    'fitx': [0] + 6*[1] + [0],
+    'y':  8*[0],
+    'fity': 8*[1]
+    }
 
-# initial strain values [1e-6]
-y =  len(x)*[0.]
-fy = len(y)*[1]
-fy[0]=0
+"""
+Set the method for interpolation between the nodes.
+Use one of 'natural','clamped', 'PCHIP', 'Akima'
+See documentation in the lmfit package. 
+"""
+interpolation = 'natural'
 
-# Set the method for interpolation between the nodes.
-# Use one of 'natural','clamped', 'PCHIP', 'Akima'
-# PCHIP = Piecewise cubic Hermitian interpolation polynomial
-interpolation = 'natural'  
+# use surface position from intensity fit 
+zc = ifit.params['xc'].value
+print('Using surface position: {:g}\n'.format(zc))
 
-# Define a constraint function (optional)
-def constraint(params):
-    """Constraint function."""
-    # constraint example: keeps surface strain at 0 with 50ue tolerance
-    dist = mc.params2dist(params)
-    y=dist[1,1]
-    return (y-0.)/50. 
-# Assign constraint to constFnc in order to use it:
-# constFnc=constraint
-constFnc=None
+"""Commands to define the fitting model."""
+sfit = comm.define_sfit(scan, distribution, 3000, z0=zc)
+sfit.setInterpModel(interpolation)
 
-# Define fit options
+"""
+Define fit options.
+
+A bootstrap cycle, if defined, is applied to estimate confidence limit.
+A regularization cycle for given number of coefficients is executed if requested. 
+"""
 # Use bootstrap method for estimation of confidence limits?
 bootstrap = True
 # Set loops for the number of bootstrap cycles.
-loops = 5
+loops = 3
 # Define a list of regularization factors:
-aregs = [1, 2, 3, 4, 5]
+aregs = [1, 2, 3, 4, 5, 6]
 # maximum iterations for guess fit
 maxguess = 100
 # maximum iterations for fit
-maxiter=200
+maxiter = 200
 # Run regularization loop?
 runReg = False
 # Run strain fit?
 runSFit = True
 
-#---------------------------------------------------------------------
-# Guess fit
-# If necessary, adjust the above parameters to improve the initial model.
-#----------------------------------------------------------------------
-# use surface position from intensity fit
-zc = ifit.params['xc'].value
-print('Using surface position: {:g}\n'.format(zc))
+"""
+Guess fit
+If necessary, adjust the above parameters to improve the initial model.
+The guess fit is the fast method neglecting de-smearing.
 
-sfit = comm.define_sfit(scan, [x,y,fx,fy], nev_use, z0=zc, constFnc=constFnc)
-
-# define interpolation method
-sfit.setInterpModel(interpolation)
+If necessary, adjust the above model parameters to improve the initial model.
+"""
 
 # Run guess fit with given parameters (see docs for run_fit_guess)
 if runSFit:
-    comm.run_fit_guess(sfit, maxiter=maxguess, ar=areg)
-    comm.report_fit(sfit, '')
+    comm.run_fit_guess(sfit, maxiter=maxguess, ar=areg, outname='')
 
 
-# ## Run fit
-# 
-# Is the above estimate good? Then continue by running the whole fitting job. 
-# 
-# The setting provided above defines the process:
-# 
-# - A bootstrap cycle, if defined, is applied to estimate confidence limit.
-# - A regularization cycle for given number of are coefficients is executed if requested. 
+#%% Fit strain - run regularization loop
 
-# In[ ]:
-
-
-# Run fit with regularization
 if runSFit and runReg:
     comm.run_fit_reg(sfit, maxiter=maxiter, ar=aregs, outname='')
 
 
-# ### Run the final fit
-# 
-# Choose the optimum value of <code>areg</code> (regularization coefficient) and run the command below.
+#%% Fit strain - run final fit
 
-# In[9]:
-
-
-areg = 2
+"""
+Choose the optimum regularization value (areg) and run the final fit.
+"""
+areg = 3
 if runSFit:
     comm.run_fit(sfit, maxiter=maxiter, ar=areg, outname=scan['epsfile'], 
                  bootstrap=bootstrap, loops=loops)
 
-
-# In[ ]:
 
 
 

@@ -97,6 +97,18 @@ _path_keys = _wks_keys.copy()
 _path_keys.remove('work')
 
 
+def deprecated(name, version=None, use=''):
+    """Raise deprecated message."""
+    msg = '{} is deprecated'.format(name)
+    if version:
+        msg += ' since version {}'.format(version)
+    if use:
+        msg += '. Use {} instead.'.format(use)
+    else:
+        msg += '.'
+    print(msg)
+
+# TODO separate logger system to another module
 def logger():
     """Access Stressfit loggers."""
     global __log
@@ -140,13 +152,19 @@ class FitProgressLogger():
     def quiet(self, value):
         self._quiet = value
 
-    def _prn(self, msg):
+    def _prn(self, msg, rewrite=False):
+        def _print(msg):
+           # LINE_CLEAR = '\x1b[2K' # <-- ANSI sequence
+            if rewrite:
+                print(msg, end='\r\r')
+            else:
+                print(msg)
         if not self._quiet: 
             if self._out is None:
-                print(msg)
+                _print(msg)
             else:
                 with self._out:
-                    print(msg)
+                    _print(msg)
 
     def start(self, clearlog=True, **kwargs):
         """Start fitting run."""
@@ -170,8 +188,8 @@ class FitProgressLogger():
     def prog(self, **kwargs):
         """Show fit progress."""
         args = [kwargs[k] for k in ["iter", "chi2", "reg"]]
-        msg = 'iter={:g}, chi2={:g}, reg={:g}'.format(*args)
-        self._prn(msg)    
+        msg = 'eval={:g}, chi2={:g}, reg={:g}'.format(*args)
+        self._prn(msg)  
     
     def finished(self, completed=True, **kwargs):
         """Show fit finished."""
@@ -503,6 +521,7 @@ class _log_handler_exc(logging.StreamHandler):
                     display(t)
             else:
                 # self.message('terminal16m')
+                lexer = lexers.get_lexer_by_name("pytb", stripall=True)
                 formatter = formatters.get_formatter_by_name('terminal16m')
                 tb_colored = highlight(tb_text, lexer, formatter)
                 print(tb_colored)
@@ -736,6 +755,7 @@ class _Setup():
                 self._log.warning(msg)
                 self._data['version'] = self.version
             elif res<0:
+                self._data['version'] = self.version
                 self._log.info('Version updated in {}'.format(self._appsetup))
                 self._data['version'] = self.version
                 self.save()
@@ -745,6 +765,21 @@ class _Setup():
             self.reset_paths()  # set paths to default (using resources)
             self.save()
     
+    def renew(self):
+        """Re-create the default program setup in application data.
+        
+        Needed when changing the package location.
+        
+        """
+        cont = load_config(_Setup._setup_file)
+        self.verify(cont)
+        self._data.update(cont)
+        self.reset_paths()  # set paths to default (using resources)
+        self.save()
+        msg = 'Program information updated in {}'.format(self._appsetup)
+        self._log.info(msg)
+        
+        
     def check_version(self, version):
         """Compare given version with the current one.
         
@@ -890,11 +925,21 @@ class Workspace():
         self._logger = logger()
         self._paths = {}
         self.reset_paths(create_tree=True, save=True)
-    
+        
     @property
     def wksdir(self):
-        """Directory with workspace configuration data."""
+        """Get workspace root directory."""
+        deprecated(__name__, version='1.2.0', use='root')
         return self._paths['work']
+
+    @property
+    def root(self):
+        """Workspace root directory."""
+        return self._paths['work'].as_posix()
+   
+    @root.setter
+    def root(self, root):
+        self.change_workspace(root=root)
     
     @property
     def keys(self):
@@ -951,6 +996,21 @@ class Workspace():
             except Exception as e:
                 print(e)
         return wks
+
+    def renew(self):
+        """Re-create the default project setup data.
+        
+        Needed when changing the package location.
+        
+        """
+        stp = _setup()
+        stp.renew()
+        self._paths = copy.deepcopy(stp.workspace)
+        self.change_workspace(root=self._paths['work'], 
+                              create_tree=True,
+                              load=True,
+                              save=True,
+                              verbose=True)
         
     def reset_paths(self, create_tree=False, save=False):
         """Reset workspace paths to package defaults."""
@@ -993,7 +1053,7 @@ class Workspace():
         self._paths['work'] = p
         
     def change_workspace(self, root=None, create_tree=True, save=True, 
-                         verbose=True):
+                         load=True, verbose=True):
         """Change workspace root directory.
         
         Process dependences:
@@ -1008,14 +1068,16 @@ class Workspace():
         ----------
         root : str
             The new workspace root directory.
-            Must be a full path or None. If None, use current directory.
+            If None, root is not changed. If relative path or empty string, 
+            the current directory is used as the parent.
         create_tree : bool
             Create workspace tree
         save : bool
             Save workspace file if there is no one yet.
+        load : bool
+            Load project information from the workspace file if found.        
         verbose : bool
-            Print info about new workspace.
-            
+            Print info about new workspace.      
         """
         #err_msg = 'Cannot create a new workspace.'        
         # set workspace root and verify
@@ -1072,7 +1134,9 @@ class Workspace():
             return res.as_posix()
         else:
             return res
-    
+   
+
+   
     def path(self, key=None, as_posix=False):
         """Return path name for given key. Default is workspace root."""
         if key in self._paths:
@@ -1143,7 +1207,10 @@ class Workspace():
         return env
     
     def validate_paths(self):
-        """Check that the workspace paths exist."""
+        """Check that all workspace paths exist.
+        
+        Raise exception if not.
+        """
         _create_workspace_tree(self._paths)
         fmt = 'Path not found: {}'
         for key in self.keys:
@@ -1151,7 +1218,14 @@ class Workspace():
             if not f.exists():
                 raise Exception(fmt.format(f.as_posix()))
 
-
+    def validate(self, verbose=True):
+        """Check that all workspace paths are valid."""
+        try:
+            self.validate_paths()
+            if verbose:
+                self.info(absolute=True)
+        except:
+            self._logger.exception('Invalid workspace paths.')
 
     def save(self):
         """Save workspace paths in local configuration file."""
@@ -1169,11 +1243,12 @@ class Workspace():
             print(e)
 
     def info(self, absolute=False):
-        """Print ifnormation on workspace paths."""
-        fmt = '{}: {}'
+        """Print information on workspace paths."""
+        fmt = '{}:\t{}'
         lst = _workspace_to_str(self._paths, absolute=absolute)
+        self._logger.info('Workspace setting:')
         for key in lst:
-            print(fmt.format(key,lst[key]))
+            self._logger.info(fmt.format(key,lst[key]))
             
 class Param(dict):
     """
@@ -1408,77 +1483,73 @@ def derive_filename(file, ext='', sfx=''):
     
     return path.joinpath(fn)
 
-
-def get_input_file(filename, kind='data', path=None, **kwargs):
-    """
-    Convert filename to full path name.
-    
-    If path is not defined, use workspace path for given directory kind.
-    Otherwise only convert the file name to a Path object.
-    
-    Parameters
-    ----------
-    filename: str
-        File name (base name or full path).
-    kind: str
-        Which kind of directory to use:
-            - `data` for input data
-            - `tables` for table and other files
-            - `instruments` for a file with instrument parameters
-            - any other: current directory.
-    path: str
-        Optional search path for the input file. 
-    
-    Returns
-    -------
-    :obj:`pathlib.Path`
-        Full path specification.
-    """
+def _get_absolute_file(filename, kind='', path=None, **kwargs):
+    """Get absolute file path for given filename."""
     f = _Path(filename)
     p = None
     if not f.is_absolute():
-        wks = workspace()
         if path:
-            p = _Path(path)
-            if not p.is_absolute():
-                p = None
+            pp = _Path(path)
+            if pp.is_absolute():
+                p = pp
+            else:
+                p = workspace().path().joinpath(pp)
         if p is None:
             if (kind in _wks_keys):
-                p = wks.full_path(kind, as_posix=False)
+                p = workspace().full_path(kind, as_posix=False)
             else:
                 p = f.cwd()
         f = p.joinpath(f)
     return f
 
 
-def get_output_file(filename, path=None, **kwargs):
-    """
-    Convert filename to full output path name.
+def get_input_file(filename, kind='data', path=None, **kwargs):
+    """Get absolute file path for given filename.
     
-    If path is not defined, use workspace path for output directory.
-    Otherwise only convert the file name to a Path object.
+    The `kind` parameter defines the workspace path if `path` is not an 
+    absolute path. See workspace().keys for defined names.
     
     Parameters
     ----------
     filename: str
-        File name (base name or full path).
+        File name (base name or full path). If it defines an absolute path,
+        the `kind` and `path` parameters are ignored.
+    kind: str
+        Name pof the workspace directory (`data`, `tables`, ...).
+        If not defined, the current direcotry is used by default.
     path: str
-        Output path. If not defined and `filename` is relative, 
-        then the default output path is used (see function :func:`.set_path`).
+        Optional search path for the input file. If absolute, it overrides 
+        the workspace directory defined by `kind`. If relative, it is 
+        appended to the workspace root. 
+    
+    Returns
+    -------
+    :obj:`pathlib.Path`
+        Full path specification.
+    """
+    return _get_absolute_file(filename, kind=kind, path=path)
+
+
+def get_output_file(filename, path=None, **kwargs):
+    """Get absolute file path for given filename for output.
+    
+    If path is not defined, use workspace path as the parent path for output.
+    
+    Parameters
+    ----------
+    filename: str
+        File name (base name or full path). If it defines an absolute path,
+        the `kind` and `path` parameters are ignored.
+    path: str
+        Output path. If absolute, it overrides the workspace output directory. 
+        If relative, it is appended to the workspace root. 
         
     Returns
     -------
     :class:`pathlib.Path`
         Full path specification as a :class:`pathlib.Path` object.
     """
-    f = _Path(filename)
-    if not f.is_absolute():
-        if path:
-            p = _Path(path)
-        else:
-            p = workspace().full_path('output', as_posix=False)
-        f = p.joinpath(f)
-    return f
+    return _get_absolute_file(filename, kind='output', path=path)
 
 
 ### Decorators
@@ -1494,21 +1565,25 @@ def loadwrapper(func):
     """
     @wraps(func)
     def func_wrapper(filename, **kwargs):
-       fname = filename
-       try:
-           fname = get_input_file(filename, **kwargs)
-           if fname.exists():
-               #print('Trying to load {}.'.format(fname))
-               res = func(fname, **kwargs)
-               #print('Succeeded.')
-           else:
-               raise Exception('File {} does not exist.'.format(fname))
-       except Exception as e:
-           print('ERROR: could not load file {}.'.format(fname))
-           print('Arguments: {}.'.format(kwargs))
-           print('Check input path.')
-           raise e
-       return res
+        fname = filename
+        try:
+            fname = get_input_file(filename, **kwargs)
+            if fname.exists():
+                #print('Trying to load {}.'.format(fname))
+                res = func(fname, **kwargs)
+                if 'verbose' in kwargs and kwargs['verbose']:
+                    log = logger()
+                    log.info('File {} loaded.'.format(fname))
+            else:
+                raise Exception('File {} does not exist.'.format(fname))
+        except Exception as e:
+            msg = 'Could not load file {}.'.format(fname)
+            msg += ' Arguments: {}.'.format(kwargs)
+            msg += ' Check input path.\n'
+            log = logger()
+            log.warning(msg)
+            raise e
+        return res
     return func_wrapper
 
 
@@ -1526,9 +1601,12 @@ def savewrapper(func):
        try:
            fname = get_output_file(filename, **kwargs)
            func(data, fname, **kwargs)
-           print('File {} saved.'.format(fname))
+           log = logger()
+           log.info('File {} saved.'.format(fname))
        except:
-           print('Warning: could not save file {}.'.format(fname))
+           msg = 'Could not save file {}.'
+           log = logger()
+           log.warning(msg.format(fname))
     return func_wrapper
 
 
@@ -1690,7 +1768,8 @@ def load_data(filename, rows=[0, -1], verbose=True, **kwargs):
             kwargs.pop(k)
     d = np.loadtxt(filename, **kwargs)
     if verbose:
-        print('File loaded: {}'.format(filename))
+        log = logger()
+        log.info('File loaded: {}'.format(filename))
     if (rows[1]>=0):
         return d[rows[0]:rows[1]+1,:]
     elif rows:
@@ -2001,8 +2080,6 @@ def save_params(data, filename, comment="", source="", **kwargs):
     save_text(out, filename, **kwargs)
 
 
-
-
 def test():
     """Test unit."""
     # wks = workspace()
@@ -2015,10 +2092,4 @@ def test():
     d = load_data('eps_B_axi.dat', kind='data')
     assert len(d)>10
 
-
-#log = logging.getLogger()
-#try: 
-#    a=1/0
-#except Exception as e: 
-#    log.exception('aaa')
 

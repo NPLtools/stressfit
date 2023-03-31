@@ -65,17 +65,24 @@ class Geometry:
             Sample orientation (Euler angles YXY), in [deg]
         rotctr : array(3), optional
             Sample rotation centre (sample coordinates), in [mm]
-        """
-        # NOTE: we must invert scandir, because it should define move of events
-        # in stationary sample. 
+        """ 
         self.scandir = np.array(scandir)
         self.scanorig = np.array(scanorig)
         self.rotctr = np.array(rotctr)
-        self.angles = np.array(angles)*_deg
+        self.angles = np.array(angles)
+        # locally, angles are saved and used in rad
+        self._angles_rad = self.angles*_deg
+        
         if 'name' in kwargs:
             self.name = kwargs['name']
-        self.rot = Geometry.EulerYXY(self.angles)
-        
+        self.rot = Geometry.EulerYXY(self._angles_rad)
+    
+    def to_dict(self):
+        """Export as dictionary."""
+        d = self.__dict__
+        out = {key:d[key] for key in Geometry.input_keys}            
+        return out
+    
     def toSample(self, v):
         """Transform a vector to the (rotated) sample frame."""
         return self.rot.dot(v-self.rotctr) + self.rotctr

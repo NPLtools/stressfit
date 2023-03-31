@@ -4,7 +4,7 @@ sample surfaces and depths under surface.
     
 All classes are descendants of the abstract class shapeAbstract.
 
-Use shapes.help() to print detailed onformation on individual shapes.
+Use shapes.help() to print detailed information on individual shapes.
 
 Examples
 --------    
@@ -33,7 +33,7 @@ Curved plate:
    
 """
 
-
+from .shapeAbstract import ShapeAbstract
 from .shapePlate import ShapePlate
 from .shapeCyl import ShapeCyl
 from .shapePlateCurved import ShapePlateCurved

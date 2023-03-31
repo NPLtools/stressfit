@@ -597,7 +597,7 @@ class MCCfit(ABC):
         
     """
     
-    def __init__(self, nev=1000, xdir=[0., 0., -1.], ftol=1.e-4, epsfcn=None):
+    def __init__(self, nev=1000, xdir=[0., 0., -1.], ftol=1.e-4, epsfcn=0.001):
 
         # assign main logger for messages
         self._log = dataio.logger()
@@ -953,14 +953,15 @@ class MCCfit(ABC):
                 tab-delimited table with self.infodepth 
         """
         ss = "# Date: " + str(datetime.datetime.now()) + "\n"
-        hdr = ['position', 'depth', 'x', 'y', 'z', 'width', 'intensity', 'pseudo_strain']
+        hdr = ['position', 'depth', 'x', 'y', 'z', 'width', 'intensity', 'err',
+               'pseudo_strain', 'err']
         ss += '# Header: ' + '\t'.join(f for f in hdr) + '\n'   
         hasData = (self.infodepth is not None)
         if (hasData):
             nm = self.infodepth.shape[0]
             fmt = '{:g}'+7*'\t{:g}'
             for i in range(nm):
-                row = self.infodepth[i,[0,1,5,6,7,2,3,4]]
+                row = self.infodepth[i,[0,1,5,6,7,2,3,9,4,8]]
                 sm = fmt.format(*row) 
                 ss += sm + '\n'
         return ss
@@ -1441,7 +1442,7 @@ class Sfit(MCCfit):
         Function used by scipy.optimize.leastsq to calculate optimal step length.
     """
     
-    def __init__(self, nev=1000, xdir=[0., 0., -1.], ftol=1.e-4, epsfcn=None):
+    def __init__(self, nev=1000, xdir=[0., 0., -1.], ftol=1.e-4, epsfcn=0.001):
         super().__init__(nev=nev, xdir=xdir, ftol=ftol, epsfcn=epsfcn)
         self.imodel = None
         

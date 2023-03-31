@@ -37,8 +37,8 @@ from stressfit.ui.config import uiconfig
 from stressfit.geometry import Geometry
 import stressfit.ui.widgets as sw
 
-# get ui configuration and data with default input values
-_uiconf = uiconfig()
+# Global variable for the uiconfig() object.
+_uiconf = None
 
 def _has_keys(args, keys):
     """Verify that all args are in keys."""
@@ -2881,7 +2881,8 @@ class UI():
                       'emodel',
                       'fit_emodel'
                       ]
-    def __init__(self):    
+    def __init__(self):
+        global _uiconf
         self._last_input_file = 'input.json'
         self.ui = {}
         self.wk = dataio.workspace()
@@ -2897,6 +2898,10 @@ class UI():
         self._logger.output_msg = self._msg
         self._logger.output_exc = self._msg
         self._logger.output_prog = self._prog
+        """Initialize the uiconfig object only after the dataio.logger has 
+        output assigned. this will redirect messages to the output widgets
+        """
+        _uiconf = uiconfig()
         # setup dialog
         self._add_input_ui(UI_workspace('workspace'))
         self._add_input_ui(UI_options('options'))
@@ -2988,7 +2993,7 @@ class UI():
         self.clear_logs()
   
     def _on_reload_data(self,b):
-        _uiconf.reload_all()
+        _uiconf.reload_all(force=True)
         
     def _change(self, obj, **kwargs):
         if obj.name == 'shape':

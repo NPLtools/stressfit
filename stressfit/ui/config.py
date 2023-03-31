@@ -12,9 +12,9 @@ Created on Mon Apr 25 15:47:30 2022
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
 
-# TODO move to the core module package - remove dependence on Geometry
+# TODO move to the core module package - remove dependence on Geometry and commands
 # TODO define strain distribution list, linked to input data
-# TODO define command for plotting & fitting strain  model + data)
+# TODO handle verbosity on file load
 
 import stressfit.dataio as dataio
 import stressfit.commands as comm
@@ -280,6 +280,7 @@ class _InpData():
         """Load sampling data."""
         try:
             sdata = self._data['sampling']['list'][key]
+# TODO create _SamplingData class, replace comm.load_sampling          
             sampling = comm.load_sampling(**sdata)
             sdata['fdata'] = sampling
         except Exception as e:
@@ -455,9 +456,7 @@ class _InpData():
                 for key in list(self._reload_needed[what]):
                     if not key in self._data[what]['list']:
                         del self._reload_needed[what][key]
-
-
-    
+ 
     def reload(self, name, item=None, force=False):
         """Reload required file data item."""
         if not name in _InpData.load_keys:

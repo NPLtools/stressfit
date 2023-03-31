@@ -175,7 +175,6 @@ def getSampling(nev=0):
         _sampling.setRange(nev)
     return _sampling
 
-
 def setSampling(sampling):
     """Assign sampling for use by convolution methods. 
     
@@ -187,31 +186,6 @@ def setSampling(sampling):
     """
     global _sampling
     _sampling = sampling
-    
-
-def rotate(v, axis, angle):
-    """Simple vector rotation function
-
-    Arguments:
-        v -- 3D vector to be rotated
-        axis -- rotation axis index 0 .. 2
-        angle -- rotation angle in rad
-    Returns
-        rotated vector
-    """
-    s, c = np.sin(angle), np.cos(angle)
-    if (axis == 1):
-        R = np.array([[c, 0., s], [0., 1., 0.], [-s, 0., c]])
-    elif (axis == 0):
-        R = np.array([[1., 0., 0.], [0., c, -s], [0., s, c]])
-    elif (axis == 2):
-        R = np.array([[c, -s, 0.], [s, c, 0.], [0., 0., 1.]])
-    else:
-        R = np.eye(3)
-    vv = np.array(v).reshape((3, 1))
-    r = R.dot(vv).reshape(3,)
-    return r
-
 
 def setExtinction(mu = None, table=None):
     """Set beam attenuation.
@@ -438,7 +412,7 @@ def convGauge(x, xdir, iext, nev, ifunc=None):
     Returns
     -------
     array:
-        [x, pos, width, cnts, eps, ctr, err]
+        [x, pos, width, cnts, eps, ctr, err, err_cnt]
     
     Where:
        -  x : scan positions [mm]
@@ -448,6 +422,7 @@ def convGauge(x, xdir, iext, nev, ifunc=None):
        -  eps :  pseudo-strains [1e-6] 
        -  ctr : xyz coordinates of the sampling centre of gravity
        -  err : errors of pseudo-strain [1e-6] 
+       -  err_cnt : error of intensity
        
     """
     global shape, _sampling
@@ -457,6 +432,7 @@ def convGauge(x, xdir, iext, nev, ifunc=None):
     yc2 = np.zeros(nx)
     yd = np.zeros(nx)
     yi = np.zeros(nx)
+    yi2 = np.zeros(nx)
     yd2 = np.zeros(nx)
     rc = np.zeros((nx,3)) # centre
     xs = np.matrix(x)
@@ -503,6 +479,7 @@ def convGauge(x, xdir, iext, nev, ifunc=None):
         sumw += w
         sumn += ins
         yi += w
+        yi2 += w**2
         yc += weps
         yc2 += weps*eps
         yd += wd
@@ -522,6 +499,7 @@ def convGauge(x, xdir, iext, nev, ifunc=None):
     sump += (1-sg)*1.
     sumw += (1-sg)*1
     cnts = sg*yi/sump
+    cnts2 = sg*yi2/sump
     eps = sg*yc/sumw
     err = sg*yc2/sumw
     pos = sg*yd/sumw
@@ -530,9 +508,10 @@ def convGauge(x, xdir, iext, nev, ifunc=None):
     for j in range(3):
         ctr[:,j] = sg*rc[:,j]/sumw
     width = 2.3548*sg*np.sqrt(np.absolute(epos - pos**2))
-    err = sg*np.sqrt(np.absolute(err - eps**2)/sumn) + (1-sg)*np.average(eps)
+    err = sg*np.sqrt(np.absolute(err - eps**2)/sumn) #+ (1-sg)*np.average(eps)
+    err_cnt = sg*np.sqrt(np.absolute(cnts2 - cnts**2)/sumn)
     return np.array([x, pos, width, cnts, 1e6*eps, 
-                     ctr[:,0], ctr[:,1], ctr[:,2], 1e6*err]).T
+                     ctr[:,0], ctr[:,1], ctr[:,2], 1e6*err, err_cnt]).T
 
 def convIntensity(x, model, iext=0):
     """Convolution of the scattering intensity distribution
@@ -595,16 +574,14 @@ def convIntensity(x, model, iext=0):
     yc += (1-sg)*1.
     sumn += (1-sg)*1
     # normalize sums
-    val = yc/sump
-    err = yc2/sump    
-    dval = yd/yc
-    derr = yd2/yc
+    val = sg*yc/sump
+    err = sg*yc2/sump    
+    pos = sg*yd/yc
+    derr = sg*yd2/yc
     # Calculate sampling position, width, intensity and error
-    pos = sg*dval
     width = sg*np.sqrt(np.absolute(derr - pos**2))
-    err = sg*np.sqrt(np.absolute(err - val**2)/sumn) + (1-sg)*np.average(val)  
-    epos = width/np.sqrt(sumn) + (1-sg)*np.average(pos)  
-    val = sg*val
+    err = sg*np.sqrt(np.absolute(err - val**2)/sumn) # + (1-sg)*np.average(val)  
+    epos = width/np.sqrt(sumn) # + (1-sg)*np.average(pos)  
     return [val, err, pos, epos, 2.3548*width]
 
 def convStrain(x, model, iext=0):
@@ -681,6 +658,6 @@ def convStrain(x, model, iext=0):
     pos = sg*yd/sumw
     epos = sg*yd2/sumw
     width = sg*np.sqrt(np.absolute(epos - pos**2))
-    err = sg*np.sqrt(np.absolute(err - eps**2)/sumn) + (1-sg)*np.average(eps)  
-    epos = width/np.sqrt(sumn) + (1-sg)*np.average(pos)  
+    err = sg*np.sqrt(np.absolute(err - eps**2)/sumn) # + (1-sg)*np.average(eps)  
+    epos = width/np.sqrt(sumn) # + (1-sg)*np.average(pos)  
     return [1e6*eps, 1e6*err, pos, epos, 2.3548*width]

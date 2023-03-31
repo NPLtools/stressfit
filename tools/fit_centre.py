@@ -6,10 +6,11 @@
 
 import numpy as np
 from matplotlib import pyplot as plt
-import shapes as S
-import sample as sam
-import graphs as gr
-from mccfit import Ifit, params2array, path2win
+import stressfit.shapes as S
+import stressfit.sample as sam
+import stressfit.graphs as gr
+from stressfit.mccfit import Ifit, params2array, path2win
+from stressfit.geometry import Geometry
 from lmfit import Minimizer, Parameters
 
 # Fit gauge centre from intensity scan data
@@ -59,7 +60,7 @@ sam.setExtinction(table=exttab)
 # define ki and kf vectors in laboratory frame
 take_off = 62.555*deg  # scattering angle
 ki = np.array([0., 0., 1.])  # default for SIMRES simulations
-kf = sam.rotate([0., 0., 1.], 1, take_off)
+kf = Geometry.rotate(ki, 1, take_off) 
 
 
 # ## Sampling distribution

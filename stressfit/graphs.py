@@ -61,6 +61,7 @@ def get_plot_pseudostrain(mcfit):
     item = {}
     item['x'] = data[:,0]
     item['y'] = data[:,4]
+    item['yerr'] = data[:,8]
     item['label'] = 'simulation'
     item['fmt'] = 'b-'
     sres['items'] = [item]
@@ -73,6 +74,7 @@ def get_plot_pseudostrain(mcfit):
     item = {}
     item['x'] = data[:,0]
     item['y'] = data[:,3]
+    item['yerr'] = data[:,9]
     item['label'] = 'simulation'
     item['fmt'] = 'b-'
     ires['items'] = [item]
@@ -640,11 +642,11 @@ def plot_collection(data, dim = None, inline=True, title='', save=False, file=''
                 plot_results(d, ax=axx[i])
     fig.tight_layout(w_pad=2.0)
     fn = str(file)
-    if (save and fn):
+    if (save and file):
         plt.savefig(fn, bbox_inches='tight')
     plt.show()
     # print info below the figure ...
-    if (save and fn):
+    if (save and file):
         print('Figure saved in {}'.format(fn))
 
 def plot_results(data, ax=None, save=False, file=''):
@@ -997,10 +999,10 @@ def plotShape(rang, proj, shape, arrows=True, file=''):
     if proj<2:
         ax.invert_xaxis()
     fn = str(file)
-    if fn:
+    if file:
         plt.savefig(fn, bbox_inches='tight')
     plt.show()
-    if fn:
+    if file:
         print('Figure saved in {}.'.format(fn))
         
 def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False, 
@@ -1131,9 +1133,9 @@ def plotScene(rang, proj, shape, ki, kf, sdir, sampling, save = False,
     if proj<2:
         ax.invert_xaxis()
     fn = str(file)
-    if (save and fn):
+    if (save and file):
         plt.savefig(fn, bbox_inches='tight')
     plt.show()
-    if (save and fn):
+    if (save and file):
         print('Figure saved in {}.'.format(fn))
 

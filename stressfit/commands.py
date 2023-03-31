@@ -5,6 +5,7 @@
 import numpy as np
 from contextlib import nullcontext
 import stressfit.sample as sam
+import stressfit.shapes as shapes
 import stressfit.mccfit as mc
 import stressfit.graphs as gr
 from stressfit.geometry import Geometry
@@ -16,11 +17,10 @@ _compl = None
 _setup = {}
 
 def validate_workspace(verbose=True):
-    """Check that all worsoace paths are valid."""
+    """Check that all wokrspace paths are valid."""
     try:
         dataio.workspace().validate_paths()
         if verbose:
-            print('Workspace setting:')
             dataio.workspace().info(absolute=True)
     except Exception as e:
         print('ERROR:')
@@ -73,14 +73,16 @@ def load_sampling(file='', path=None, nev=None, columns=[1, 4, 7, 10, 11],
     if isinstance(file, dict):
         fname = file['file']
         if 'path' in file:
-            fpath = file['path'] 
-        else:
-            fpath = path
+            path = file['path'] 
     else:
         fname = file
-        fpath = path       
-    fs = dataio.get_input_file(fname, path=fpath)
-    data = np.loadtxt(fs)
+    if 'verbose' in kwargs:
+        verb = kwargs['verbose']
+    else:
+        verb = False
+    fs = dataio.get_input_file(fname, path=path)
+    #data = np.loadtxt(fs)
+    data = dataio.load_data(fname, path=path, verbose = verb)
     #print('load_sampling: {}'.format(fs))
     # backwars compatibility, maxn = nev
     if 'maxn' in kwargs:
@@ -116,6 +118,7 @@ def plot_scene(nev, scan=None, filename='', rang=[30, 30], proj=1, save=True):
         projection plane: 0: (z, y); 1: (x, z); 2: (x, y)
 
     """
+    pnames = {'zy':0, 'yz':0, 'xz': 1, 'zx': 1, 'xy': 2, 'yx': 2}
     # retrieve sampling for given number of events
     nevp = min(nev,10000)
     sampling = sam.getSampling(nevp)
@@ -133,7 +136,14 @@ def plot_scene(nev, scan=None, filename='', rang=[30, 30], proj=1, save=True):
     ki = np.array([0., 0., 1.])  # default for SIMRES simulations
     kf = Geometry.rotate(ki, 1, take_off) 
     # do plot
-    gr.plotScene(rang, proj, sam.shape, ki, kf, _geom.scandir, sampling,  
+    if isinstance(proj, str):
+        if proj in pnames:
+            p = pnames[proj]
+        else:
+            p = pnames['xz']
+    else:
+        p = proj
+    gr.plotScene(rang, p, sam.shape, ki, kf, _geom.scandir, sampling,  
                  save=save, file=outpng)
 
 def cal_smeared_strain(scan_range, eps=None, intensity=None, nev=3000):
@@ -358,8 +368,11 @@ def report_pseudo_strains(scan_range, file,
     if not intensity and 'intensity' in data:
         del data['intensity']                          
     if plot:
-        f = dataio.derive_filename(file, ext='png', sfx='deps')
-        filepng = dataio.get_output_file(f)
+        if file:
+            f = dataio.derive_filename(file, ext='png', sfx='deps')
+            filepng = dataio.get_output_file(f)
+        else:
+            filepng  = ''
         gr.plot_collection(data, inline=inline, save=save, file=filepng)
 
     if file and save:
@@ -396,8 +409,11 @@ def report_resolution(scan_range, file,
     sfx='dpos'
     model = cal_resolution(scan_range, nev=nev)
     if plot:
-        f = dataio.derive_filename(file, ext='png', sfx=sfx)
-        filepng = dataio.get_output_file(f)
+        if file:
+            f = dataio.derive_filename(file, ext='png', sfx=sfx)
+            filepng = dataio.get_output_file(f)
+        else:
+            filepng  = None
         gr.plot_resolution(model, depth=True, 
                     cog=cog, 
                     inline=inline,
@@ -405,19 +421,85 @@ def report_resolution(scan_range, file,
                     file=filepng)
     if file and save:
         model.saveResolution('', file, sfx=sfx)
-    
-def set_sampling(sampling):
-    """Assign sampling events for use by convolution models.
+ 
+
+def report_data_comparison(scan, nev=3000, file='', save=False, out=None):
+    """Compare scan data with pseudo strains and intensities.
     
     Parameters
     ----------
-    sampling: :obj:`stressfit.sample.Sampling`
-        Object returend by :func:`load_sampling`
+    scan : dict
+        Either a single scan data, or a dict of such scans. 
+        The scan must include at least 'eps' and 'sampling' items.
+    file : str
+         Output file name (_depth.dat will be added).
+    nev : int, optional
+        Number of events to be used for convolution.
+    save: bool
+        Save figures and table with results.
+    out : obj
+        Optional plot context (for use with ipywidgets.Output)
     
     """
-    sam.setSampling(sampling)
+    expdata = {}
+    simdata = {}
+    if 'eps' in scan:
+        dlist = {'scan':scan}
+    else:
+        dlist = scan
+    for name in dlist:
+        scan = dlist[name]
+        x = scan['eps'][:,0]        
+        scan_range = [min(x), max(x), 2*len(x)+1]      
+        # set geometry and sampling for given scan
+        geometry = {k:scan[k] for k in Geometry.input_keys}
+        set_geometry(geometry)
+        set_sampling(scan['sampling'])
+        res = report_pseudo_strains(scan_range, '', 
+                                         nev=nev,
+                                         intensity=True,
+                                         inline=True,
+                                         plot=False, 
+                                         save=False)
+        expdata[name] = scan
+        simdata[name] = res
+    # do plot
+    title = 'Experimental data vs. pseudo-stran'
+    if out is not None:
+        with out:
+            gr.plot_comparison(simdata, expdata, save=save, file=file, 
+                               title=title)
+    else:
+        gr.plot_comparison(simdata, expdata, save=save, file=file,
+                           title=title)
     
+def set_sampling(sampling=None, filename=None, **kwargs):
+    """Assign sampling events for use by convolution models.
     
+    If sampling is not provided, attempt to load sampling from a file.
+    
+    Parameters
+    ----------
+    sampling : :obj:`stressfit.sample.Sampling`
+        Object returend by :func:`load_sampling`
+    filename : str
+        Filename to load sampling from.
+    kwargs : dict
+        Arguments passed to load_sampling when loaded from file.
+        Search is by default in the workspace input data directory. 
+    
+    """
+    if sampling is None:
+        # assume filename
+        if filename:
+            sampling = load_sampling(file=filename, **kwargs)
+    if sampling is not None:
+        sam.setSampling(sampling)
+    else:
+        logger = dataio.logger()
+        msg = 'Cannot set sampling, no valid object or filename provided'
+        logger.error(msg)
+        
 def get_sampling():
     """Return currently set sampling object."""
     return sam.getSampling()
@@ -446,10 +528,7 @@ def set_geometry(geometry):
     _geom.define(**geometry)
     if sam.shape is None:
         raise Exception('Sample shape not defined. Use set_shape().')
-    sam.shape.reset()
-    sam.shape.rotate(*list(_geom.angles))
-    sam.shape.moveTo(-_geom.scanorig)
-    sam.shape.set_scan(_geom.scandir, np.zeros(3))
+    sam.shape.set_geometry(_geom.to_dict())
 
 def set_scan(scan):
     """Set scan parameters."""
@@ -521,55 +600,118 @@ def set_attenuation(att, path=None):
     else:
         sam.setExtinction(table=att)
 
-def set_shape(shape, **kwargs):
-    """Set sample shape properties.
+def set_shape(shape=None, **kwargs):
+    """Define sample shape properties.
+    
+    If shape is provided, creates the shape object by calling 
+    the shape constructor :func:`stressfit.shapes.create`. Otherwise updates 
+    the current shape parameters. Then applies on it the current 
+    geometry - see :meth:`set_geometry`.
+    
+    For more information on creation of the shape objects, run 
+    :func:`stressfit.shapes.help`.
     
     Parameters
     ----------
     shape : obj
-        Instance of any descendant of the shapeAbstract class.
+        Name of the shape or the instance of the shape class. 
+        If None, only updates the parameters of the sahpe already defined before. 
+    
+    kwargs : dict
+        Other named arguments passed to the shape costructor or parameter 
+        setter.
+    
 
-    To define sample shape, use classes from stressfit.shaps.
-
-    Examples
-    --------    
+    Example
+    -------    
+    `from stressfit.shapes import Plate, Cylinder, Sphere, Tube # ... `
+    
     Infinite plate:
-        `stressfit.shapes.ShapePlate(thickness)`
+        `set_shape(Plate, thickness=10.0)`
         
-        - z is along thickness
+        An infinitely large flat plate of given thickness, 
+        z is along thickness.
     
     Cylinder:
-        `stressfit.shapes.ShapeCyl(radius, height)`
+        `set_shape(Cylinder, radius=4.0, height=30.0)`
         
-        - axis || y    
+        A cylindrical shape with axis along y.
+        
     Sphere:
-        `stressfit.shapes.Sph(radius)`
+        `set_shape(Sphere, radius=8.0)`
+        
+        A spherical sample.
     
     Hollow cylinder:
-        `stressfit.shapes.ShapeShellCyl(radius1, radius2, height)`
+        `set_shape(Tube, Rin=4.0, Rout=8.0, height=30.0, ctr=[0,0], sref=1)`
         
-         - axis || y and outer/inner radii = radius1/radius2. 
+         A hollow cylinder with axis along y-axis. 
+         
+         - Rin, Rout are the inner and outer radii.
+         - ctr is the x,z position of the hole centre
+         - sref defines the reference surface for depth calculation 
+         (0/1 for the inner/outer surface)
               
     Hollow sphere:
-        `stressfit.shapes.ShapeShell(Rin, Rout)`      
+        `set_shape(Shell, Rin=4.0, Rout=8.0)` 
+                
+        Rin, Rout are the inner and outer radii.
         
     Curved plate:
-        `stressfit.shapes.ShapePlateCurved(thickness, length, height, rho1, rho2)`
+        `set_shape(PlateCurved, thickness, length, height, rho1, rho2)`
         
         - z is along thickness, y is along height
         - rho1 = [hor, ver] are curvatures on the front surface
         - rho2 = [hor, ver] are curvatures on the rear surface
    
+    Multichannel tube:
+        `set_shape(Tubes, **kwargs)`
+        
+        A cylinder with multiple coaxial holes. See the stressfit.shapes.Tubes 
+        docstring for the constructor arguments.
+   
+    Polygonal bar:
+        `set_shape(PolygonBar, **kwargs)`
+        
+        A bar with polygonal basis. See the stressfit.shapes.PolygonBar 
+        docstring for the constructor arguments. 
+   
+    File:
+        `set_shape(File, filename='filename.json')`
+        
+        Defines the shape from a file. The file can be created by calling
+        the :meth:`save` method of the given shape object. Only the
+        abbove shape types can be defined, but this method allows 
+        to define more complex shape configurations like multichannel
+        tubes from a previously written json file.
+   
     """
+    sh = None
+    if sam.shape == None:
+        # create default shape
+        sh = shapes.create('Tube')
     if shape==None:
-        sam.shape.update(**kwargs)
+        if sam.shape is not None:
+            sam.shape.update(**kwargs)
+        else:
+            logger = dataio.logger()
+            logger.error('Sample shape not defined yet.')
+    elif isinstance(shape,str):
+        try:
+            sh = shapes.create(shape, **kwargs)
+        except:
+            logger = dataio.logger()
+            logger.exception('Unknown shape type required: {}'.format(shape))
+    elif isinstance(shape, shapes.ShapeAbstract):
+        sh = shape
     else:
-        sam.shape = shape
+        logger = dataio.logger()
+        logger.error('Unknown shape type required: {}'.format(shape))
+    if sh is not None:
+        sam.shape = sh
         sam.shape.reset()
-        sam.shape.rotate(*list(_geom.angles))
-        sam.shape.moveTo(_geom.scanorig)
-        sam.shape.set_scan(_geom.scandir, np.zeros(3))
-
+        if _geom is not None:
+            sam.shape.set_geometry(_geom.to_dict())
 
 def set_workspace(workdir):
     """Set new workspace directory.
@@ -585,7 +727,7 @@ def set_workspace(workdir):
         New workspace directory name.
 
     """
-    dataio.workspace().change_workspace(workdir);
+    dataio.workspace().change_workspace(root=workdir);
 
 def set_environment(data=None, tables=None, output=None, instruments=None):
     """Set paths for data input and outpout folders.
@@ -656,12 +798,9 @@ def set_compliance(**kwargs):
 
 def load_input(strain, intensity=None,
               path=None,
-              scandir=[0, 0, 1], 
-              scanorig=[0, 0, 0], 
-              rotctr=[0, 0, 0],
-              angles=[0, 0, 0],
               sampling=None,
-              verbose=True):
+              verbose=True,
+              **kwargs):
     """Load experimental data and metadata.
     
     Parameters
@@ -673,19 +812,26 @@ def load_input(strain, intensity=None,
     path: str, optional
         Optional search path for the input file. If non, the setting
         from set_environment command is used. 
+    sampling: dict
+        Sampling events loaded by the function :func:`load_sampling`.
+        If None, use the previously set one.
+    verbose : bool
+        If True, print info on loaded file.
+    kwargs : dict
+        Optional information about scan geometry.
+        
+    kwargs
+    ------        
     scandir : list or array, optional
         Scan direction in sample coordinates. It defines motion of the sample
         across stationary gauge. 
     scanorig : list or array, optional
-        Sscan origin (encoder = 0) in sample coordinates
+        Scan origin (encoder = 0) in sample coordinates
     rotctr : list or array, optional
         Sample rotation centre (sample coordinates)
     angles : list or array, optional
         Sample orientation (Euler angles YXY)
-    sampling: dict
-        Sampling events loaded by the function :func:`load_sampling`.
-    verbose : bool
-        If True, print info on loaded file.
+        
 
     Returns
     -------
@@ -706,11 +852,20 @@ def load_input(strain, intensity=None,
     else:
         scan['int'] = None
         scan['intfile'] = ''
-    scan['scandir'] = np.array(scandir)
-    scan['scanorig'] = np.array(scanorig)
-    scan['rotctr'] = np.array(rotctr)
-    scan['angles'] = np.array(angles)
-    scan['sampling'] = sampling
+    
+    # update geometry from gloal setting
+    if _geom:
+        g = _geom.to_dict()
+        scan.update(g)
+    # then update from arguments
+    for g in kwargs:
+        if g in Geometry.input_keys:
+            scan[g] = kwargs[g]
+    # set sampling from argument or use the previously set one
+    if sampling:
+        scan['sampling'] = sampling
+    else:
+        scan['sampling'] = get_sampling()
     return scan
   
 
@@ -766,6 +921,35 @@ def define_ifit(scan, nodes, nev, ndim=200, **kwargs):
     # define the intensity distribution, dim=number of points for interpolation     
     ifit.defDistribution([x, y], [fx, fy], ndim=ndim)
     return ifit
+
+def define_scaling(model, scale, flags, minval=[0., 0., -np.inf], maxval=None):
+    """Define scaling parameters for given model.
+    
+    The scaling formula of y(z) distribution is
+    
+    y_scaled = A*y(z-zc) + B
+
+    Parameters
+    ----------
+    scale : dict ot list
+        'A', 'B', 'zc' scaling values.
+    flags : dict ot list
+        'fA', 'fB', 'fzc' flags, for free (1) or fixed (0) variables. 
+    minval : list
+        Corresponding lower limits.
+
+    """
+    if isinstance(scale, dict):
+        [A, B, zc] = [scale[k] for k in ['A', 'B', 'zc']]
+    else:
+        [A, B, zc] = scale
+
+    if isinstance(flags, dict):
+        [fA, fB, fzc] = [flags[k] for k in ['fA', 'fB', 'fzc']]
+    else:
+        [fA, fB, fzc] = flags
+        
+    model.defScaling([A, B, zc], [fA, fB, fzc], minval=minval, maxval=maxval)
 
 
 def estimate_eps0(scan, z0, nev, nmin, nmax):
