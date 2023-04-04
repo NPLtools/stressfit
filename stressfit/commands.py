@@ -14,7 +14,6 @@ from stressfit.compliance import Compliance
 _deg = np.pi/180.
 _geom = Geometry()
 _compl = None
-_setup = {}
 
 def validate_workspace(verbose=True):
     """Check that all wokrspace paths are valid."""
@@ -25,19 +24,6 @@ def validate_workspace(verbose=True):
     except Exception as e:
         print('ERROR:')
         print(e)
-
-def set_user_input(setup):
-    """Set user input data.
-    
-    Parameters
-    ----------
-    setup: dict
-        User input data as dict.
-    """
-    global _setup
-    _setup.clear()
-    _setup.update(setup) 
-    
 
 def load_sampling(file='', path=None, nev=None, columns=[1, 4, 7, 10, 11], 
                   **kwargs):

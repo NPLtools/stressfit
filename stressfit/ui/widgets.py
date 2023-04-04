@@ -454,10 +454,19 @@ class DirInput(BasicInput):
         else:
             self.txt.value = str(value)
         self._call_enabled = en
-            
+     
+        
+    def fullname(self, path):
+        """Return absolute path to the file."""
+        p = _Path(path)
+        if not p.is_absolute():
+            p = _workspace['root'].joinpath(p)
+        return p
+        
     def _on_button(self,obj):
         """Open path dialog and update text input."""
-        s = choose_path(initialdir=self.txt.value)
+        full = self.fullname(self.txt.value)
+        s = choose_path(initialdir=full)
         if s:
             self.txt.value = s
     

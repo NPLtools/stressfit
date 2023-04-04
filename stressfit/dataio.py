@@ -84,7 +84,9 @@ import os
 from functools import wraps
 import copy
 import logging
-from colorama import Fore
+from colorama import Fore, init
+# should be initialized on windows
+init()
 
 __work = None
 __setup = None
@@ -96,7 +98,43 @@ _wks_keys = ['work', 'data', 'tables', 'instruments', 'output']
 _path_keys = _wks_keys.copy()
 _path_keys.remove('work')
 
+def workspace():
+    """Access Workspace object.
+    
+    Return
+    ------
+    instance of :class:`dataio.Workspace`
+        Workspace object which defines and maintains user 
+        workspace directories.
+    """
+    global __work
+    if __work is None:
+        __work = Workspace()
+    return __work
 
+
+def _setup():
+    """Access the instance of _Setup.
+    
+    _Setup handles application global settings and default values. It should
+    remain "private" as there is nothing to be done on it by users.
+    
+    Return
+    ------
+    Instance of :class:`dataio._Setup`
+    """
+    global __setup
+    if __setup is None:
+        __setup = _Setup()
+    return __setup
+
+def version_info():
+    """Return version information."""
+    cont = load_config(_Setup._setup_file)
+    if 'workspace' in cont:
+        del cont['workspace']
+    return cont
+    
 def deprecated(name, version=None, use=''):
     """Raise deprecated message."""
     msg = '{} is deprecated'.format(name)
@@ -562,37 +600,6 @@ class _log_handler_prog(logging.StreamHandler):
         else:
             print(msg)
 
-def workspace():
-    """Access Workspace object.
-    
-    Return
-    ------
-    instance of :class:`dataio.Workspace`
-        Workspace object which defines and maintains user 
-        workspace directories.
-    """
-    global __work
-    if __work is None:
-        __work = Workspace()
-    return __work
-
-
-def _setup():
-    """Access the instance of _Setup.
-    
-    _Setup handles application global settings and default values. It should
-    remain "private" as there is nothing to be done on it by users.
-    
-    Return
-    ------
-    Instance of :class:`dataio._Setup`
-    """
-    global __setup
-    if __setup is None:
-        __setup = _Setup()
-    return __setup
-
-
 
 
 def _mk_path_relative(root, path):
@@ -698,35 +705,46 @@ def _create_workspace_tree(wks):
 
 
 class _Setup():
-    """
-    Class maintaining application settings and default values.
+    """Class maintaining application settings and default values.
     
-    Maintains a dict with version info, default paths, list of workspaces, etc.
+    Maintains a dict with version info, default workspace paths, etc.
     Provides load/save functions.
     
-    A singleton instance of _Setup is cretaed internally when the function 
+    A single instance of _Setup is created internally when the function 
     _setup() is called for the first time.
     
     """
     
-    _setup_dir = '.stressfit' # directory with workspace info
+    _setup_dir = '.stressfit'  # directory with workspace info
     _setup_file = 'setup.json' # file with workspace info
     
     def __init__(self):
         self._data = {}
         self._log = logger()
-        self._create()
-    
-    @property
-    def content(self):
-        return self._data
+        self._read_from_resource()
     
     @property
     def workspace(self):
         return self._data['workspace']
     
-    def _create(self):
-        """Create global configuration directories and files if needed."""
+    @property
+    def version(self):
+        return self._data['version']
+    
+    def _read_from_resource(self):
+        """Create package info content from resource file."""
+        cont = load_config(_Setup._setup_file) 
+        self._verify(cont)
+        self._data.update(cont)
+        self._version = self._data['version']
+        self.reset_paths()
+    
+    def _create_files(self):
+        """Create global configuration file if needed and check version.
+        
+        If APPDATA/.stressfit/setup.json file exists, read information from  
+        it and check version. If not, create one.
+        """
         # find application data folder
         ep = os.getenv('APPDATA')
         if ep:
@@ -743,44 +761,24 @@ class _Setup():
             self._appdir.unlink()
             self._appdir.mkdir()
         
-        cont = load_config(_Setup._setup_file) # this is a template in resources
-        self.version = cont['version']
         # is there already the setup file?
         if self._appsetup.exists():
             self.load()
-            res = self.check_version(self._data['version'])
+            res = self._check_version(self._data['version'])
             if res>0:
                 fmt = 'Version found in {} is higher than used {} version'
-                msg = 'WARNING: '+fmt.format(self._appsetup, 'stressfit')
+                msg = fmt.format(self._appsetup, 'stressfit')
                 self._log.warning(msg)
-                self._data['version'] = self.version
+                self._data['version'] = self._version
             elif res<0:
-                self._data['version'] = self.version
                 self._log.info('Version updated in {}'.format(self._appsetup))
-                self._data['version'] = self.version
+                self._data['version'] = self._version
                 self.save()
         else:
-            self.verify(cont)
-            self._data.update(cont)
-            self.reset_paths()  # set paths to default (using resources)
             self.save()
-    
-    def renew(self):
-        """Re-create the default program setup in application data.
-        
-        Needed when changing the package location.
-        
-        """
-        cont = load_config(_Setup._setup_file)
-        self.verify(cont)
-        self._data.update(cont)
-        self.reset_paths()  # set paths to default (using resources)
-        self.save()
-        msg = 'Program information updated in {}'.format(self._appsetup)
-        self._log.info(msg)
-        
-        
-    def check_version(self, version):
+
+                
+    def _check_version(self, version):
         """Compare given version with the current one.
         
         Assume version string in the format n.n.n for n<100.
@@ -797,22 +795,25 @@ class _Setup():
            >, = or  < 0 if version >, = or < application version
 
         """
-        loc = self.version.split('.')
+        loc = self._version.split('.')
         inp = version.split('.')
         if len(loc) != len(inp):
             msg = 'Wrong version string: {}'
             msg += '\nCurrent version is {}'
             self._log.error(msg.format(version, self._data['version']))
         n = len(loc)
-        out = 0
+        out = None
         for i in range(n):
-            if inp[i]>loc[i]:
-                out = 1
-            elif inp[i]<loc[i]:
-                out = -1
+            if out is None:
+                if inp[i]>loc[i]:
+                    out = 1
+                elif inp[i]<loc[i]:
+                    out = -1
+        if out is None:
+            out = 0
         return out
     
-    def verify(self, cont):
+    def _verify(self, cont):
         """Verify setup file content."""
         out = True
         out = out and "workspace" in cont
@@ -821,6 +822,17 @@ class _Setup():
         if not out:
             msg = "Invalid content of the application setup file ({}):\n{}"
             self._log.error(_Setup._setup_file, msg.format(cont))
+    
+    def renew(self):
+        """Re-create the default program setup in application data.
+        
+        Needed when changing the package location.
+        
+        """
+        self._read_from_resource()
+        self.save()
+        msg = 'Program information updated in {}'.format(self._appsetup)
+        self._log.info(msg)
         
     def reset_paths(self):
         """Reset workspace paths to package defaults.
@@ -843,7 +855,6 @@ class _Setup():
         wks['instruments'] = get_resource_path('instruments')
         wks['output']  = _Path('output') # relative to work
 
-
     def save(self):
         """Save application setup file."""
         try:
@@ -865,7 +876,7 @@ class _Setup():
             with open(self._appsetup, 'r') as f:
                 lines = f.readlines() 
             content = json.loads('\n'.join(lines))
-            self.verify(content)
+            self._verify(content)
             wks = _str_to_workspace(content['workspace'])
             content['workspace'].update(wks)
             self._data.update(content)
@@ -1015,17 +1026,20 @@ class Workspace():
     def reset_paths(self, create_tree=False, save=False):
         """Reset workspace paths to package defaults."""
         self._paths.clear()
+        # set workspace to package default
         stp = _setup()
+        stp._create_files()
         self._paths.update(stp.workspace)
+        # This is required to make sure the workspace root is created.
         self._set_workspace_root(stp.workspace['work'], create=True)
-                 
+        # standard method for switching workspace root directory         
         self.change_workspace(root=self._paths['work'], 
                               create_tree=create_tree,
                               save=save,
                               verbose=False)
 
     def _set_workspace_root(self, root, create=False):
-        """Define new workspace root. 
+        """Define new workspace root.
         
         Parameters
         ----------
@@ -2079,6 +2093,18 @@ def save_params(data, filename, comment="", source="", **kwargs):
          out.append(s)
     save_text(out, filename, **kwargs)
 
+
+try:
+    __package_info__ =  load_config(_Setup._setup_file)
+except:
+    __package_info__ = {
+        "version": "unknown",
+        "license": "Mozilla Public License Version 2.0",
+        "author": "Jan Saroun, Nuclear Physics Institute CAS, Rez, saroun@ujf.cas.cz",
+        "repository": "https://github.com/NPLtools/stressfit"
+        }
+
+#%% test
 
 def test():
     """Test unit."""

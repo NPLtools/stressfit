@@ -814,12 +814,12 @@ def plot_graph(data, ax=None, save=False, file=''):
             if 'major' in data['grid']:
                 if 'minor' in data['grid']:
                     ax1.minorticks_on()
-                    ax1.grid(b=True, which='minor', **data['grid']['minor'])
-                ax1.grid(b=True, which='major', **data['grid']['major'])
+                    ax1.grid(True, which='minor', **data['grid']['minor'])
+                ax1.grid(True, which='major', **data['grid']['major'])
             else:
                 ax1.grid(**data['grid'])
         else:
-            ax1.grid()
+            ax1.grid(True)
     if 'legend' in data:
         if isinstance(data['legend'], str):
             loc = data['legend']
@@ -927,12 +927,12 @@ def plot_twins(data, ax=None, save=False, file=''):
             if 'major' in data['grid']:
                 if 'minor' in data['grid']:
                     ax1.minorticks_on()
-                    ax1.grid(b=True, which='minor', **data['grid']['minor'])
-                ax1.grid(b=True, which='major', **data['grid']['major'])
+                    ax1.grid(True, which='minor', **data['grid']['minor'])
+                ax1.grid(True, which='major', **data['grid']['major'])
             else:
                 ax1.grid(**data['grid'])
         else:
-            ax1.grid()
+            ax1.grid(True)
     
     if ax is None:
         fn = str(file)

@@ -2,15 +2,47 @@ Change log for STRESSFIT
 https://github.com/NPLtools/stressfit
 --------------------------
 
-========================
-release 1.0.0, 23/12/2020
-========================
+=========================
+release 1.2.0, 2022-04-05
+=========================
+- Shapes updated: polygonal rod, load/save functions
+- GUI completed (intensity/strain fitting with regularization)
+- Message and progress loggers added
+- Simplified script templates: use stressfit.create_script()
+  and stressfit.create_notebook() to export them from resources.
+- Extended library of attenuation tables (generated with the 
+  help of NCrystal, https://github.com/mctools/ncrystal)
+- Improved workspace management
+- New `stressfit.ui.config` module for handling user input with 
+  save/load capability (json format).
+- Running from CLI: python -m stressfit.run [args] 
+  (experimental, to be improved)
+
+=========================
+release 1.1.0, 2022-02-07
+=========================
+- Extended library of sample shapes.
+- Simplified top level API for writing scripts 
+  (see stressfit_example1.py and *.ipynb), implemented in 
+  the module commands.
+- Workspace management (see the example script) permits to 
+  manage workspace directories per user and per project.
+- Extended resources for running tests and demo scripts.
+- GUI implemented in Jupyter notebook (see stressfit.ipynb). 
+  Experimental version - provides less flexibility than 
+  writing own scripts, but it is intuitive and easy to use. 
+  It permits to simulate pseudo-strain effects and compare 
+  them with experimental data.
+
+=========================
+release 1.0.0, 2020-12-23
+=========================
 Release based on version 0.9.2
 - added absorption files for more relements
 
-========================
-version 0.9.2, 20/3/2020
-========================
+=========================
+version 0.9.2, 2020-03-20
+=========================
 - structure changed to isolate Python moudule files from user data
 - *.py modules moved to ./stressfit
 - standard import clause: import stressfit.modulename 
@@ -18,7 +50,7 @@ version 0.9.2, 20/3/2020
 - template files moved to ./templates
 - tabled data stored in ./tables
 
-========================
-version 0.9.1, 2/2/2020
-========================
+=========================
+version 0.9.1, 2020-02-02
+=========================
 - Initial release on Github

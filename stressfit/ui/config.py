@@ -26,6 +26,15 @@ import json
 __config = None
 
 
+def _match_dict(src, tgt):
+    """Remove items in src whithout corresponding key in tgt."""
+    k = []
+    for key in src:
+        if not key in tgt:
+            k.append(key)
+    for key in k:
+        del src[k]
+    
 def uiconfig():
     """Access UI_config object.
     
@@ -792,6 +801,9 @@ class UI_config():
         return self._udata.get_attenuation()
 
 
+    def config_keys(self):
+        """Return all top-level configuration keys."""
+        return list(self._uconfig.keys())
 
     def item_keys(self, key):
         """Return keys for given input data list.
@@ -890,7 +902,15 @@ class UI_config():
 
         """
         if key in self._uconfig:
-            self._uconfig[key].update(value)
+            # clean value: remove keys not existent in _uconfig
+            tmp = copy.deepcopy(value)
+            _match_dict(tmp, self._uconfig[key])
+            for k in tmp:
+                if isinstance(self._uconfig[key][k], dict):
+                    _match_dict(tmp[k], self._uconfig[key][k])
+                    self._uconfig[key][k].update(tmp[k])
+                else:
+                    self._uconfig[key][k] = tmp[k]
 
     def set_input(self, name, value):
         """Update user input.

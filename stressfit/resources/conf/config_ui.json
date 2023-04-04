@@ -64,7 +64,7 @@
                     "scale": {
                         "keys": [ "y-scale", "y0", "x0" ],
                         "values": [ 10000.0, 0.0, 0.0 ],
-                        "fit": [ 0, 0, 0 ]
+                        "fit": [ 0, 0, 1 ]
                     },
                     "interp": "natural"
                 }
@@ -107,7 +107,7 @@
             "strain": true,
             "resolution": true,
             "rang": [ -10, 10 ],
-            "steps": 21
+            "steps": 41
         },
         "data": {
             "nrec": 3000

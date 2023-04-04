@@ -29,7 +29,7 @@ STRESSFIT enables to model pseudo-strains for several sample shapes such as curv
 
 The package contains commented *Jupyter notebook* template which guides users through usual workflow of the fitting process. An example with output of STRESSFIT is also available via Jupyter viewer server:
 <p>
-<a href='http://nbviewer.jupyter.org/url/neutron.ujf.cas.cz/restrax/download/stressfit/stressfit_example1.ipynb'>
+<a href='https://github.com/NPLtools/stressfit/blob/master/stressfit_example1.ipynb'>
 Example 1</a>: ECNS2019, Fitting of strain gradient under the inner surface of a tube, test on synthetic data for STRESS-SPEC.
 </p>
 <p>
@@ -57,43 +57,49 @@ You can of course use any other alternative to install stressfit into a suitable
 
 -----------------------------
 
+## Running template script
+
+A commented example script is available in the package resources. It can be used as a template for own work. To export the template script to your current directory, run 
+<code>  
+import stressfit  
+stressfit.create_script()  
+</code>
+
+Similarly, it is possible to export a template script for Jupyter Notebook: 
+<code>  
+stressfit.create_notebook()  
+</code>
+
+These scripts should run with the default package configuration and resources. Feel free to make copies and modify them to your needs.
+
+-----------------------------
+
 ## Graphical user interface
 
-An experimental version of GUI is available. It runs in Jupyter notebook using [ipywidgets](https://ipywidgets.readthedocs.io).
-
-To start it, execite the following code in the Jupyter notebook in your browser:
+A GUI for interactive work can be started by running the following code in Jupyter notebook:
 <code>  
-import stressfit.ui.notebook as nb  
-ui = nb.UI()  
-ui.display()  
-</code>  
+import stressfit  
+stressfit.gui()  
+</code>
 
-It is assumed that the Jupyter server runs on localhost (running on remote server is not supported) and stressfit has to be installed in the same environment. The GUI implements all main features of the STRESSFIT package. On startup, it creates default workspace in the user's profile and loads test data from resources. It is thus ready to run all commands, such as plotting the 2D view o experiment geometry with the sampling distribution, evaluate the spatial resolutiona and pseudo-strain characteristics, compare the test data with pseudo-strain distributions and also fit intensity and strain distributions. The GUI also allows to save/load complete setup data for later use.
+It is assumed that the Jupyter server runs on localhost (running on remote server is not supported) and `stressfit` has to be installed in the same environment. The GUI implements all main features of the StressFit package. On startup, it creates default workspace in the user's profile and loads test data from resources. It is thus ready to run all commands, such as plotting the 2D view o experiment geometry with the sampling distribution, evaluate spatial resolution and pseudo-strain characteristics, compare the test data with pseudo-strain distributions and also fit intensity and strain distributions. The GUI also allows to save/load complete setup data for later use.
 
 -----------------------------
 
 ## Package contents
 
-### Execution scripts:
-
-`stressfit/resources/data`: Test input data and simulated neutron sampling lists.
-`stressfit/resources/tables`: Atttenuation tables or some common materials
-`stressfit/resources/conf`: Default configuration data used by the GUI
-`templates/stressfit-template.py`:	A commented template  
-available also as Jupyter notebook  files, *.ipynb.  
-
 ### Example data:
 In `stressfit/resources/data`:
 
-- `ievents_B_1mm.dat`: sampling events for BEER@ESS, Fe(211), gauge volume ~ 1x1x3 mm  
+- `events_B_1mm.dat`: sampling events for BEER@ESS, Fe(211), gauge volume ~ 1x1x3 mm  
 - `events_S_1mm.dat`: sampling events for STRESS-SPEC, Fe(211), gauge volume  ~ 1x1x3 mm, lambda=1.68 Ang
-- `*.dat`: example input data (synthetic data simulated by SIMRES)
+- `*.dat`: example input data (synthetic data simulated by instrument ray-tracing with SIMRES)
 
-In `stressfit/resources/tables`:
-`tables/Fe_mu.dat`: Neutron atttenuation tables or some common materials 
+In `stressfit/resources/tables`:  
+`*.dat`: Neutron atttenuation tables for some common materials 
 
-In `stressfit/resources/conf`:
-`*.json`: Default configuration data used by the GUI (required when starting GUI, but also usable as templates for user projects)
+In `stressfit/resources/conf`:  
+`config_ui.json`: Default input used by GUI (required when starting GUI, but also usable as a template for user projects)
 
 ### Matlab tools:
 the `matlab` folder contains older matlab scripts implementing the analytical method for calculation of pseudo-strains based on instrument setup and diffraction geometry parameters. It employs the matrix description of neutron transport through the instrument and derives analytical formulas for the pseudo strain in Gaussian approximation. See https://doi.org/10.1107/S0021889813008194 for more details. 

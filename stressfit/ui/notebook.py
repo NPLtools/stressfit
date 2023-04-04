@@ -1229,6 +1229,12 @@ class UI_sampling(UI_base_list):
             rec = [key, 'empty'] + [0] + 3*[0.0] + [3*[0.0]]
         return rec          
       
+
+    def update_workspace(self, **kwargs):
+        """Update file input paths when workspace changed."""
+        fpath = self.wk.full_path('data', as_posix=True)
+        if 'file' in self._widgets:
+            self._widgets['file']._path = fpath
         
     def add_data(self, item, data=None, update_ui=False):
         """Load new sampling and add it to the list."""    
@@ -1308,6 +1314,12 @@ class UI_attenuation(UI_base):
             self._widgets['table'].disabled = is_value
             self._widgets['value'].disabled = not is_value            
 
+    def update_workspace(self, **kwargs):
+        """Update file input paths when workspace changed."""
+        fpath = self.wk.full_path('tables', as_posix=True)
+        if 'table' in self._widgets:
+            self._widgets['table']._path = fpath
+            
     def set_values(self, values):
         """Set values.
         
@@ -3006,6 +3018,8 @@ class UI():
                     comm.set_shape(None,**kwargs)
         if obj.name == 'workspace':
             self.ui['data'].update_workspace(**kwargs)
+            self.ui['attenuation'].update_workspace(**kwargs)
+            self.ui['sampling'].update_workspace(**kwargs)
         # update selection lists: geometry and sampling
         self._update_options(obj.name)
 
