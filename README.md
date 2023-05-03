@@ -43,6 +43,16 @@ For more information and use examples, see: <br/>
 
 ## Installation
 
+### 1. Create Python environment
+
+It is recommended to create an environment for stressfit with required packages. Download the file [stressfit.yml](./stressfit.yml) and run the command
+
+<code>conda activate</code> # switch to the base environment  
+<code>conda env create -f stressfit.yml</code> # create stressfit environment  
+<code>conda activate stressfit</code> # activate the stressfit environment  
+
+### 2. Install stressfit package
+
 Get the package source either by cloning from git repository
 
 <code>git clone https://github.com/NPLtools/stressfit</code>
@@ -53,7 +63,7 @@ Unpack it and, from the root package directory, run
 
 <code>pip install -e .</code>
 
-You can of course use any other alternative to install stressfit into a suitable python environment. It is recommended to use Anaconda distribution, which should provide most of the required packages by default. Yet you may need to add some other packages manually like lmfit.
+You can of course use any other alternative to install stressfit into a suitable python environment. It is recommended to use Anaconda distribution for Python, which should provide most of the required packages by default. 
 
 -----------------------------
 
