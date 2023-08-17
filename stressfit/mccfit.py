@@ -1038,7 +1038,7 @@ class MCCfit(ABC):
                 err = p.stderr
                 if (err is None):
                     err = 0.
-                sm = '{:s}\t{:g}\t{:g}\t{:d}'.format(p.name, val, err, vary)
+                sm = '{:s}\t{:g}\t{:g}\t{:g}'.format(p.name, val, err, vary)
                 ss += sm + "\n"
             res = ss
         except Exception as e:
