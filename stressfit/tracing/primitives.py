@@ -10,16 +10,15 @@ Created on Mon Aug 14 18:48:33 2023
 # TODO implement depth function as (i) projection along scandir, (ii) relative to
 # a reference surface
 
-# TODO: do it for both vi, vf vectors (path_in, path_out)
-
 # TODO: benchmark cupy vs numpy
         
 # TODO: write primitives also for: 
 # plane, box, sphere, conus, ellipsoid, elliptic cylinder, hyper/parabola, toroid
 # TODO: rewrite classes from the shapes module + add a general one
-    
-# TODO: develop visualization method (= plotContours from shapes)
 
+# TODO: make a separate module to handle cupy calls if cuda not available 
+# (silent fallback to numpy + implement cp.asnumpy and cp.get)
+    
 import abc
 # import numpy as np
 import timeit
@@ -317,26 +316,28 @@ class Surface():
         _err_not_implemented()
 
     @abc.abstractmethod
-    def inside(self, t=None, mask=None, side=-1, path='in'):
+    def inside(self, r=None, t=None, mask=None, side=-1, path='in'):
         """Get mask for events on given surface side.
         
         Parameters
         ----------
+        r : ndarray (optional)
+            Event positions in **global** coordinates. If None, use the events 
+            defined by :meth:`~set_events`.
         t : ndarray (optional)
-            Time shifts from the positions previously 
-            defined by :meth:`~set_events`. If None, use zero times.
+            Time shifts from the event positions. If None, use zero times.
         mask : array of int (optional)
             Mask (0,1) for valid t elements.
         side : int
             Which side to check: 1:-1 stand for inner|outer sides.
             The inner side is defined by the `inner` attribute.
         path : str
-            in|out for input|output directions.
+            in|out for input|output directions. Only used if t is defined.
         
         Returns
         -------
         mask : array of int
-            Mask (0,1) for valid events on given side of the surface. 
+            Mask (0,1) for valid events on given side of the surface.
         """
         _err_not_implemented()
         
@@ -374,6 +375,51 @@ class Surface():
         
         """
         self.is_in = self.inside()
+
+
+    def get_map(self, tr=None, depth=0.0, xlim=[-1,1], ylim=[-1,1], 
+                npix=(500, 500)):
+        """Create mask mapping the cut through the surface.
+        
+        By default, (x,z) cutting plane is assumed. Use Transform passed
+        as the argument to cut through a different plane.
+        
+        Parameters
+        ----------
+        tr : Transform
+            Optional root transformation which yields the cutting plane as 
+            the (x,z) plane.
+        depth : float
+            y-coordinate of the cut.
+        xlim : array_like(2)
+            x-axis (abscisa) range.
+        ylim : array_like(2)
+            y-axis (dependent variable) range
+        npix : tuple(2)
+            number of pixels along x,y axes.
+        
+        """  
+        r = cp.array([[1.2],[0],[0]])
+        x1 = self.surfaces[0].inside(r=r)
+        x2 = self.surfaces[1].inside(r=r)
+        
+        if tr is not None:
+            t = tr
+        else:
+            t = Transform()
+        # define coordinates of map bins
+        dx = -np.subtract(*xlim)/npix[0]
+        dy = -np.subtract(*ylim)/npix[1]
+        x = cp.linspace(*xlim, num=npix[0], endpoint=False, dtype=float)+0.5*dx
+        y = cp.linspace(*ylim, num=npix[1], endpoint=False, dtype=float)+0.5*dy          
+        xx = cp.resize(x,npix)
+        yy = cp.resize(y,(npix[1],npix[0])).T
+        zz = depth*cp.ones(npix)
+        r = cp.asarray([xx.reshape(-1),zz.reshape(-1),yy.reshape(-1)])
+        r1 = t.r_to_loc(r)
+        m1 = self.inside(r=r1)
+        m = cp.asnumpy(m1.reshape(npix))
+        return m
         
 class Cylinder(Surface):     
     """Cylindric surface.
@@ -442,21 +488,23 @@ class Cylinder(Surface):
             self._qref = cp.einsum('ijk,jk->ik', self.m_ref, self.q)
 
 
-    def inside(self, t=None, mask=None, side=1, path='in'):
+    def inside(self, r=None, t=None, mask=None, side=1, path='in'):
         """Get mask for events on given surface side.
         
         Parameters
         ----------
+        r : ndarray (optional)
+            Event positions in **global** coordinates. If None, use the events 
+            defined by :meth:`~set_events`.
         t : ndarray (optional)
-            Time shifts from the positions previously 
-            defined by :meth:`~set_events`. If None, use zero times.
+            Time shifts from the event positions. If None, use zero times.
         mask : array of int (optional)
             Mask (0,1) for valid t elements.
         side : int
             Which side to check: 1:-1 stand for inner|outer sides.
             The inner side is defined by the `inner` attribute.
         path : str
-            in|out for input|output directions.
+            in|out for input|output directions. Only used if t is defined.
         
         Returns
         -------
@@ -464,15 +512,20 @@ class Cylinder(Surface):
             Mask (0,1) for valid events on given side of the surface. 
         
         see :func:`Surface.inside`
-        """    
-        if t is None:
+        """   
+        if r is None:
+            rc = self.rc
             rsq = self.rsq
         else:
+            r_loc = self.trg.r_to_loc(r)
+            rc = r_loc[Cylinder._axes[self.axis],:]
+            rsq = cp.sum(rc**2, axis=0)
+        if t is not None:
             if path=='in':
                 vc = self.vic
             else:
                 vc = self.vfc
-            rsq = cp.sum((self.rc+t*vc)**2, axis=0)
+            rsq = cp.sum((rc+t*vc)**2, axis=0)
         D2 = rsq-self.R**2
         if mask is None:
             mask = cp.array(self.inner*side*D2 > 0, dtype=int)
@@ -522,12 +575,13 @@ class Cylinder(Surface):
         Defined only for reference surfaces, otherwise returns None.
         """
         if self._reference:
-            result = self._qref
+            return self._qref
         else:
             return None
 
-class Group(Surface):
-# TODO rewrite for vi, vf   
+
+
+class Group(Surface):  
 # TODO: add functions for reference surface  
     def __init__(self, op='and', **kwargs):
         super().__init__(**kwargs)
@@ -698,102 +752,15 @@ class Group(Surface):
         q_in = cp.array(_tin>0, dtype=int)*_min
         q_out = cp.array(_tout>0, dtype=int)*_mout
         self.path_out = cp.sum(_tout*q_out - _tin*q_in,axis=0)
-
-# TODO remove
-    def evaluate_old(self):     
-        """Evaluate the group to allow further calculations.
-        
-        Call this method after adding all child surfaces or groups
-        and after calling :meth:`set_events` on the top group.
-        
-        """
-        if self.op=='or':
-            sgn = -1 # OR operator
-        else:
-            sgn = 1 # AND operator 
-        """
-        Store intersections in `_tin` and `_tout` arrays.       
-        The intersections are saved as a list of (time, mask) pairs, where mask 
-        is 1 for intersections to be **included**, time is the flight time
-        from the points pre-defined by :func:`set_events` to the intersection.
-        """
-        self._tin = []
-        self._tout = []
-        self._min = []
-        self._mout = []
-        added = [] # local variable for processed surfaces
-        xs_old = [self._tin, self._tout] # old intersections
-        ms_old = [self._min, self._mout] # corresponding masks
-        # collect intersections from all child surfaces
-        for item in self.surfaces:
-            # evaluate newly added surface or group
-            item.evaluate()
-            # get intersections for the new surface
-            # for AND|OR:
-            # keep old intersections only if inside|outside the new surface
-            for i in range(2):
-                xs = xs_old[i]
-                ms = ms_old[i]
-                ns = len(xs)
-                for j in range(ns):
-                    x = xs[j]
-                    # is old intersection (x) inside|outside item?
-                    q = item.inside(t=x, mask=ms[j], side=sgn)
-                    # update mask
-                    ms[j] = ms[j]*q
-            # for AND|OR:
-            # add new intersections if inside|outside all of the other surfaces
-            xs_new, ms_new = item.cross() # new intersections to be added
-            for i in range(2):
-                xs = xs_new[i]
-                ms = ms_new[i]
-                ns = len(xs)
-                if not ns==len(ms):
-                    raise Exception('Wrong lengths of intersection arrays')
-                for j in range(ns):
-                    x = xs[j]
-                    q = ms[j]
-                    for s in added:
-                        # x is inside|outside s?
-                        q1 = s.inside(t=xs[j], mask=ms[j], side=sgn)
-                        q = q*q1
-                    xs_old[i].append(xs[j])
-                    ms_old[i].append(q) 
-            added.append(item)
-        # find events inside the group
-        self.is_in = self.inside()
-        
-        # select only valid events
-        m_in = cp.asarray(self._min)
-        t = cp.asarray(self._tin)
-        t_in = t*m_in + _inf*(1-m_in)
-        idx = cp.argsort(t_in,axis=0)
-        self._tin = cp.take_along_axis(t_in, idx, axis=0)
-        self._min = cp.take_along_axis(m_in, idx, axis=0)
-                
-        m_out = cp.asarray(self._mout)
-        t = cp.asarray(self._tout)
-        t_out = t*m_out + _inf*(1-m_out)
-        idx = cp.argsort(t_out,axis=0)
-        self._tout = cp.take_along_axis(t_out, idx, axis=0)
-        self._mout = cp.take_along_axis(m_out, idx, axis=0)
-        
-        # calculate path to the event position
-        q_in = cp.array(self._tin<0, dtype=int)*self._min
-        q_out = cp.array(self._tout<0, dtype=int)*self._mout
-        self.path_in = cp.sum(self._tout*q_out - self._tin*q_in,axis=0)
-        # calculate path from the event position
-        q_in = cp.array(self._tin>0, dtype=int)*self._min
-        q_out = cp.array(self._tout>0, dtype=int)*self._mout
-        self.path_out = cp.sum(self._tout*q_out - self._tin*q_in,axis=0)
-        # 
- 
-        
-    def inside(self, t=None, mask=None, side=1, path='in'):
+       
+    def inside(self, r=None, t=None, mask=None, side=1, path='in'):
         """Get mask for events on given surface side.
         
         Parameters
         ----------
+        r : ndarray (optional)
+            Event positions in **global** coordinates. If None, use the events 
+            defined by :meth:`~set_events`.
         t : ndarray (optional)
             Time shifts from the initial positions as 
             defined by :meth:`~set_events`. If None, use zero times.
@@ -809,22 +776,26 @@ class Group(Surface):
         -------
         mask : array of int
             Mask (0,1) for valid events on given side of the surface. 
-        """        
+        """   
+        if r is None:
+            nr = self.nr
+        else:
+            nr = r.shape[1]
         if self.op=='and':
-            q = cp.ones(self.nr, dtype=int)
+            q = cp.ones(nr, dtype=int)
             for s in self.surfaces:
-                if t is None:
+                if (t is None) and (r is None):
                     q = q*s.is_in
                 else:
-                    is_in = s.inside(t=t, mask=mask, side=1, path=path)
+                    is_in = s.inside(r=r, t=t, mask=mask, side=1, path=path)
                     q = q*is_in
         else:
-            q = cp.zeros(self.nr, dtype=int)
+            q = cp.zeros(nr, dtype=int)
             for s in self.surfaces:
-                if t is None:
+                if (t is None) and (r is None):
                     q = cp.bitwise_or(q,s.is_in)
                 else:
-                    is_in = s.inside(t=t, mask=mask, side=1, path=path)
+                    is_in = s.inside(r=r, t=t, mask=mask, side=1, path=path)
                     q = cp.bitwise_or(q,is_in)
         # invert result if we check the outer side
         if side*self.inner>0:
@@ -842,6 +813,7 @@ class Group(Surface):
     
 #%% Tests
 from matplotlib import pyplot as plt
+import matplotlib as mpl
 
 class Bench():
     """Benchmark various operations with CuPy."""
@@ -1088,6 +1060,13 @@ class Test():
         gray = (0.5, 0.5, 0.5, 0.15)
         self.plot_group(ax, self.root, gray)     
 
+    def plot_cell_cut(self, ax, xlim, ylim, npix=(500,500), tr=None):
+        mask = self.root.get_map(xlim=xlim, ylim=ylim, npix=npix)
+        cmap = mpl.colormaps['binary']
+        extent = np.append(xlim, ylim)
+        ax.imshow(mask, cmap=cmap, alpha=0.5, vmin=0, vmax=3,
+                  origin='lower', extent=extent)
+
     def plot_trace(self, ax):
         """Plot incident and output rays."""
         root = self.root
@@ -1135,12 +1114,15 @@ class Test():
                     y = rays[i,:,1]
                     ax.plot(x, y, lines[path], linewidth=0.5)
 
-    def plot(self, title='', trace=True):
+    def plot(self, title='', trace=True, composite=False):
         xlim, ylim = self.get_limits()
         fig, ax = plt.subplots(figsize=(5,5))
         ax.set_xlim(xlim)
         ax.set_ylim(ylim)
-        self.plot_cell(ax)
+        if composite:
+            self.plot_cell(ax)
+        else:
+            self.plot_cell_cut(ax, xlim, ylim)
         r0 = cp.asnumpy(self.r)
         if trace:
             m = cp.asnumpy(self.root.is_in)
@@ -1201,8 +1183,21 @@ class Test():
         return root
 
     
-    def test(self, plot=True, n=20):
-        """Test tracing through groups of surfaces."""
+    def run(self, tests='all', n=20, plot=True, composite=False):
+        """Test tracing through groups of surfaces.
+        
+        Parameters
+        ----------
+        tests : str or list
+            Which test to run, either 'all' or a list of indices (0..5)
+        n : int
+            Number of events to show
+        plot : bool
+            Show plot with traces and intersections.
+        composite : bool
+            Show the cell as a composition of sub-groups with different colors.
+            Otherwise, the cell is shown as a single gray area.        
+        """
         def get_title(op, inner):
             sgn = ['-','','']
             s = '{}[ '.format(sgn[inner[3]+1])
@@ -1219,7 +1214,7 @@ class Test():
             #self.plot(trace=False)
             self.root.evaluate()
             if plot:
-                self.plot()
+                self.plot(title='test moon plot', composite=composite)
 
         def test2(self):
             op=['or','or','or','and','and']; inner=[1,1,1,-1,-1]
@@ -1227,7 +1222,7 @@ class Test():
             self.set_events(n=n)
             self.root.evaluate()
             if plot:
-                self.plot(title=get_title(op, inner))
+                self.plot(title=get_title(op, inner),composite=composite)
 
         def test3(self):
             op=['or','or','or', 'or','and']; inner=[-1,-1,-1,-1, 1]
@@ -1235,7 +1230,7 @@ class Test():
             self.set_events(n=n)
             self.root.evaluate()
             if plot:
-                self.plot(title=get_title(op, inner))
+                self.plot(title=get_title(op, inner),composite=composite)
 
         def test4(self):
             op=['or','or','or', 'or','and']; inner=[-1,-1,-1,-1, -1]
@@ -1243,7 +1238,7 @@ class Test():
             self.set_events(n=n)
             self.root.evaluate()
             if plot:
-                self.plot(title=get_title(op, inner))
+                self.plot(title=get_title(op, inner),composite=composite)
 
         def test5(self):
             op=['and','or','and', 'or','and']; inner=[-1,-1,-1,-1, -1]
@@ -1251,43 +1246,50 @@ class Test():
             self.set_events(n=n)
             self.root.evaluate()
             if plot:
-                self.plot(title=get_title(op, inner))
+                self.plot(title=get_title(op, inner),composite=composite)
+
 
         def test0(self):
-            #op=['or','or','or', 'or','and']; inner=[-1,-1,-1,-1, -1]
-            #op=['or','or','or','and','and']; inner=[1,1,1,-1,-1]
-            op=['or','or','or', 'or','and']; inner=[-1,-1,-1,-1, -1]
-            self.root = self.group_hexagon(R1=1.2, R2=2, op=op, inner=inner)
-            self.root._name='root'
-            self.set_events_test()
-            self.plot(trace=False)
-            self.root.evaluate()
-            if plot:
-                self.plot(title=get_title(op, inner))
+            self.root = self.group_moon()
+            xlim, ylim = self.get_limits()
+            npix=(500, 500)
+            mask = self.root.get_map(xlim=xlim, ylim=ylim, npix=npix)
+            
+            fig, ax = plt.subplots(figsize=(5,5))
+            ax.set_xlim(xlim)
+            ax.set_ylim(ylim)
+            ax.set_xlabel('x')
+            ax.set_ylabel('z')
+            cmap = mpl.colormaps['binary']
+            ax.imshow(mask, cmap=cmap, alpha=0.5, vmin=0, vmax=2,
+                      origin='lower', extent=xlim+ylim)
+            ax.grid()
+            plt.title('test surface plot', fontsize = 8)
+            plt.show() 
+
                 
         
-        my_tests = [test1, test2, test3, test4, test5]
-        #my_tests = [test0]
-        #my_tests = [test4, test5]
-        for i in range(len(my_tests)):   
-            print('Test {} '.format(i+1), end='')
-            try:
-                my_tests[i](self)
-                print('passed')
-            except Exception as e:
-                print('failed')
-                raise(e)
-                #print(e)
+        testfnc = [test0, test1, test2, test3, test4, test5]
+        if isinstance(tests,list):
+            its = tests
+        else:
+            its = list(range(1,len(testfnc)))
+        for i in its:
+            if i>=0 and i<len(testfnc):
+                print('Test {} '.format(i+1), end='')
+                try:
+                    testfnc[i](self)
+                    print('passed')
+                except Exception as e:
+                    print('failed')
+                    raise(e)
         
         
 #%% Run test
 if __name__ == "__main__":
     test = Test()
-    test.test(n=100, plot=True)
+    test.run(n=100, plot=True, composite=False)
+    # test.run(tests=[0], plot=True)
 
 
-
-
-
-    
 
