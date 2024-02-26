@@ -11,7 +11,7 @@ Created on Tue Sep 19 10:09:45 2023
 
 import numpy as np
 from .scan import ScanGeometry
-from .cuda import cp, asnumpy
+from .cuda import cp
 
 class Sampling():
     """Base class for objects describing sampling of scattering events.
@@ -157,10 +157,15 @@ class Sampling():
         ev = {}
         for k in events:
             ev[k] = cp.asarray(events[k])
-        # get scan data
+        
+        # apply global scan transformation to the events
+        if scan.transform is not None and not scan.transform.is_identity:
+            ev['r'] = scan.transform.r_to_loc(ev['r'])
+            ev['ki'] = scan.transform.r_to_loc(ev['ki'])
+            ev['kf'] = scan.transform.r_to_loc(ev['kf'])
+        # get scan transformations/positions
         scan_pos = scan.positions()
-        r0 = cp.asarray(scan_pos['r'])
-        ns = r0.shape[1]
+        ns = scan.nsteps
         # get events for each scan position and align all along one dimension
         evx = {}
         for k in events:
@@ -173,14 +178,10 @@ class Sampling():
             j1 = i*nev
             j2 = j1+nev
             t = scan_pos['tr'][i]
-            if scan.shape == ScanGeometry.LINEAR:
-                evx['r'][:,j1:j2] = ev['r'] + r0[:,i].reshape(3,1)  
-                evx['ki'][:,j1:j2] = ev['ki']
-                evx['kf'][:,j1:j2] = ev['kf']
-            else:
-                evx['r'][:,j1:j2] = t.r_to_loc(ev['r'])
-                evx['ki'][:,j1:j2] = t.v_to_loc(ev['ki'])
-                evx['kf'][:,j1:j2] = t.v_to_loc(ev['kf'])
+            # transform global event coordinates to cell root basis
+            evx['r'][:,j1:j2] = t.r_to_loc(ev['r'])
+            evx['ki'][:,j1:j2] = t.v_to_loc(ev['ki'])
+            evx['kf'][:,j1:j2] = t.v_to_loc(ev['kf'])
             for k in filter(lambda el: el not in ['r','ki','kf'], evx):
                 sh = events[k].shape
                 if len(sh)==1:

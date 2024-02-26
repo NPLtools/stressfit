@@ -6,33 +6,87 @@ Created on Mon Aug 14 18:48:33 2023
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
 
-
-# TODO implement depth function as (i) projection along scandir, (ii) relative to
-# a reference surface
-
-# TODO: benchmark cupy vs numpy
+# TODO: unify set_events and evaluate, save memory ...
         
 # TODO: write primitives also for: 
-# plane, box, sphere, conus, ellipsoid, elliptic cylinder, hyper/parabola, toroid
+# plane, box, ellipsoid, elliptic cylinder, hyper/parabola, toroid
 # TODO: rewrite classes from the shapes module + add a general one
 
-# TODO: make a separate module to handle cupy calls if cuda not available 
-# (silent fallback to numpy + implement cp.asnumpy and cp.get)
     
 import abc
-# import numpy as np
-import timeit
-from cupyx.profiler import benchmark
 import copy
+import gc
 import numpy as np
-from .cuda import cp, asnumpy, has_gpu
+from scipy.spatial.transform import Rotation
+from .cuda import cp, asnumpy
 
 _inf = 1e30
+
+# defined primitive surface shapes
+_primitives = ['Cylinder','Plane', 'Sphere', 'Cone']
+
+# all valid surface types including the predefined groups
+_surfaces = _primitives + ['Box']
+
+def is_primitive(obj):
+    """Return true if obj is a primitive surface.
+    
+    Return false for composed (group) surfaces.
+    """
+    if isinstance(obj, Surface):
+        s = obj.type_id
+    else:
+        s = obj
+    return s in _primitives
 
 def _err_not_implemented(name):
     msg = 'Subclass must implement abstract method: {}.'.format(name)
     raise NotImplementedError(msg)
     
+
+def create_surface(shape='Cylinder', inner=-1, tr=None, **kwargs):
+    """Create a Surface instance of given shape.
+    
+    Parameters
+    ----------
+    shape : str
+        shape ID string
+    inner : int
+        Define which side of the surface is the inner one. 
+        -1 is inside closed surfaces. It corresponds to the PHITS/MCNP 
+        convention.
+    tr : Transform
+        Coordinate transformation relative to parent group. See also 
+        :class:`Transform`
+    **kwargs :
+        Arguments specific to the shape passed to the constructor.
+    
+    """
+    if not shape in _surfaces:
+        raise Exception('Surface shape {} not defined'.format(shape))
+    if shape=='Cylinder':
+        c = Cylinder(inner=inner, tr=tr, **kwargs)
+    elif shape=='Plane':
+        c = Plane(inner=inner, tr=tr, **kwargs)
+    elif shape=='Sphere':
+        c = Sphere(inner=inner, tr=tr, **kwargs)
+    elif shape=='Cone':
+        c = Cone(inner=inner, tr=tr, **kwargs)
+    elif shape=='Box':
+        c = Box(inner=inner, tr=tr, **kwargs)
+    return c
+
+def create_transform(tr):
+    if tr is None:
+        tr = Transform() 
+    elif isinstance(tr, dict):
+        tr = Transform(**tr)
+    elif isinstance(tr, Transform):
+        pass
+    else:
+        print('tr = {}'.format(tr))
+        raise Exception('Unknown coordinate transformation format.')
+    return tr
 
 class Transform():
     """Coordinate transformation for surfaces and cells.
@@ -46,14 +100,27 @@ class Transform():
     
     The translation is defined by the vectors `orig` and `rotctr`. 
     
-    Transformation of a vector `r` from local to global coordinates is defined
-    as:
+    Transformation of a vector `r` from local to global coordinates is:
     
-    for order>0: r_glob = R.(r - rotctr) + orig + rotctr
+    .. highlight:: python
+    .. code-block:: python
     
-    for order<0: r_glob = R.(r - orig - rotctr) + rotctr
+        if order>0: 
+            r_glob = R.(r - rotctr) + orig + rotctr
+        else:
+            r_glob = R.(r - orig - rotctr) + rotctr
+
+
+    The inverse transformation (global to local) is:
     
-    
+    .. highlight:: python
+    .. code-block:: python
+     
+         if order>0: 
+             r_loc = R.T.(r - orig - rotctr) + rotctr 
+         else:
+             r_loc = R.T.(r - rotctr) + orig + rotctr
+
     Parameters
     ----------
     orig : array_like
@@ -67,7 +134,7 @@ class Transform():
     rmat : array_like, optional
         Rotation matrix.
     order : int
-        Order is translation + rotation (1) or rotation + translation (-1). 
+        The order of rotatio-translation transformations, see docstrings. 
     unit : str
         Angular units: deg or rad.
     
@@ -124,13 +191,28 @@ class Transform():
         self._has_translation = float(s) > 1e-10
     
     def __str__(self):
-        fmt = 'orig:' + 3*' {:g}'
         res = 'Transform('
-        res += fmt.format(*self.orig[:,0])
-        res += ', rotated: {}'.format(self.has_rotation)
+        if self.has_translation:
+            fmt = 'orig: [' + 3*' {:g}'+']'
+            o = cp.round(self.orig[:,0],10)
+            res += fmt.format(*o)
+        if self.has_rotation:
+            if self.has_translation:
+                res += ', '
+            angles = self._get_angles()
+            fmt = 'angles: [' + 3*' {:g}'+']'
+            o = np.round(angles,6)
+            res += fmt.format(*o)
         res += ')'
         return res
-        
+    
+    def _get_angles(self):
+        """Calculate xyz Euler angles from global rotation matrix."""
+        r = asnumpy(self.rmat)
+        r =  Rotation.from_matrix(r)
+        angles = r.as_euler("xyz",degrees=True)
+        return angles
+    
     def _cal_rmat(self, angles, unit='deg', axes=[0,1,2]):
         deg = cp.pi/180
         idx = [[1,2],[2,0],[0,1]]
@@ -223,10 +305,12 @@ class Transform():
         else:
             return cp.dot(self.imat,cp.asarray(v))
 
+#%% Surface primitives
+
 class Surface():
     """Abstract base class for surface primitives."""
     
-    def __init__(self, tr=None, inner=-1):
+    def __init__(self, tr=None, inner=-1, level=0, is_reference=False):
         """Initiate surface.
         
         Parameters
@@ -238,18 +322,132 @@ class Surface():
             Define which side of the surface is the inner one. 
             -1 is inside closed surfaces. It corresponds to the PHITS/MCNP 
             convention.
+        level : int
+            Level in the group hierarchy.
+        is_reference : bool
+            Set true to make it a reference, which allows to calculate
+            principal direction and depth coordinates relative to the surface.
+            Only primitive surfaces can be defined as a reference.
         
         """
-        self._name = 'none' # id for debugging
-        # local system: transformation w.r.t parent group
-        if tr is None:
-            self.trl = Transform() 
-        else:
-            self.trl = tr
-        # global system: transformation w.r.t. root group.     
+        # accuracy limit [mm] for boundary determination
+        # keep at zero to avoid other problems !!
+        self._eps = 0.0 
+        # storage for temporary data
+        self._tmp = {}
+        # storage for r,vi,vf in global coordinates
+        self._glob = []
+        # transformation relative to the parent 
+        self.trl = create_transform(tr)
+        # transformation relative to the global reference frame
         self.trg = self.trl 
-        self.inner = inner   # this is default by PHITS/MCNP convention
-        self.nr = 0 # size of the event list
+        self.inner = inner    # denotes the inner side of the surface 
+        self.is_reference = is_reference   # set as reference? 
+        self._level = level   # level in the group hierarchy.
+        
+        
+# TODO: following is needed only for a reference surface        
+        # Depth under the surface for each event - only reference surfaces
+        self._depth = None 
+        # Q-vectors in principal reference frame of the surface
+        self._qref = None
+        # Q-vectors in local coordinates
+        self.q = None
+
+    @property
+    def is_reference(self):
+        """Is a reference surface."""
+        return self._reference
+    
+    @is_reference.setter
+    def is_reference(self, value:bool):
+        if self.type_id in _primitives:
+            self._reference = value
+        else:
+            self._reference = False
+
+    @property
+    def type_id(self):
+        """Return class name."""
+        return type(self).__name__
+    
+    @property
+    def depth(self):
+        """Return depth under this surface for all events."""
+        res = None
+        if self._reference:
+            res = self._depth
+        return res
+
+    @property
+    def qref(self):
+        """Return q-vectors in principal reference frame of the surface.
+        
+        Only available for a reference surface.
+        """
+        res = None
+        if self._reference:
+            res = self._qref
+        return res
+
+    def get_events(self, path):
+        """Return event data in local coordinates.
+        
+        Use data previously defined by :meth:`evaluate`.
+        
+        Parameters
+        ----------
+        path : str
+            in|out for incident and exit rays
+            
+        Returns
+        -------
+        r, v : array_like
+            Positions and velocities for given path. If path is not defined, 
+            then v is a list with both incident and exit velocities.
+        
+        """
+        idx = {'in':1, 'out':2}
+        if path in idx:
+            iv = idx[path]
+        else:
+            iv = [1,2]
+        if 'events' in self._tmp:
+            r = self._tmp['events'][0]
+            v = self._tmp['events'][iv]
+        else:
+            # check that there are valid data in _glob
+            q1 = len(self._glob)==3
+            q2 = [isinstance(a,cp.ndarray) for a in self._glob]
+            if q1 and all(q2):
+                ev = [0,0,0]
+                ev[0] = self.trg.r_to_loc(self._glob[0])
+                for i in [1,2]:
+                    ev[i] = self.trg.v_to_loc(self._glob[i])
+                r = ev[0]
+                v = ev[iv]
+            else:
+                raise Exception('No event data stored.')
+        if isinstance(v,list):
+            return [r] + v
+        else:
+            return r,v
+
+    def _param_str(self):
+        """Return class-specific parameters as a string."""
+        return ''
+    
+    def __str__(self):
+        """Return string representation of the object."""
+        res = '{}: '.format(self.type_id)
+        p = self._param_str()
+        if p:
+            res += ' {}'.format(p)
+        if not self.trg.is_identity:
+            if p:
+                res += ','
+            res += ' {}'.format(self.trg)
+        return res    
     
     def copy(self):
         """Deep copy if itself."""
@@ -260,102 +458,36 @@ class Surface():
     def connect(self, parent):
         """Connect coordinate system with the parent object."""
         self.trg = parent.trg.join(self.trg)
-        #print('connected {}'.format(self))
-        #print('       to {}'.format(parent))
     
-    @abc.abstractmethod
-    def set_events(self, r, vi, vf):
-        """Set positions and velocities for all events to be processed.
-        
-        To be used for advance calculation of dependent arrays.
+    def cleanup(self):
+        """Clean temporary data storage to save memory."""
+        self._tmp.clear()
+
+    def cal_qref(self, U, q):
+        """Calculate scattering vectors in given coordinates.
         
         Parameters
         ----------
-        r : array_like
-            Positions passed as (3,:) arrays.
-        vi, vf : array_like
-            Input and output velocities passed as (3,:) arrays.
+        U : ndarray
+            Unitary matrix with basis vectors given as rows. 
+            For planes, a single matrix (3,3) is provided. Otherwise,
+            the reference frame depends on each event position
+            and the matrix has the shape (3,3,:), where the last index 
+            denotes respective events. 
+        
+        q: ndarray
+            A (3,:) array of q-vectors in local coordinates.
         
         """
-        _err_not_implemented('set_events')
-
-    @abc.abstractmethod
-    def inside(self, r=None, t=None, mask=None, side=-1, path='in'):
-        """Get mask for events on given surface side.
+        rank = len(U.shape)
+        if rank == 2:
+            qref = cp.dot(U, q)
+        elif rank==3:
+            qref = cp.einsum('ijk,jk->ik',U, q)
+        else:
+            qref = None
+        return qref
         
-        Parameters
-        ----------
-        r : ndarray (optional)
-            Event positions in **global** coordinates. If None, use the events 
-            defined by :meth:`~set_events`.
-        t : ndarray (optional)
-            Time shifts from the event positions. If None, use zero times.
-        mask : array of int (optional)
-            Mask (0,1) for valid t elements.
-        side : int
-            Which side to check: 1:-1 stand for inner|outer sides.
-            The inner side is defined by the `inner` attribute.
-        path : str
-            in|out for input|output directions. Only used if t is defined.
-        
-        Returns
-        -------
-        mask : array of int
-            Mask (0,1) for valid events on given side of the surface.
-        """
-        _err_not_implemented('inside')
-        
-    @abc.abstractmethod
-    def cross(self, path='in'):
-        """Calculate cross-times with the surface.
-        
-        Given the position and velocity for each event, calculate:
-        - Time to the entry and exit intersection with the surface
-        
-        The positions and velocities have to be previously defined
-        by :meth:`set_events`
-        
-        Parameters
-        ----------
-        path : str
-            in|out for input|output directions.
-            
-        Returns
-        -------
-        [xin, xout]
-        
-        xin, xout : list of input and output interesctions, respectively
-            Each element is a pair of (time, mask), where `time` contains
-            interestion times with the surface and `mask` indicates valid
-            intersections.
-        
-        """
-        _err_not_implemented('cross')
-
-    @abc.abstractmethod
-    def cal_depth(self):
-        """Calculate depth under this surface for all events."""
-        _err_not_implemented('cal_depth')
-
-    @abc.abstractmethod    
-    def cal_qref(self):
-        """Calculate scattering vectors in surface coordinates.
-        
-        This is abstract method to be overriden by particular implementatin of 
-        a primitive surface class.
-        
-        """
-        _err_not_implemented('cal_qref')
-
-    def evaluate(self):
-        """Evaluate the object data to allow further calculations.
-        
-        Call this method before using `inside` and `cross` methods.
-        
-        """
-        self.is_in = self.inside()
-
-
     def get_map(self, tr=None, depth=0.0, xlim=[-1,1], ylim=[-1,1], 
                 npix=(500, 500)):
         """Create mask mapping the cut through the surface.
@@ -366,8 +498,9 @@ class Surface():
         Parameters
         ----------
         tr : Transform
-            Optional root transformation which yields the cutting plane as 
-            the (x,z) plane.
+            Optional root transformation which transforms x,y map
+            coordinates to the cut [x,y,z] coordinates: 
+            [x, y, z]_cut = tr.r_to_loc([x, depth, y])
         depth : float
             y-coordinate of the cut.
         xlim : array_like(2)
@@ -376,6 +509,11 @@ class Surface():
             y-axis (dependent variable) range
         npix : tuple(2)
             number of pixels along x,y axes.
+        
+        Returns
+        -------
+        array
+            Pixel map as NumPy array (converted from CuPy if applicable).
         
         """        
         if tr is not None:
@@ -392,153 +530,398 @@ class Surface():
         zz = depth*cp.ones(npix)
         r = cp.asarray([xx.reshape(-1),zz.reshape(-1),yy.reshape(-1)])
         r1 = t.r_to_loc(r)
-        m1 = self.inside(r=r1)
+        m1 = self.is_inside(r=r1)
         m = asnumpy(m1.reshape(npix))
         return m
-        
-    
-    
-    
-class Cylinder(Surface):     
-    """Cylindric surface.
-    
-    Describes a cylinder along one of (x,y,z) axes.
-    
-    For axis=z, the equation is:
-    (x − x0)^2 + (y − y0)^2 − R^2 = 0
-    
-    Parameters
-    ----------
-    R : float
-        Radius.
-    axis : str
-        Axis direction, one of [x, y, z].       
-    """
-    
-    _axes = {'x':[1,2], 'y':[0,2], 'z':[0,1]}
-    def __init__(self, R=1.0, axis='z', **kwargs):         
-        super().__init__(**kwargs)
-        self.R = R
-        self.axis = axis
 
-    def __str__(self):
-        res = 'Cylinder: R={:g}, trg={}'.format(self.R, self.trg)
-        return res
-
-    def set_events(self, r, vi, vf):
-        """Set positions and velocities for all events to be processed.
-
-        see :func:`Surface.set_events`
-        """
-        self.nr = r.shape[1]
-        r_loc = self.trg.r_to_loc(r)
-        vi_loc = self.trg.v_to_loc(vi)
-        vf_loc = self.trg.v_to_loc(vf)
-        # velocity transfer
-        self.q = vf_loc-vi_loc
-        """Calculate what is needed to evaluate 'inside' mask and 
-        intersections with the surface."""
-        # local positions and velocities in x,z plane
-        self.rc = r_loc[Cylinder._axes[self.axis],:]
-        self.vic = vi_loc[Cylinder._axes[self.axis],:]
-        self.vfc = vf_loc[Cylinder._axes[self.axis],:]
-        # v^2 and r^2
-        self.rsq = cp.sum(self.rc**2, axis=0)
-        self.visq = cp.sum(self.vic**2, axis=0)
-        self.vfsq = cp.sum(self.vfc**2, axis=0)
-        # r.v
-        self.rvi = cp.sum(self.rc*self.vic, axis=0)
-        self.rvf = cp.sum(self.rc*self.vfc, axis=0)
-
-    def cal_depth(self):
-        """Calculate depth under this surface for all events."""
-        depth = None
-        if self.nr>0:
-            r0 = cp.sqrt(self.rsq)
-            depth = self.inner*(r0 - self.R)
-        return depth
-
-    def cal_qref(self):
-        """Calculate scattering vectors in surface coordinates.
-        
-        Surface coordinates are defined as
-        
-            - y || cylinder axis
-            - z || radial coordinate of event position
-        
-        """
-        qref = None
-        if self.nr>0:
-            # surface coordinate system
-            r0 = cp.sqrt(self.rsq)
-            e0 = self.inner*self.rc[0]/r0
-            e1 = cp.ones(self.nr)
-            e2 = self.inner*self.rc[1]/r0
-            nul = cp.zeros(self.nr)
-            m_ref = cp.asarray([[e2, nul , -e0], 
-                                [nul, e1, nul], 
-                                [e0, nul, e2]])
-            qref = cp.einsum('ijk,jk->ik', m_ref, self.q)
-        return qref
-
-    def inside(self, r=None, t=None, mask=None, side=1, path='in'):
+    def is_inside(self, r=None, t=None, mask=None, side=1, path='in'):
         """Get mask for events on given surface side.
+        
+        If `r` or `t` is not specified, use the pre-calculated data 
+        for events specified when calling :meth:`evaluate`.
         
         Parameters
         ----------
         r : ndarray (optional)
             Event positions in **global** coordinates. If None, use the events 
-            defined by :meth:`~set_events`.
+            defined by :meth:`~evaluate`.
         t : ndarray (optional)
-            Time shifts from the event positions. If None, use zero times.
+            Time shifts from the event positions, using provided velocities. 
+            If t=None or v=None, no shift is applied.
         mask : array of int (optional)
-            Mask (0,1) for valid t elements.
+            Additional mask (0,1) to be applied on the result.
         side : int
             Which side to check: 1:-1 stand for inner|outer sides.
-            The inner side is defined by the `inner` attribute.
+            The inner side is defined by the `inner` attribute of the surface.
         path : str
             in|out for input|output directions. Only used if t is defined.
+
         
         Returns
         -------
         mask : array of int
-            Mask (0,1) for valid events on given side of the surface. 
-        
-        see :func:`Surface.inside`
+            Mask (0,1) for valid events on given side of the surface.
         """   
-        if r is None:
-            rc = self.rc
-            rsq = self.rsq
-        else:
-            r_loc = self.trg.r_to_loc(r)
-            rc = r_loc[Cylinder._axes[self.axis],:]
-            rsq = cp.sum(rc**2, axis=0)
-        if t is not None:
-            if path=='in':
-                vc = self.vic
-            else:
-                vc = self.vfc
-            rsq = cp.sum((rc+t*vc)**2, axis=0)
-        D2 = rsq-self.R**2
-        if mask is None:
-            mask = cp.array(self.inner*side*D2 > 0, dtype=int)
-        else:
-            mask = mask*cp.array(self.inner*side*D2 > 0, dtype=int)
-        return mask
-    
-    def cross(self, path='in'):
-        """Calculate intersection times with the surface.
         
-        see :meth:`Surface.cross`
+        rloc = None
+        if (r is not None):
+            rloc = self.trg.r_to_loc(r)
+        if (t is not None):
+            ev = self.get_events(path)
+            if rloc is None:
+                rloc = ev[0]
+            rloc = rloc + ev[1]*t
+        # NOTE: it is OK to pass rloc=None to _inside
+        isin = self._inside(rloc=rloc)
+        if mask is not None:
+            isin = isin*mask
+        if side>0:
+            return isin
+        else:
+            return 1-isin
+
+    def _cross_times(self):
+        """Get intersection times and masks for this surface.
+        
+        Uses local events pre-calculated by the :meth:`evaluate` method.
+        
+        Returns
+        -------        
+        The dict structure X[path][var][dir] = [xin, xout], where
+        
+        path : str
+            'in' or 'out' for incident and output ray directions, respectively
+        var : str
+            'time' for cross-times and 'mask' for (0|1) mask marking the valid 
+            cross-sections
+        dir : int
+            0|1 for inward|outward cross points
+        
+        xin, xout : array_like
+            The array(s) of crossing times/masks (depending on the `var` value). 
+            A list of multiple arrays is possible for each xin, xout if the 
+            surface allows for multiple cross points.
+        """
+        # calculate intersections
+        res = {}        
+        for path in ['in', 'out']:
+            res[path] = {}
+            tx, mx = self._cross(path)
+            res[path]['time'] = tx
+            res[path]['mask'] = mx
+        return res
+
+    def _set_events(self, r, vi, vf):
+        """Set positions and velocities for all events to be processed.
+        
+        To be used for advance calculation of temporary arrays.
+        By default, it converts event data to local reference frame and saves 
+        results in the _tmp['events'] field. 
+        
+        Parameters
+        ----------
+        r : array_like
+            Positions passed as (3,:) arrays.
+        vi, vf : array_like
+            Input and output velocities passed as (3,:) arrays.
         
         """
-        if path=='in':
-            rv = self.rvi
-            vsq = self.visq
+        rloc = self.trg.r_to_loc(r)
+        viloc = self.trg.v_to_loc(vi)
+        vfloc = self.trg.v_to_loc(vf)
+        self._tmp['events'] = [rloc, viloc, vfloc]
+        self._glob = [r, vi, vf]
+
+    
+    def evaluate(self, r, vi, vf):
+        """Evaluate the surface for given event coordinates.
+        
+        Call this method before using `is_inside` and `cross_times` methods.
+        
+        Parameters
+        ----------
+        r : array_like
+            Positions passed as (3,:) arrays.
+        vi, vf : array_like
+            Input and output velocities passed as (3,:) arrays.
+        
+        """
+        self.cleanup()
+        self._set_events(r, vi, vf)
+        #isin = self._inside()
+        #cross = self._cross_times()
+        if self.is_reference:
+            self._cal_reference()
+
+
+# Abstract methods to be implemented by child classes        
+    @abc.abstractmethod
+    def _cal_reference(self):
+        """Calculate data required for a reference surface.
+        
+        This method must define following fields for each event, which 
+        has been defined in :meth:`_set_events`:
+        
+        - `_depth`: Depth under the reference surface.
+        
+        - `_qref`: Q-vectors in principal surface coordinates. 
+          
+        The surface basis vectors are expressed as rows of the matrix U
+        in local coordinates. The matrix U is used to calculate principal 
+        strain/stress components for given surface symmetry. 
+        
+        The definition of the principal surface coordinates depends 
+        on the surface shape. Usually the Z-component
+        should be along the nearest surface normal, Y denotes
+        axial and X circumferential (hoop) components. 
+
+        Parameters
+        ----------
+        rloc : ndarray (optional)
+               Event positions in **local** coordinates.
+
+        """
+        _err_not_implemented('_cal_reference')
+
+    @abc.abstractmethod
+    def _inside(self, rloc=None):
+        """Get mask for events on given surface side.
+        
+        Abstract method to be implemented by each primitive surface class.
+        
+        Parameters
+        ----------
+        rloc : ndarray (optional)
+               Event positions in **local** coordinates. If not defined,
+               the method should use values pre-calculated in 
+               :meth:`_set_events`
+        
+        Returns
+        -------
+        mask : array of int
+            Mask (0,1) for valid events on given side of the surface.
+        """
+        _err_not_implemented('_inside')
+
+    @abc.abstractmethod
+    def _cross(self, path):
+        """Calculate cross-times with the surface.
+
+        Abstract method to be implemented by each primitive surface class.
+        
+        Use :meth:`get_events(path)` to get the positions and velocities
+        in **local** coordinates:
+        
+        r, v = self.get_events(path)
+        
+        For each event (columns of r,v), calculate:
+            
+        - Time to the entry and exit intersection with the surface
+        - Mask invalid intersections (no intersection, corresponding times
+          are set to +- inf)
+        
+        Parameters
+        ----------
+        path : str
+            in|out for incident and exit rays
+            
+        Returns
+        -------
+        [tin, tout], [min, mout]
+        
+        tin, tout : list
+            Lists of inward and outward interesction times as arrays.
+            Both tin, tout can include multiple arrays if there are more 
+            than one input/output cross-section.
+        min, mout : list
+            Corresponding masks indicating valid intersections.
+        """
+        _err_not_implemented('_cross')
+
+class Plane(Surface):     
+    """A Plane.
+    
+    Describes a cylinder along one of (x,y,z) axes.
+    
+    The plane is defined by equation:
+    p[0]*x + p[1]*y + p[2]*z − d = 0
+    
+    
+    The surface-related basis vectors (X,Y,Z) are defined as follows:
+
+    - Z = plane normal
+    - X = y x Z if y<>Z, else X = x
+    - Y = Z x X 
+        
+    where (x,y,z) is the local basis.    
+    
+    Parameters
+    ----------
+    p : array_like
+        Normal vector to the plane.
+    d : float
+        Distance from origin.    
+    """
+    
+    def __init__(self, p=[0,1,0], d=0.0, **kwargs):         
+        super().__init__(**kwargs)
+        n = cp.array(p)
+        a = cp.linalg.norm(n)
+        # plane normal and distance, normalized
+        self.n = n/a
+        self.d = float(d/a)
+
+    #override
+    def _param_str(self):
+        fmt = 'p=['+2*'{:g},'+'{:g}] d={:g}'
+        res = fmt.format(*self.n, self.d)
+        return res
+
+    #override
+    def _set_events(self, r, vi, vf):
+        """Set positions and velocities for all events to be processed.
+        
+        See docstrings of :meth:`Surface._set_events`.
+        """
+        super()._set_events(r, vi, vf)
+        rloc = self._tmp['events'][0]
+        self._tmp['rn'] = cp.dot(self.n, rloc) - self.d
+
+    #override
+    def _cal_reference(self):
+        # calculate depth under reference surface
+        viloc, vfloc = self._tmp['events'][1:]
+        rn = self._tmp['rn']
+        self._depth = self.inner*rn
+        eps = 1e-8  
+        y = cp.array([0,1,0], dtype=float)
+        x = cp.array([1,0,0], dtype=float)
+        Z = self.n
+        X = cp.cross(y,Z)
+        if cp.linalg.norm(Z)<eps:
+            X = x
+        Y = cp.cross(Z, X)
+        U = cp.asarray([X,Y,Z])
+        q = vfloc - viloc
+        # calculate q in reference surface coordinates
+        self._qref = self.cal_qref(U, q)
+        
+    #override
+    def _inside(self, rloc=None):  
+        if rloc is None:
+            rn = self._tmp['rn']
         else:
-            rv = self.rvf
-            vsq = self.vfsq
-        D2 = rv**2 - vsq*(self.rsq-self.R**2)
+            rn = cp.dot(self.n, rloc) - self.d    
+        mask = cp.array(self.inner*rn > self._eps, dtype=int)
+        return mask
+    
+    #override
+    def _cross(self, path):
+        _eps = 1e-20
+        v = self.get_events(path)[1] 
+        rn = self._tmp['rn']
+        vn = cp.dot(self.n, v)
+        t = -rn/(vn+_eps)
+        # mask for valid cross-sections
+        m = cp.array(abs(vn) > _eps, dtype=int)        
+        # mask for crossing inwards        
+        m_in = m*cp.array(self.inner*vn > 0, dtype=int)
+        m_out = m*(1 - m_in)
+        # times for crossing inwards
+        tin =  _inf*m_out + t*m_in
+        # times for crossing outwards
+        tout = _inf*m_in + t*m_out
+        return [[tin], [tout]], [[m_in], [m_out]] 
+    
+
+class Sphere(Surface):     
+    """A Sphere.
+    
+    Describes a spherical surface.
+    
+    The surface basis (X,Y,Z) is expressed in terms of the 
+    local coordinates (x,y,z). 
+    
+    The surface-related basis vectors (X,Y,Z) are defined as follows:
+
+    - Z = surface normal
+    - X = y x Z if y<>Z, else X = x
+    - Y = Z x X
+        
+    where (x,y,z) is the local basis.        
+    
+    Parameters
+    ----------
+    R : float
+        Radius.
+    **kwargs :
+        Other arguments passed to the parent Surface constructor. 
+
+    """
+    
+    def __init__(self, R=1.0, **kwargs):         
+        super().__init__(**kwargs)
+        self.R = abs(R)
+
+    def _param_str(self):
+        res = 'R={:g}'.format(self.R)
+        return res
+
+    def _C(self, r=None):
+        if r is None:
+            C = self._tmp['C']
+        else:
+            rsq = cp.sum(r**2, axis=0)
+            C = rsq - self.R**2
+        return C
+
+    #override
+    def _set_events(self, r, vi, vf):
+        """Set positions and velocities for all events to be processed.
+        
+        See docstrings of :meth:`Surface._set_events`.
+        """
+        super()._set_events(r, vi, vf)
+        rloc, viloc, vfloc = self._tmp['events']
+        rsq = cp.sum(rloc**2, axis=0)
+        self._tmp['rsq'] = rsq
+        self._tmp['C'] = rsq - self.R**2
+        self._tmp['rv']  = {'in':cp.sum(rloc*viloc, axis=0), 
+                            'out':cp.sum(rloc*vfloc, axis=0)}
+        self._tmp['vsq'] = {'in':cp.sum(viloc**2, axis=0), 
+                            'out':cp.sum(vfloc**2, axis=0)}
+
+    #override
+    def _cal_reference(self):
+        eps = 1e-10
+        rsq = self._tmp['rsq']
+        rloc, viloc, vfloc = self._tmp['events']
+        r0 = cp.sqrt(rsq)
+        self._depth = self.inner*(r0 - self.R)
+        m = cp.array(r0>eps, dtype=int)
+        x = cp.array([1,0,0],dtype=float)
+        y = cp.array([0,1,0],dtype=float)
+        Z = self.inner*rloc/(r0+(1-m)*eps)
+        X = m*cp.cross(y,Z) + (1-m)*x
+        Y = cp.cross(Z,X)
+        U = cp.asarray([X,Y,Z])
+        q = vfloc - viloc
+        # calculate q in reference surface coordinates
+        self._qref = self.cal_qref(U, q)
+
+    #override
+    def  _inside(self, rloc=None): 
+        C = self._C(r=rloc)
+        mask = cp.array(self.inner*C > self._eps**2, dtype=int)
+        return mask
+    
+    #override
+    def _cross(self, path):
+        r, v = self.get_events(path)
+        C = self._tmp['C']
+        rv = self._tmp['rv'][path]
+        vsq = self._tmp['vsq'][path]
+        D2 = rv**2 - vsq*C
         mask = cp.array(D2 > 0, dtype=int)
         D = cp.sqrt(cp.abs(D2))
         tin = (-rv - D)/vsq*mask + _inf*(1-mask)
@@ -547,23 +930,303 @@ class Cylinder(Surface):
             return [[tin], [tout]], [[mask], [mask]] 
         else:
             return [[tout], [tin]], [[mask], [mask]] 
+    
+class Cylinder(Sphere):     
+    """Cylindric surface.
+    
+    Describes a cylinder along one of (x,y,z) axes.
+    
+    For axis=z, the equation is:
+    x**2 + y**2 − R**2 = 0
+    
+    The surface-related basis vectors (X,Y,Z) are defined as follows:
+    
+    - Y = cylinder axis
+    - Z = surface normal along (x,y,0), or (1,0,0) if not defined
+    - X = Y x Z if y<>Z, else X = x 
+    
+    where (x,y,z) is the local basis.    
+    
+    Parameters
+    ----------
+    R : float
+        Radius.
+    axis : str
+        Axis direction, one of [x, y, z]. 
+    **kwargs :
+        Other parameters passed to the parent Sphere constructor.
+    """
+    
+    
+    def __init__(self, R=1.0, axis='z', **kwargs):
+        _rot = {'x':[0,90,0], 'y':[90,0,0], 'z':[0,0,0]}
+        ax = axis.lower()
+        if not ax in _rot:
+            raise Exception('Invalid axis: {}'.format(ax))
+        tr = Transform(angles=_rot[ax])
+        if 'tr' in kwargs:
+            tr0 = create_transform(kwargs['tr'])
+            tr = tr0.join(tr)
+            del kwargs['tr']
+        super().__init__(R=R, tr=tr, **kwargs)
+        self.axis = axis.lower()
+            
 
-class Group(Surface):  
-    def __init__(self, op='and', **kwargs):
+    def _param_str(self):
+        res = 'R={:g}, axis={}'.format(self.R, self.axis)
+        return res
+
+    #override
+    def _C(self, r=None):
+        if r is None:
+            C = self._tmp['C']
+        else:
+            rc = r[0:2,:]
+            rsq = cp.sum(rc**2, axis=0)
+            C = rsq - self.R**2
+        return C
+
+    #override
+    def _set_events(self, r, vi, vf):
+        """Set positions and velocities for all events to be processed.
+        
+        See docstrings of :meth:`Surface._set_events`.
+        """
+        super()._set_events(r, vi, vf)
+        rloc, viloc, vfloc = self._tmp['events']
+        vin = viloc[0:2,:]
+        vout = vfloc[0:2,:]
+        rc = rloc[0:2,:]
+        rsq = cp.sum(rc**2, axis=0)
+        self._tmp['rsq'] = rsq
+        self._tmp['C'] = rsq - self.R**2
+        self._tmp['rv']  = {'in':cp.sum(rc*vin, axis=0), 
+                            'out':cp.sum(rc*vout, axis=0)}
+        self._tmp['vsq'] = {'in':cp.sum(vin**2, axis=0), 
+                            'out':cp.sum(vout**2, axis=0)}
+
+    #override       
+    def _cal_reference(self):
+        """Set the reference frame related to this surface.
+        
+        See docstring of :meth:`Surface.set_reference`
+        """
+        eps = 1e-10
+        rloc, viloc, vfloc = self._tmp['events']
+        nr = rloc.shape[1]
+        one = cp.ones(nr)
+        nul = cp.zeros(nr)
+        rsq = self._tmp['rsq']
+        r0 = cp.sqrt(rsq)
+        self._depth = self.inner*(r0 - self.R)   
+        x = cp.asarray([one,nul],dtype=float)
+        m = cp.array(r0>eps, dtype=int)
+        ez = self.inner*rloc[0:2,:]/(r0+(1-m)*eps)
+        Z = m*ez + (1-m)*x
+        U = cp.asarray([[-Z[1], Z[0], nul], 
+                        [nul ,  nul , one],
+                        [Z[0],  Z[1], nul]
+                       ])
+        q = vfloc - viloc
+        # calculate q in reference surface coordinates
+        self._qref = self.cal_qref(U, q)
+
+class Cone(Cylinder):     
+    """A Plane.
+    
+    Describes a cone along one of (x,y,z) axes.
+    
+    The cone equation is
+    
+    sqrt(x**2 + y**2) = abs(R*(z − a))
+    
+    for a cone axis='z'. Other directions and positions can be defined
+    through **kwargs as the Transform parameter `tr` of the :class:`Surface`
+    constructor. 
+    
+    The surface-related basis vectors (X,Y,Z) are defined as follows:
+
+    - Z = nearest surface normal
+    - Y = along nearest surface axis
+    - X = circular (hoop) component
+    
+    Parameters
+    ----------
+    a : float
+        Position of the appex on the cone axis. 
+    R: float
+       Cone radius at a unit distance from apex. Equals to the tangent of 
+       the cone half-angle.
+    axis : str
+        Cone axis, one of x, y or z.
+    **kwargs :
+        Other parameters passed to the parent Surface constructor. 
+    """
+    
+    def __init__(self, a=0.0, R=1, axis='z', **kwargs):         
+        super().__init__(R=R, axis=axis, **kwargs)
+        self.a = a
+
+    def _param_str(self):
+        fmt = 'a={:g}, R/{}={:g}, axis={}'
+        res = fmt.format(self.a, self.axis, self.R, self.axis)
+        return res
+    
+    #override
+    def _C(self, r=None):
+        if r is None:
+            C = self._tmp['C']
+        else:
+            C = super()._C(r=r)
+            ra = r[2,:] - self.a 
+            C = C + self.R**2*(1-ra**2)
+        return C
+    
+    #override
+    def _set_events(self, r, vi, vf):
+        """Set positions and velocities for all events to be processed.
+        
+        See docstrings of :meth:`Surface._set_events`.
+        """
+        super()._set_events(r, vi, vf)
+        rloc, viloc, vfloc = self._tmp['events']
+        rsq = self._tmp['rsq']
+        ra = rloc[2,:] - self.a 
+        va = {'in':viloc[2,:],'out':vfloc[2,:]}
+        # transform rsq etc. from cylinder to cone shape
+        # then we can re-use the cylinder equations
+        self._tmp['C'] = rsq - self.R**2*ra**2
+        for path in ['in','out']:
+            rv = self._tmp['rv'][path]
+            vsq = self._tmp['vsq'][path]
+            self._tmp['rv'][path]  = rv - self.R**2*ra*va[path]
+            self._tmp['vsq'][path] = vsq - self.R**2*va[path]**2 
+
+    #override       
+    def _cal_reference(self):
+        """Set the reference frame related to this surface.
+        
+        See docstring of :meth:`Surface.set_reference`
+        """
+        eps = 1e-10
+        rloc, viloc, vfloc = self._tmp['events']
+        nr = rloc.shape[1]
+        ra = rloc[2,:] - self.a
+        # cone angles cos and sin
+        co = 1/np.sqrt(1+self.R**2)
+        si = self.R*co
+        # radial component
+        x = cp.linalg.norm(rloc[0:2,:], axis=0)
+        # axial component
+        z = cp.abs(ra)
+        self._depth = self.inner*(x*co - z*si) # OK, tested
+        
+        one = cp.ones(nr,dtype=float)
+        nul = cp.zeros(nr,dtype=float)
+        # mask for out-of-axis points
+        mx = cp.array(x>eps, dtype=int)
+        # azimuthal angle of the radial component
+        # avoid division-by-zero errors
+        # we could use arctan2, but this should be fatser ...
+        if cp.sum(mx)<nr:
+            cosia = mx*rloc[0:2,:]/(x+(1-mx)*eps) + (1-mx)*cp.array([one, nul])
+        else:
+            cosia = rloc[0:2,:]/x
+        # sign of z-coordinate
+        zsn = cp.sign(rloc[2,:])
+        # principal axes for in-plane coordinates (r[1]=0)
+          # z = cp.array([co*one,nul,-si*zsn]) # normal to surface
+          # y = cp.array([si*one,nul,co*zsn]) # along surface axis
+          # x = cp.array([nul,one,nul]) # hoop 
+        # rotate by the azimuthal angle around cone axis
+        Z = [co*cosia[0,:], -co*cosia[1,:], -si*zsn] # normal to surface
+        Y = [si*cosia[0,:], -si*cosia[1,:], co*zsn]  # along surface axis
+        X = [cosia[1,:], cosia[0,:], nul ]           # hoop 
+        U = cp.asarray([X, Y, Z])
+        q = vfloc - viloc
+        # calculate q in reference surface coordinates
+        self._qref = self.cal_qref(U, q)
+
+#%% Group of surfaces
+
+class Group(Surface):
+    """Group of surface primitives or other surface groups.
+    
+    Parameters
+    ----------
+    op : str
+        Operator for grouping, [and|or]
+    surfaces : list
+        List of Surface objects.
+    groups : list
+        List of Group objects.
+    color : tuple
+        Color specification
+    **kwargs : 
+        Other arguments passed to the parent Surface constructor. 
+        See docstring for :class:`Surface`. 
+    
+    """
+    
+    def __init__(self, op='and', surfaces=[], groups=[], 
+                 color=(0.5, 0.5, 0.5, 0.15), **kwargs):
         super().__init__(**kwargs)
-        self.surfaces = []
+        self._op = op.lower()
+        if not self._op in ['and', 'or']:
+            raise Exception('Invalid group operator: {}'.format(op))
+        self.color = color
         # initialize data for intersections
         self._isect = {}        
         for path in ['in', 'out']:
-            self._isect[path] = {'times':[[],[]], 'mask':[[],[]]}       
-        self._op = op.lower()
-        if not self._op in ['and', 'or']:
-            raise Exception('Invalid group operator: {}'.formatop())
-    
+            self._isect[path] = {'time':[[],[]], 'mask':[[],[]]}       
+        self.surfaces = []
+        # first add all sub-groups
+        # TODO : put everything in the surfaces argument, no need to distinguish ... 
+        for g in groups:
+            if isinstance(g, Group):
+                grp = g.copy()
+            else:
+                grp = Group(level=self._level+1,**g)
+            #print('Create {}'.format(grp))
+            self.add(grp)
+        # then add surfaces
+        for s in surfaces:
+            if isinstance(s, Surface):
+                c = s.copy()
+            else:
+                c = create_surface(level=self._level+1,**s)
+            self.add(c)
+        self.is_in = None
+
+    def _isect_clean(self):
+        for path in ['in', 'out']:
+            self._isect[path]['time'] = [[],[]]
+            self._isect[path]['mask'] = [[],[]]
+
+    def cleanup(self):
+        """Clean temporary data storage to save memory."""
+        # clean temporary data in all child surfaces
+        for s in self.surfaces:
+            s.cleanup()
+        if self._level>0:
+            # clear intersection data except for the root
+            self._isect_clean()
+        else:
+            # for root group: clean references to r,vi,vk in all childs
+            for surf in self.surfaces:
+                surf._glob = [0,0,0]
+            # call garbage collector by the root group
+            gc.collect()
+
     def __str__(self):
-        res = 'Group: {}\n'.format(self.trg)
+        fmt = self._level*'\t'+'{}\n'
+        res = fmt.format(super().__str__())
         for g in self.surfaces:
-            res += '\t{}\n'.format(g)
+            if isinstance(g,Group):
+                res += g.__str__()
+            else:
+                fmt = g._level*'\t'+'{}\n'
+                res += fmt.format(g)
         return res
     
     def is_member(self, surface:Surface):
@@ -591,7 +1254,7 @@ class Group(Surface):
     def add(self, item:Surface):
         """Add a new Surface object to the group.
         
-        After adding all surfaces, call :meth:`set_events` and :meth:`evaluate`
+        After adding all surfaces, call :meth:`evaluate`
         to make the object ready for use.
         
         Parameters
@@ -600,16 +1263,18 @@ class Group(Surface):
             Instance of :class:`Surface` (can also be a Group) to be added.
         """    
         # create a copy of item and apply the chain of transformations
-        item = item.copy()
         item.connect(self)
+#        if isinstance(item, Group):
+#            print('Add {} to {}\n{}'.format(item.type_id, self.type_id, item))
         self.surfaces.append(item)
     
-    def set_events(self, r, vi, vf):
+    def _set_events(self, r, vi, vf):
         """Set positions and velocities for all events to be processed."""
         self.nr = r.shape[1]
         for surf in self.surfaces:
-            surf.set_events(r, vi, vf)
+            surf._set_events(r, vi, vf)
 
+# TODO
     def _add_xsections(self, item, slist):
         """Add intersections for a new surface object.
         
@@ -632,16 +1297,30 @@ class Group(Surface):
         signs = {'or':-1, 'and':1}
         sgn = signs[self.op] 
         # loop for incident|final ray directions
+        
+        cross = item._cross_times()
+        
+        """
+        if isinstance(item, Group):
+            rr = item.surfaces[0]._glob[0]
+            ct = cross['in']['time']
+            cm = cross['in']['mask']
+            print(item)
+            fmt = 3*'{:g} '+', '+2*'{:g} '+', '+2*'{:g} '
+            print(fmt.format(*rr[:,0],*ct[0][:].T[0],*cm[0][:].T[0]))
+            print('')
+        """     
+        
+#        ERROR
+        # TODO error - does not remember cross times for a group
         for path in ['in', 'out']:
             """    
             The intersections are saved as a list of intersection times
             and corresponding mask which is 1 for intersections 
             to be **included**. Times are the flight times from the event 
             position to the intersection.  
-            Assumes :func:`set_events` has been called to define the events.
-            """
-            
-            xs_old = self._isect[path]['times'] # old intersections
+            """        
+            xs_old = self._isect[path]['time'] # old intersections
             ms_old = self._isect[path]['mask'] # corresponding masks
             # for AND|OR:
             # keep old intersections only if inside|outside the new surface
@@ -651,12 +1330,13 @@ class Group(Surface):
                 ns = len(xs)
                 for j in range(ns):
                     # is old intersection inside|outside item?
-                    q = item.inside(t=xs[j]+eps, mask=ms[j], side=sgn, path=path)
                     # update mask
+                    q = item.is_inside(t=xs[j]+eps, mask=ms[j], side=sgn, 
+                                           path=path)
                     ms[j] = ms[j]*q
             # for AND|OR:
             # add new intersections if inside|outside all of the other surfaces
-            xs_new, ms_new = item.cross(path=path) # new intersections to be added
+            xs_new, ms_new = cross[path].values() # new intersections to be added
             for i in range(2):
                 xs = xs_new[i]
                 ms = ms_new[i]
@@ -667,35 +1347,44 @@ class Group(Surface):
                     q = ms[j]
                     for s in slist:
                         # x is inside|outside s?
-                        q1 = s.inside(t=xs[j]-eps, mask=ms[j], side=sgn, path=path)
+                        q1 = s.is_inside(t=xs[j]-eps, mask=ms[j], side=sgn, 
+                                         path=path)
                         q = q*q1
                     xs_old[i].append(xs[j])
                     ms_old[i].append(q)
         slist.append(item)
 
-    def evaluate(self):     
+    def evaluate(self, r, vi, vf):     
         """Evaluate the group to allow further calculations.
         
         Call this method after adding all child surfaces or groups
-        and after calling :meth:`set_events` on the top group.
+        and after calling :meth:`_set_events` on the top group.
         
         """
         iside = {-1:[0,1], 1:[1,0]}  # switch indices if self.inner=1
+        self.cleanup()
+        self._set_events(r, vi, vf)
         # clear intersection data
-        for path in ['in', 'out']:
-            self._isect[path]['times'] = [[],[]]
-            self._isect[path]['mask'] = [[],[]]
+        self._isect_clean()
         added = [] # local variable for processed surfaces
         # collect intersections from all child surfaces
+        if self.op=='and':
+            isin = cp.ones(self.nr, dtype=int)
+        else:
+            isin = cp.zeros(self.nr, dtype=int)
         for item in self.surfaces:
-            # evaluate newly added surface or group
-            item.evaluate()
-#            if self.trg.orig[0]>0:
-            #if self._name=='root':
-#                print(self)
+          # evaluate newly added surface or group
+          # NOTE: this will call evaluate + _add_xsections on all item's childs 
+            #print(item)
+            item.evaluate(r, vi, vf)
+            mask = item.is_inside()
+            if self.op=='and':
+                isin = isin*mask
+            else:
+                isin = cp.array(isin+mask>0,dtype=int)
             self._add_xsections(item, added)
-        # find events inside the group
-        self.is_in = self.inside()
+            item.cleanup() # cleanup to save memory
+        self._tmp['inside'] = isin
         
         # select only valid intersections:
         # - shift times for invalid intersections to _inf
@@ -704,43 +1393,78 @@ class Group(Surface):
 #        if self.trg.orig[0]>0:
 #        if self._name=='root':
 #            print(self)
+        
+        ms = {'in':[0,0], 'out':[0,0]}
+        xs = {'in':[0,0], 'out':[0,0]}
         for path in ['in', 'out']:  # loop for incident|final directions
-            times = cp.asarray(self._isect[path]['times'])
+            times = cp.asarray(self._isect[path]['time'])
             mask = cp.asarray(self._isect[path]['mask'])
+            
+            
             for i in [0,1]: # loop for input|output interfaces
                 t = times[i]*mask[i] + _inf*(1-mask[i])
                 idx = cp.argsort(t,axis=0)
                 # copy sorted arrays back to _isect
                 # switch input/output if self.inner=1
                 j = iside[self.inner][i]
-                self._isect[path]['times'][j] = cp.take_along_axis(t, 
-                                                                   idx, axis=0)
-                self._isect[path]['mask'][j] = cp.take_along_axis(mask[i], 
-                                                                  idx, axis=0)
+                xs[path][j] = list(cp.take_along_axis(t,idx, axis=0))
+                ms[path][j] = list(cp.take_along_axis(mask[i], idx, axis=0))
+                #self._isect[path]['time'][j] = cp.take_along_axis(t,idx, axis=0)
+                #self._isect[path]['mask'][j] = cp.take_along_axis(mask[i], idx, axis=0)
+        
+        # accept only rays with some intersections
+        #"""
+        self._isect_clean() 
+        for path in ['in', 'out']:
+            nx = len(ms[path][0])
+            for j in range(nx):
+                q1 = ms[path][0][j].any()
+                q2 = ms[path][1][j].any()
+                if q1 and q2:
+                #if True:
+                    for i in [0,1]:
+                        self._isect[path]['mask'][i].append(ms[path][i][j])
+                        self._isect[path]['time'][i].append(xs[path][i][j])
+        #"""    
+
+        
+# TODO create RootGroup(Group) and move following there  ?
         # calculate total path inside the group to the event position
-        _tin, _tout = self._isect['in']['times']
-        _min, _mout = self._isect['in']['mask']
-        q_in = cp.array(_tin<0, dtype=int)*_min
-        q_out = cp.array(_tout<0, dtype=int)*_mout
-        self.time_in = cp.sum(_tout*q_out - _tin*q_in,axis=0)
-        # calculate total path inside the group from the event position
-        _tin, _tout = self._isect['out']['times']
-        _min, _mout = self._isect['out']['mask']
-        q_in = cp.array(_tin>0, dtype=int)*_min
-        q_out = cp.array(_tout>0, dtype=int)*_mout
-        self.time_out = cp.sum(_tout*q_out - _tin*q_in,axis=0)
+        if self._level == 0:
+            # calculate total path inwards
+            _tin, _tout = cp.asarray(self._isect['in']['time'])
+            _min, _mout = cp.asarray(self._isect['in']['mask'])
+            q_in = cp.array(_tin<0, dtype=int)*_min
+            q_out = cp.array(_tout<0, dtype=int)*_mout
+            self.time_in = cp.sum(_tout*q_out - _tin*q_in,axis=0)
+            # calculate total path outwards
+            _tin, _tout = cp.asarray(self._isect['out']['time'])
+            _min, _mout = cp.asarray(self._isect['out']['mask'])
+            q_in = cp.array(_tin>0, dtype=int)*_min
+            q_out = cp.array(_tout>0, dtype=int)*_mout
+            self.time_out = cp.sum(_tout*q_out - _tin*q_in,axis=0)
+            self.is_in = isin
+               
+    def _inside(self): 
+        if 'inside' in self._tmp:
+            # use _tmp
+            q = self._tmp['inside']
+        else:
+            q = self.is_in
+        return q      
+
        
-    def inside(self, r=None, t=None, mask=None, side=1, path='in'):
+    def is_inside(self, r=None, t=None, mask=None, side=1, path='in'):
         """Get mask for events on given surface side.
         
         Parameters
         ----------
         r : ndarray (optional)
             Event positions in **global** coordinates. If None, use the events 
-            defined by :meth:`~set_events`.
+            defined by :meth:`~evaluate`.
         t : ndarray (optional)
             Time shifts from the initial positions as 
-            defined by :meth:`~set_events`. If None, use zero times.
+            defined by :meth:`~evaluate`. If None, use zero times.
         mask : array of int (optional)
             Mask (0,1) for valid t elements.
         side : int
@@ -753,101 +1477,62 @@ class Group(Surface):
         -------
         mask : array of int
             Mask (0,1) for valid events on given side of the surface. 
-        """   
-        if r is None:
-            nr = self.nr
+        """       
+        if (t is None) and (r is None):
+           q = self._inside()
         else:
-            nr = r.shape[1]
-        if self.op=='and':
-            q = cp.ones(nr, dtype=int)
-            for s in self.surfaces:
-                if (t is None) and (r is None):
-                    q = q*s.is_in
-                else:
-                    is_in = s.inside(r=r, t=t, mask=mask, side=1, path=path)
-                    q = q*is_in
-        else:
-            q = cp.zeros(nr, dtype=int)
-            for s in self.surfaces:
-                if (t is None) and (r is None):
-                    q = cp.bitwise_or(q,s.is_in)
-                else:
-                    is_in = s.inside(r=r, t=t, mask=mask, side=1, path=path)
+            if r is None:
+                nr = self.nr
+            else:
+                nr = r.shape[1]
+            # this allows to call is_inside for t<>0 after cleaning surfaces
+            if self.op=='and':
+                q = cp.ones(nr, dtype=int)
+                for s in self.surfaces:
+                    q = q*s.is_inside(r=r, t=t, mask=mask, side=1, path=path)
+            else:
+                q = cp.zeros(nr, dtype=int)
+                for s in self.surfaces:
+                    is_in = s.is_inside(r=r, t=t, mask=mask, side=1, path=path)
                     q = cp.bitwise_or(q,is_in)
         # invert result if we check the outer side
         if side*self.inner>0:
             q = 1-q
         return q
-   
-    def cross(self, path='in'):
+
+    
+    def _cross(self, path):
         """Calculate intersection times with the surface.
         
-        see :meth:`Surface.cross`
+        see :meth:`Surface._cross`
         
         """ 
-        return self._isect[path]['times'], self._isect[path]['mask']
+        return self._isect[path]['time'], self._isect[path]['mask']
     
-#%% Tests
-# TODO extract tests to separate module
 
-class Bench():
-    """Benchmark various operations with CuPy."""
-    def slicing(self, v, slc=[2,0,1]):
-        s = cp.random.permutation(slc)
-        return v[s[0],:]
-        #return v[:,s[0]]
-
-    def sortfnc(self, a):
-        idx = cp.argsort(a, axis=1)
-        #b = cp.take_along_axis(a, idx, axis=1)
-        return idx
+class Box(Group):     
+    """A rectangual box, composed of planes.  
+    
+    Parameters
+    ----------
+    size : array_like
+        Box dimensions along x,y,z    
+    """
+    
+    def __init__(self, size=[1,1,1], **kwargs):  
+        self.size = size
+        px1 = {'shape':'Plane', 'inner':1, 'p':[1,0,0],'d':-0.5*size[0]} 
+        px2 = {'shape':'Plane', 'inner':-1, 'p':[1,0,0],'d':0.5*size[0]}
+        py1 = {'shape':'Plane', 'inner':1, 'p':[0,1,0],'d':-0.5*size[1]} 
+        py2 = {'shape':'Plane', 'inner':-1, 'p':[0,1,0],'d':0.5*size[1]}
+        pz1 = {'shape':'Plane', 'inner':1, 'p':[0,0,1],'d':-0.5*size[2]} 
+        pz2 = {'shape':'Plane', 'inner':-1, 'p':[0,0,1],'d':0.5*size[2]}
+        gx = {'op':'and','surfaces':[px1, px2]}
+        gy = {'op':'and','surfaces':[py1, py2]}
+        gz = {'op':'and','surfaces':[pz1, pz2]}
+        super().__init__(op='and', groups=[gx,gy,gz], **kwargs)
         
-    def bench_slicing(self):
-        v = cp.random.random((3,1000000))
-        #v = cp.random.random((100000,3))
-        res =  benchmark(self.slicing, (v,), n_repeat=2000)
-        return res 
-    
-    def bench_cross(self, gpu=True, n_repeat=200):
-        n = 1000000
-        obj = Cylinder()
-        r = 2*cp.random.random((3,n))
-        v = cp.random.random((3,n))
-        v2 = v**2
-        vn = cp.sqrt(cp.sum(v2, axis=0))
-        v = v/vn
-        time = None
-        if gpu and has_gpu():
-            obj.set_events(r, v)
-            res =  benchmark(obj.cross, (r,v), n_repeat=n_repeat)
-            print(res)
-            time = cp.average(res.gpu_times) + cp.average(res.cpu_times)
-        else:
-            glob = globals()
-            glob.update({'r':r, 'v':v})
-            res = timeit.timeit('obj.cross(r, v)', 
-                          globals=glob, 
-                          setup='obj = Cylinder(); obj.set_events(r, v)',
-                          number=n_repeat)
-            time = res/n_repeat
-        return time
-    
-    def bench_sorting(self, gpu=True, n_repeat=200):
-        n = 100000
-        v = cp.random.random((n,5))
-        time = None
-        b = self.sortfnc(v)
-        if gpu and has_gpu():
-            res =  benchmark(self.sortfnc, (v,), n_repeat=n_repeat)
-            print(res)
-            time = cp.average(res.gpu_times) + cp.average(res.cpu_times)
-        else:
-            glob = globals()
-            glob.update({'v':v, 'self':self})
-            res = timeit.timeit('self.sortfnc(v)', 
-                          globals=glob, 
-                          number=n_repeat)
-            time = res/n_repeat
-        return time, b
-
-
+    def _param_str(self):
+        fmt = 'size=['+2*'{:g},'+'{:g}]'
+        res = fmt.format(*self.size)
+        return res

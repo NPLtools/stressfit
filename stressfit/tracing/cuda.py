@@ -8,13 +8,12 @@ CUDA GPU and cupy is not present.
 Created on Mon Sep 18 12:59:48 2023
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
-print('importing cuda')
+#print('importing cuda')
 from . import options
 
 if options['gpu']:
     try:
         import cupy as cp
-        _gpu = True
         print('Imported CuPy.')
     except:
         import numpy as cp

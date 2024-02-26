@@ -7,8 +7,8 @@ Created on Fri Sep 15 17:08:44 2023
 """
 
 import numpy as np
-from .cuda import cp, asnumpy
-from .primitives import Surface, Group
+from .cuda import cp
+from .primitives import Surface, Group, is_primitive
 
 
 class Extinction():
@@ -200,6 +200,10 @@ class Cell():
         self._refs = None # reference surface for depth definition
         self._scan = {'orig': [0,0,0], 'dir': [0,0,1]}
     
+    @property
+    def root(self):
+        """Root surface group of the cell."""
+        return self._surf
     
     @property
     def extinction(self):
@@ -236,6 +240,14 @@ class Cell():
 
     @reference.setter
     def reference(self, value):
+        if id(value) == self._refs:
+            return # nothing to do
+        # remove the flag from the old reference if there is any
+        if self._refs is not None:
+            try:
+                self._refs.is_reference = False
+            finally:
+                self._refs = None
         # set by index from the root surface group
         if isinstance(value,int):
             if abs(value)<len(self._surf.surfaces):
@@ -243,16 +255,19 @@ class Cell():
             else:
                 raise Exception('No surface with index {}'.format(value))
         # set by Surface instance
-        elif isinstance(value, Surface) and not isinstance(value, Group):
+        elif isinstance(value, Surface) and not is_primitive(value):
             if not self._surf.is_member(value):
                 raise Exception('Reference surface does not belong to the group')
             else:
                  self._refs = value         
         elif value==None:
-            self._refs = value 
+            self._refs = None
         else:
-            raise Exception('Type {} cannot be a reference surface'.format(type(value)))
-        
+            msg = 'Type {} cannot be a reference surface.'
+            raise Exception(msg.format(type(value)))
+        # assign the new reference
+        if self._refs is not None:
+            self._refs.is_reference = True
     
     def set_events(self, r, ki, kf):
         """Set positions and wave vectors for all events to be processed.
@@ -263,11 +278,11 @@ class Cell():
             Positions passed as (3,:) arrays.
         ki, kf : array_like
             Input and output wave vectors passed as (3,:) arrays.
-        p : array_like
-            Weights of the events.
-        """        
-        self._surf.set_events(r, ki, kf)
-        self._surf.evaluate()
+        """   
+        #self._surf.set_events(r, ki, kf)
+        #if self._refs is not None:
+        #    self._refs.cal_reference()  
+        self._surf.evaluate(r, ki, kf)
         ki0 = cp.linalg.norm(ki, axis=0)
         kf0 = cp.linalg.norm(kf, axis=0)
         self.path_in = ki0*self._surf.time_in
@@ -276,18 +291,20 @@ class Cell():
         wf = 2*cp.pi/kf0
         self._wav = [wi, wf]
 
-    def cal_depth(self):
-        """Calculate depths under reference surface."""
+    @property
+    def depth(self):
+        """Get depths under reference surface."""
         depth = None
         if self._refs is not None:
-            depth = self._refs.cal_depth()
+            depth = self._refs.depth
         return depth
-
-    def cal_qref(self):
+    
+    @property
+    def qref(self):
         """Calculate q-vectors in reference surface  coordinates."""
         qref = None
         if self._refs is not None:
-            qref = self._refs.cal_qref()
+            qref = self._refs.qref
         return qref
     
     def get_extinction(self):

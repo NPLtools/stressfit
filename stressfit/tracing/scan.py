@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Handles scan geometry and MC integration methods.
+Scan geometry module.
 
 Created on Sat Sep 16 15:36:02 2023
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
-import numpy as np
-from .cuda import cp, asnumpy
-from .primitives import Transform
 
-# TODO introduce initial transform for scan origin - simplify positioning
+from .cuda import cp
+from .primitives import Transform
 
 class ScanGeometry():
     """Scan geometry class.
@@ -26,6 +24,23 @@ class ScanGeometry():
     
     Note that any step sequence can be defined by using non-integer values in 
     the steps array.
+    
+    Parameters
+    ----------
+    shape : int
+        Scan shape, use ScanGeometry.LINEAR or CIRCULAR.
+    steps : array_like
+        Step positions in [mm] or [deg], depending on scan shape.
+    origin : array_like
+        Coordinates of the scan origin (step=0)
+    axis : array_like
+        Scan direction or rotation axis, depending on scan shape.
+    step_size : float
+        Step size factor (multiplies the values of `steps`) 
+    origin_rot : array_like
+        Origin of the rotation axis (a point on the rotation axis)    
+    tr : Transform
+        Initial sample positioning transformation.
     
     Example
     -------
@@ -49,7 +64,7 @@ class ScanGeometry():
     CIRCULAR = 1
     
     def __init__(self, shape:int, steps, origin=[0,0,0], axis=[1,0,0],
-                 step_size=1.0, origin_rot=[0,0,0]):
+                 step_size=1.0, origin_rot=[0,0,0], tr=None):
         if not shape in [0,1]:
             raise Exception('Unsupported scan shape: {}'.format(shape))
         self._shape = shape
@@ -59,9 +74,13 @@ class ScanGeometry():
         a = cp.array(axis, dtype=float)
         self._axis = a/cp.linalg.norm(a) # normalize direction axis
         self._origin_rot = cp.array(origin_rot, dtype=float)
+        if isinstance(tr, Transform):
+            self._tr = tr
+        else:
+            self._tr = Transform()
 
     @classmethod
-    def linear(cls, steps, origin=[0,0,0], axis=[0,1,0], step_size=1.0):
+    def linear(cls, steps, origin=[0,0,0], axis=[0,1,0], step_size=1.0, tr=None):
         """Define a linear scan.
         
         Parameters
@@ -74,15 +93,17 @@ class ScanGeometry():
             Scan direction
         step_size : float
             Step size factor (multiplies the values of `steps`)
+        tr : Transform
+            Initial sample positioning transformation.
         
         """
         c = cls(ScanGeometry.LINEAR, steps, origin=origin, axis=axis, 
-                step_size=step_size)
+                step_size=step_size, tr=tr)
         return c
 
     @classmethod
     def circular(cls, steps, origin=[1,0,0], axis=[0,1,0], origin_rot=[0,0,0],
-                 step_size=1.0):
+                 step_size=1.0, tr=None):
         """Define a circular scan.
         
         Parameters
@@ -97,7 +118,8 @@ class ScanGeometry():
             Origin of the rotation axis (a point on the axis)
         step_size : float
             Step size factor (multiplies the values of `steps`)
-        
+        tr : Transform
+            Initial sample positioning transformation.
         """
         c = cls(ScanGeometry.CIRCULAR, steps, origin=origin, axis=axis, 
                 step_size=step_size, origin_rot=origin_rot)
@@ -125,6 +147,50 @@ class ScanGeometry():
             return 'deg'
         else:
             return 'mm'
+
+    @property
+    def transform(self):
+        """Initial sample positioning transformation."""
+        return self._tr
+    
+    @transform.setter
+    def transform(self, value):
+        if isinstance(value, Transform):
+            self._tr = value
+        elif isinstance(value, dict):
+            self._tr = Transform(**value)
+
+    @property
+    def scan_orig(self, local=True):
+        """Scan origin coordinates.
+        
+        Parameters
+        ----------
+        local : bool
+            If true, return postion in cell root coordinates. 
+            Otherwise, use the `transform` property (initial sample position)
+            for conversion to global (lab) coordinates.
+        """
+        if local:
+            return self._origin
+        else:
+            return self._tr.r_to_glob(self._origin)
+
+    @property
+    def rot_orig(self, local=True):
+        """Rotation axis origin coordinates.
+        
+        Parameters
+        ----------
+        local : bool
+            If true, express postion in cell root coordinates. 
+            Otherwise, use the `transform` property (initial sample position)
+            for conversion to global (lab) coordinates.
+        """
+        if local:
+            return self._origin_rot
+        else:
+            return self._tr.r_to_glob(self._origin_rot)
 
     def rot_axes(self):
         """Return carthesian basis vectors for rotation scan.
@@ -201,8 +267,11 @@ class ScanGeometry():
             rm[2,2] = co
             rmat1 = rmat.T.dot(rm)
             R = rmat1.dot(rmat)
-            tr = Transform(rmat=R, orig=-self._origin,
-                           rotctr=self._origin_rot, order=1)
+            tr = Transform(rmat=R, orig=-self._origin, rotctr=self._origin_rot, 
+                           order=1)
+            #if not self._tr.is_identity:
+               # tr = self._tr.join(tr)
+            #    tr = tr.join(self._tr)
            # o = rmat1.dot(r1) + self._origin_rot
             o = tr.r_to_loc(r0)
             pts.append(o)
@@ -214,6 +283,8 @@ class ScanGeometry():
         trans = []        
         for i in range(len(self._steps)):
             tr = Transform(orig=-r[i], order=1)
+            #if not self._tr.is_identity:
+            #    tr = self._tr.join(tr)
             trans.append(tr)
         return {'r': r.T, 'tr':trans}
 
@@ -224,10 +295,9 @@ class ScanGeometry():
         -------
         dict
             r : array_like
-                Translation vectors corresponding to scan positions,
-                shape = (3,:).
+                Scan positions in global (lab) coordinates, shape = (3,:).
             tr : list
-                A list of Transform objects, which generate positions and 
+                A list of Transform objects, which generate scan positions and 
                 direction vectors at each scan step.         
         
         Usage
@@ -252,11 +322,12 @@ class ScanGeometry():
             r = P['tr'][i].iorig        
 
         """    
-        res = None
         if self._shape == ScanGeometry.LINEAR:
             res = self._positions_lin()
         elif self._shape == ScanGeometry.CIRCULAR:
             res = self._positions_rot()
+        else:
+            res = None
         return res
 
 
@@ -346,114 +417,6 @@ class ScanGeometry():
             return self.to_scan_coord_rot(r)
         else:
             return self.to_scan_coord_lin(r)
-
-
-#%% Tests
-# TODO extract tests to separate module
-def test_scan():
-    """Test circular and linear scan settings."""
-    from matplotlib import pyplot as plt
-    _eps = 1e-15
-# test circular scan
-    step_size = 1
-    steps = cp.linspace(0,120,num=9)
-    origin = [1,0,0]
-    axis = [0,0,1]
-    origin_rot = [-1,0,0]
-    print('Testing circular scan ... '.format(),end='')
-    scan = ScanGeometry.circular(steps,origin=origin, axis=axis, 
-                                 origin_rot=origin_rot, step_size=step_size)
-    pos = scan.positions()
-    # test points
-    r = asnumpy(pos['r'])
-    # attached vectors along x and y
-    x_ax = np.array([1,0,0])
-    z_ax = np.array([0,1,0])
-    a = {'x':[], 'z':[]}
-    for i in range(scan.nsteps):
-        x_axt = asnumpy(pos['tr'][i].v_to_loc(x_ax))
-        z_axt = asnumpy(pos['tr'][i].v_to_loc(z_ax))
-        vx = np.array([r[:,i], r[:,i]+x_axt]).T
-        vz = np.array([r[:,i], r[:,i]+z_axt]).T
-        a['x'].append(vx)
-        a['z'].append(vz)
-    # plot scan points with attached vectors
-    xlim = [-3,3]
-    ylim = [-3,3]
-    fig, ax = plt.subplots(figsize=(5,5))
-    ax.set_xlim(xlim)
-    ax.set_ylim(ylim)
-    ax.plot(r[0], r[1], color='black', marker='x', linestyle='none', markersize=3)    
-    ax.plot(origin[0], origin[1], color='red', marker='o', linestyle='none', 
-            markersize=5)
-    ax.plot(origin_rot[0], origin_rot[1], color='red', marker='^', 
-            linestyle='none', markersize=5)
-    for i in range(scan.nsteps):
-        ax.plot(a['x'][i][0], a['x'][i][1], color='red', linestyle='-', 
-                linewidth=0.5)
-        ax.plot(a['z'][i][0], a['z'][i][1], color='blue', linestyle='-', 
-                linewidth=0.5)
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.grid()
-    title = 'origin: '+3*'{:g} '+'axis: '+3*'{:g} '+'step: {:g}'
-    plt.title(title.format(*origin, *axis, step_size), fontsize = 8)    
-    ax.invert_xaxis()
-    plt.show()     
-    # assert value
-    r0 = np.array([0,0,0])
-    r_test = pos['tr'][6].r_to_loc(r0)
-    rdiff = asnumpy(r_test) - np.array([-1,2,0])
-    qry = np.sum(rdiff**2)
-    assert(qry<_eps)
-    print('passed') 
-# test linear scan
-    print('Testing linear scan ... '.format(),end='')    
-    step_size = 0.5
-    origin = [0,-1,-1]
-    axis = [1,-0.5, -1]
-    steps = list(np.linspace(-3,3,num=7))
-    scan = ScanGeometry.linear(steps, origin=origin, axis=axis, 
-                               step_size=step_size)
-    pos = scan.positions()
-    # scan points
-    r = asnumpy(pos['r'])
-    # plot scan points in 3 projections
-    lbl = [['y','z'],['z','x'],['x','y']]
-    idx = [[1,2],[2,0],[0,1]]
-    xlim = [-3,3]
-    ylim = [-3,3]
-    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(12,4))
-    for i in range(3):
-        ix, iy = idx[i]
-        lblx, lbly = lbl[i]
-        ax[i].set_xlim(xlim)
-        ax[i].set_ylim(ylim)
-        ax[i].plot(r[ix], r[iy], color='darkblue', marker='x', 
-                   linestyle='-', markersize=5)
-        ax[i].plot(r[ix,0], r[iy,0], color='darkblue', marker='o', 
-                   linestyle='none', markersize=5)     
-        ax[i].set_xlabel(lblx)
-        ax[i].set_ylabel(lbly)
-        ax[i].grid()
-        ax[i].invert_xaxis()
-    dstp = np.multiply(step_size*steps[0],axis)
-    o = np.add(origin,dstp)
-    title = 'origin: '+3*'{:g} '+'axis: '+3*'{:g} '+'step: {:g}'
-    fig.suptitle(title.format(*o, *axis, step_size), fontsize=8)
-    fig.tight_layout(w_pad=0.5)
-    plt.show() 
-    # assert value
-    r0 = np.array([0,0,0])
-    r_test = pos['tr'][4].r_to_loc(r0)
-    rdiff = asnumpy(r_test) - np.array([0.5,-1.25, -1.5])
-    qry = np.sum(rdiff**2)
-    assert(qry<_eps)
-    print('passed') 
-    
-
-if __name__ == "__main__":
-    test_scan()
 
 
 
