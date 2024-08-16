@@ -7,8 +7,8 @@ dependencies:
   - python<=3.10.9
   - jupyter_client<=7.3.4
   - notebook
-  - lmfit
   - ipysheet
   - pathlib
+  - lmfit
   
  

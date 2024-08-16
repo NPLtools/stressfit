@@ -26,7 +26,7 @@ class ShapePolygonBar(ShapeAbstract):
     Parameters
     ----------
     num: int
-        Plate thickness in [mm].
+        Number of edges.
     side: float
         Length of one side [mm].
     height : float

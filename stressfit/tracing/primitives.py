@@ -6,10 +6,9 @@ Created on Mon Aug 14 18:48:33 2023
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
 
-# TODO: unify set_events and evaluate, save memory ...
         
 # TODO: write primitives also for: 
-# plane, box, ellipsoid, elliptic cylinder, hyper/parabola, toroid
+# wedge, ellipsoid, hyper/parabola surface 2D, 3D, toroid
 # TODO: rewrite classes from the shapes module + add a general one
 
     
@@ -22,11 +21,11 @@ from .cuda import cp, asnumpy
 
 _inf = 1e30
 
-# defined primitive surface shapes
-_primitives = ['Cylinder','Plane', 'Sphere', 'Cone']
+# defined primitive surface shapes, 
+_primitives = ['Cylinder','Plane', 'Sphere', 'Cone', 'ECylinder']
 
 # all valid surface types including the predefined groups
-_surfaces = _primitives + ['Box']
+_surfaces = _primitives + ['Box','PolygonBar']
 
 def is_primitive(obj):
     """Return true if obj is a primitive surface.
@@ -44,7 +43,7 @@ def _err_not_implemented(name):
     raise NotImplementedError(msg)
     
 
-def create_surface(shape='Cylinder', inner=-1, tr=None, **kwargs):
+def create_surface(shape=None, inner=-1, tr=None, **kwargs):
     """Create a Surface instance of given shape.
     
     Parameters
@@ -62,7 +61,9 @@ def create_surface(shape='Cylinder', inner=-1, tr=None, **kwargs):
         Arguments specific to the shape passed to the constructor.
     
     """
-    if not shape in _surfaces:
+    if shape is None or shape=='Group':
+        c = Group(inner=inner, tr=tr, **kwargs)
+    elif not shape in _surfaces:
         raise Exception('Surface shape {} not defined'.format(shape))
     if shape=='Cylinder':
         c = Cylinder(inner=inner, tr=tr, **kwargs)
@@ -74,6 +75,10 @@ def create_surface(shape='Cylinder', inner=-1, tr=None, **kwargs):
         c = Cone(inner=inner, tr=tr, **kwargs)
     elif shape=='Box':
         c = Box(inner=inner, tr=tr, **kwargs)
+    elif shape=='ECylinder':
+        c = ECylinder(inner=inner, tr=tr, **kwargs)
+    elif shape=='PolygonBar':
+        c = PolygonBar(inner=inner, tr=tr, **kwargs)
     return c
 
 def create_transform(tr):
@@ -88,10 +93,120 @@ def create_transform(tr):
         raise Exception('Unknown coordinate transformation format.')
     return tr
 
+#%% Primitive tracing functions and classes
+  
+def ellipse_nearest_point(a, b, p, tol=0.001):
+    """Find nearest points on an ellipse.
+    
+    Iterative procedure finding the nearest circle of curvature. 
+
+    Parameters
+    ----------
+    a : float
+        Major semi-axis
+    b : float
+        Minor semi-axis 
+    p : ndarray
+        Array of sample points shape=(2,:)
+    tol : float
+        Precission (length units)
+        
+    Return
+    ------
+    dist : ndarray
+        Nearest distances of p to the ellipse.
+    rc : ndarray
+        Nearest points on the ellipse.
+    rn : ndarray
+        Normals to the ellipse pointing outwards
+    """
+    
+    def eval_dist(tx, ty, r):
+        """Evaluate distances to points on an ellipse.
+        
+        Parameters
+        ----------  
+        tx, ty : array_like
+            Parameters of the points on an allipse. Assumes ellipse parametrization
+            x = a*tx, y = b*ty
+        r : ndarray
+            Sample points for distance calculations, shape=(2,:)
+       
+        Return
+        ------
+        dist : ndarray
+            Distances along the normals from the ellipse points given by tx,ty.
+        rc : ndarray
+            Points on the ellipse given by tx,ty.
+        rn : ndarray
+            Normals to the ellipse pointing outwards
+    
+        """
+        # points on the ellipse
+        rc = cp.array([a*tx, b*ty])
+        # normals from these points outwards   
+        mat = cp.diagflat(cp.array([b**2,a**2]))
+        n = cp.dot(mat,rc)
+        rn = n/np.linalg.norm(n, axis=0)
+        # distance of p along these normals, positive for points inside the ellipse 
+        dist = cp.sum(rn*(r-rc), axis=0)
+        return dist, rc, rn
+
+#    fmt = '{:d} {:g}'
+    zero = cp.zeros(p.shape[1])
+    one = cp.ones(p.shape[1])    
+    # get corresponding points in the 1st quadrant
+    p1 = abs(p)
+    px = p1[0,:]
+    py = p1[1,:]
+    # 1st estimate for the nearest points on the ellipse 
+    tx = 0.707*one
+    ty = 0.707*one
+    # evaluate the distances and ellipse points coordinates
+    dist, rc, rn = eval_dist(tx, ty, p1)
+    # ddist is the convergence parameter ... 
+    ddist = cp.abs(dist)
+#    if verbose:
+#        print(fmt.format(0,max(ddist)))
+    
+    i=0 # iteration counter
+    # do until the maximum change of distance is less than the tollerance
+    while cp.any(ddist>tol):
+        # centres of curvature
+        ex = (a*a - b*b)*tx**3/a
+        ey = (b*b - a*a)*ty**3/b
+        # radius vectors from the centres of curvature (normals to the ellipse)
+        rx = a*tx - ex
+        ry = b*ty - ey
+        # p relative to the centres of curvature 
+        qx = px - ex
+        qy = py - ey
+        # sizes of r and q
+        r = cp.hypot(ry, rx)
+        q = cp.hypot(qy, qx)
+        # new estimate of the nearest ellipse points
+        tx = cp.minimum(one, cp.maximum(zero, (qx*r/q + ex)/a))
+        ty = cp.minimum(one, cp.maximum(zero, (qy*r/q + ey)/b))
+        t = cp.hypot(ty, tx)
+        tx /= t 
+        ty /= t 
+        dist0 = dist
+        # evaluate the new distances and nearest point coordinates
+        dist, rc, rn = eval_dist(tx, ty, p1)
+        # get the distance changes
+        ddist = cp.abs(dist-dist0)
+        i += 1
+#        if verbose:
+#            print(fmt.format(i,max(ddist)))
+    # move to corresponding quadrants according to the coordinate signes
+    rc = cp.copysign(rc, p)
+    rn = cp.copysign(rn, p)
+    return dist, rc, rn
+
 class Transform():
     """Coordinate transformation for surfaces and cells.
       
-    Rotation is defined either by `angles`, or explicitely by rotation matrix.
+    Rotation is defined either by `angles`, or explicitly by rotation matrix.
     If `axes`=None, then `angles` correspond to the rotation axes x,y,z, 
     and the total rotation matrix is R = Rx.Ry.Rz. 
     Otherwise, `axes` defines the order of rotations. For example, 
@@ -201,7 +316,7 @@ class Transform():
                 res += ', '
             angles = self._get_angles()
             fmt = 'angles: [' + 3*' {:g}'+']'
-            o = np.round(angles,6)
+            o = cp.round(angles,6)
             res += fmt.format(*o)
         res += ')'
         return res
@@ -665,11 +780,7 @@ class Surface():
         - `_depth`: Depth under the reference surface.
         
         - `_qref`: Q-vectors in principal surface coordinates. 
-          
-        The surface basis vectors are expressed as rows of the matrix U
-        in local coordinates. The matrix U is used to calculate principal 
-        strain/stress components for given surface symmetry. 
-        
+                 
         The definition of the principal surface coordinates depends 
         on the surface shape. Usually the Z-component
         should be along the nearest surface normal, Y denotes
@@ -953,24 +1064,44 @@ class Cylinder(Sphere):
         Radius.
     axis : str
         Axis direction, one of [x, y, z]. 
+    angle : float
+        Rotation around cylinder axis [deg]
     **kwargs :
         Other parameters passed to the parent Sphere constructor.
     """
-    
-    
-    def __init__(self, R=1.0, axis='z', **kwargs):
-        _rot = {'x':[0,90,0], 'y':[90,0,0], 'z':[0,0,0]}
-        ax = axis.lower()
-        if not ax in _rot:
-            raise Exception('Invalid axis: {}'.format(ax))
-        tr = Transform(angles=_rot[ax])
+    #NOTE: the code is written for axis=z, other axes are implemented 
+    # via initial rotation    
+    def _axis_tr(axis, angle=0.0, **kwargs):
+        """Calculate transformation for given axis and angle.
+        
+        Parameters
+        ----------
+        axis : str
+            x,y or z
+        angle : float
+            Rotation around cylinder axis [deg]
+        **kwargs :
+            If 'tr' parameter is found in kwargs, it is joined on top
+            of the axis transformation. 
+        """
+        # The angles below should rotate an elliptic cylinder with 
+        # axis=z and a=x to required position
+        # NOTE the object rotation order: x,y,z
+        _rot = {'x':[0,90,angle], 'y':[90,0,angle], 'z':[0,0,angle]}
+        if not axis in _rot:
+            raise Exception('Invalid axis: {}'.format(axis))
+        tr = Transform(angles=_rot[axis])
         if 'tr' in kwargs:
             tr0 = create_transform(kwargs['tr'])
             tr = tr0.join(tr)
             del kwargs['tr']
-        super().__init__(R=R, tr=tr, **kwargs)
+        return tr
+    
+    def __init__(self, R=1.0, axis='z', angle=0, **kwargs):
         self.axis = axis.lower()
-            
+        tr = Cylinder._axis_tr(self.axis, angle=angle, **kwargs)
+        if 'tr' in kwargs:  del kwargs['tr']
+        super().__init__(R=R, tr=tr, **kwargs)
 
     def _param_str(self):
         res = 'R={:g}, axis={}'.format(self.R, self.axis)
@@ -1013,22 +1144,23 @@ class Cylinder(Sphere):
         """
         eps = 1e-10
         rloc, viloc, vfloc = self._tmp['events']
+    # calculate depth under surface
+        rsq = self._tmp['rsq']
+        r0 = cp.sqrt(rsq)
+        self._depth = self.inner*(r0 - self.R)         
+    # calculate q in reference surface coordinates
         nr = rloc.shape[1]
         one = cp.ones(nr)
         nul = cp.zeros(nr)
-        rsq = self._tmp['rsq']
-        r0 = cp.sqrt(rsq)
-        self._depth = self.inner*(r0 - self.R)   
         x = cp.asarray([one,nul],dtype=float)
         m = cp.array(r0>eps, dtype=int)
-        ez = self.inner*rloc[0:2,:]/(r0+(1-m)*eps)
-        Z = m*ez + (1-m)*x
+        rn = rloc[0:2,:]/(r0+(1-m)*eps)
+        Z = self.inner*(m*rn + (1-m)*x)
         U = cp.asarray([[-Z[1], Z[0], nul], 
                         [nul ,  nul , one],
                         [Z[0],  Z[1], nul]
                        ])
         q = vfloc - viloc
-        # calculate q in reference surface coordinates
         self._qref = self.cal_qref(U, q)
 
 class Cone(Cylinder):     
@@ -1147,6 +1279,103 @@ class Cone(Cylinder):
         # calculate q in reference surface coordinates
         self._qref = self.cal_qref(U, q)
 
+
+    
+class ECylinder(Cylinder):     
+    """Elliptic rod.
+    
+    Describes a rod with elliptic basis.
+    
+    The surface-related basis vectors (X,Y,Z) are defined as follows:
+    
+    - Y = cylinder axis
+    - Z = normal to the nearest surface, or (1,0,0) if not defined
+    - X = Y x Z if y<>Z, else X = x 
+    
+    where (x,y,z) is the local basis.    
+
+    Parameters
+    ----------
+    a : float
+        First semi-axis of the sample basis, parallel to x if angle=0. 
+    b : float
+        Second semi-axis of the sample basis, parallel to z if angle=0.  
+    angle : float
+        Angle of the semi-axis a with respect to x [deg]
+    axis : str
+        Axis direction, one of [x, y, z]. 
+    **kwargs :
+        Other parameters passed to the parent constructor.
+    """
+    
+    #NOTE: the code is written for axis=z, other axes are implemented 
+    # via initial rotation    
+    def __init__(self,a=8.0, b=8.0, angle=0.0, axis='z', **kwargs):
+        super().__init__(R=a, axis=axis, angle=angle, **kwargs)      
+        self.a = a
+        self.b = b
+        self.angle = angle
+        self.gm = cp.diagflat(cp.array([1/self.a**2,1/self.b**2]))
+
+    #override
+    def _param_str(self):
+        fmt = 'a={:g}, b={:g}, angle={:g}, axis={}'
+        res = fmt.format(self.a, self.b, self.angle, self.axis)
+        return res
+
+    #override
+    def _C(self, r=None):
+        if r is None:
+            C = self._tmp['C']
+        else:
+            rc = r[0:2,:]
+            rsq = cp.sum(rc*cp.dot(self.gm,rc), axis=0)
+            C = rsq - 1.0
+        return C
+
+    #override
+    def _set_events(self, r, vi, vf):
+        """Set positions and velocities for all events to be processed.
+        
+        See docstrings of :meth:`Surface._set_events`.
+        """
+        super()._set_events(r, vi, vf)
+        rloc, viloc, vfloc = self._tmp['events']
+        # get r,v norms
+        rc = rloc[0:2,:]
+        rsq = cp.sum(rc*cp.dot(self.gm,rc), axis=0)
+        vsqi = cp.sum(viloc[0:2,:]*cp.dot(self.gm,viloc[0:2,:]), axis=0)
+        vsqf = cp.sum(vfloc[0:2,:]*cp.dot(self.gm,vfloc[0:2,:]), axis=0)
+        rvi = cp.sum(rc*cp.dot(self.gm,viloc[0:2,:]), axis=0)
+        rvf = cp.sum(rc*cp.dot(self.gm,vfloc[0:2,:]), axis=0)
+        self._tmp['rsq'] = rsq
+        self._tmp['C'] = rsq - 1.0
+        self._tmp['rv']  = {'in':rvi, 'out':rvf}
+        self._tmp['vsq'] = {'in':vsqi, 'out':vsqf}
+
+    #override       
+    def _cal_reference(self):
+        """Set the reference frame related to this surface.
+        
+        See docstring of :meth:`Surface.set_reference`
+        """
+        rloc, viloc, vfloc = self._tmp['events']
+        dist, re, rn = ellipse_nearest_point(self.a, self.b, rloc[0:2,:])         
+        # depth under surface
+        self._depth = self.inner*dist
+        # q in reference surface coordinates
+        nr = rloc.shape[1]
+        one = cp.ones(nr)
+        nul = cp.zeros(nr)    
+        Z = self.inner*rn
+        U = cp.asarray([[-Z[1], Z[0], nul], 
+                        [nul ,  nul , one],
+                        [Z[0],  Z[1], nul]
+                       ])
+        q = vfloc - viloc
+        self._qref = self.cal_qref(U, q)
+
+
 #%% Group of surfaces
 
 class Group(Surface):
@@ -1158,8 +1387,6 @@ class Group(Surface):
         Operator for grouping, [and|or]
     surfaces : list
         List of Surface objects.
-    groups : list
-        List of Group objects.
     color : tuple
         Color specification
     **kwargs : 
@@ -1168,7 +1395,7 @@ class Group(Surface):
     
     """
     
-    def __init__(self, op='and', surfaces=[], groups=[], 
+    def __init__(self, op='and', surfaces=[],#  groups=[], 
                  color=(0.5, 0.5, 0.5, 0.15), **kwargs):
         super().__init__(**kwargs)
         self._op = op.lower()
@@ -1182,6 +1409,7 @@ class Group(Surface):
         self.surfaces = []
         # first add all sub-groups
         # TODO : put everything in the surfaces argument, no need to distinguish ... 
+        """
         for g in groups:
             if isinstance(g, Group):
                 grp = g.copy()
@@ -1189,6 +1417,7 @@ class Group(Surface):
                 grp = Group(level=self._level+1,**g)
             #print('Create {}'.format(grp))
             self.add(grp)
+        """
         # then add surfaces
         for s in surfaces:
             if isinstance(s, Surface):
@@ -1274,7 +1503,6 @@ class Group(Surface):
         for surf in self.surfaces:
             surf._set_events(r, vi, vf)
 
-# TODO
     def _add_xsections(self, item, slist):
         """Add intersections for a new surface object.
         
@@ -1508,7 +1736,23 @@ class Group(Surface):
         
         """ 
         return self._isect[path]['time'], self._isect[path]['mask']
+
+
+class RootGroup(Group): 
+    """Top level Group for complex surfaces.
     
+    Parameters
+    ----------       
+    surfaces : list of dict
+        Complete hierarcy of the surfaces. It should include all keyword 
+        arguments accetped by :meth:`create_surface`. 
+    **kwargs :
+        Other arguments passed to the root Group constructor.
+    """
+    def __init__(self, surfaces=[], **kwargs):
+        super().__init__(surfaces=surfaces, **kwargs)
+        self.src = surfaces
+        
 
 class Box(Group):     
     """A rectangual box, composed of planes.  
@@ -1530,9 +1774,121 @@ class Box(Group):
         gx = {'op':'and','surfaces':[px1, px2]}
         gy = {'op':'and','surfaces':[py1, py2]}
         gz = {'op':'and','surfaces':[pz1, pz2]}
-        super().__init__(op='and', groups=[gx,gy,gz], **kwargs)
+        super().__init__(op='and', surfaces=[gx,gy,gz], **kwargs)
         
     def _param_str(self):
         fmt = 'size=['+2*'{:g},'+'{:g}]'
         res = fmt.format(*self.size)
         return res
+
+#TODO test PolygonBar not passed
+class PolygonBar(Group):     
+    """A bar with polygonal basis (axis along z).
+    
+    Define the basis as a regular polygon by giving the number of edges, or an
+    irregular polygon by setting the (x,y) edge coordinates at z=0.
+    
+    The object is centered at the middle of the height. 
+    At zero position, the centre of the polygon is at the origin of local 
+    coordinates.
+    
+    Use `caps` to define (x,y) coordinates of the bottom and top centres at 
+    z = -+ 0.5*height. If not defined, the rod axis is normal to the basal 
+    plane.
+    
+    Use `axis` parameter to define the rod axis different from `z`. 
+    
+    Parameters
+    ----------
+    num: int
+        Number of edges.
+    side: float
+        Length of one side [mm].
+    height : float
+        Height along z [mm].
+    caps: list (optional)
+        Define (x,y) coordinates of the bottom and top centers.
+        If not defined, the rod axis  is normal to the basal plane.
+    edges : list (optional)
+        list of (x,y) coordinates of the edges.
+        If defined, it overrides the `num` and `side` parameters.  
+    axis : str
+        Axis direction, one of [x, y, z].         
+    """
+    
+    def __init__(self, num=6, side=10.0, height=50.0, caps=None, edges=None, 
+                 axis='z', **kwargs):  
+        self._def_by_edges = edges is not None
+        if self._def_by_edges:
+            self.edges = edges    
+        else:
+            self.edges = self._define_edges(num, side)
+        if caps==None:
+            caps = [[0,0],[0,0]]
+        self.caps = np.array([caps[0]+[-0.5*height],caps[1]+[0.5*height]])
+        self.height = height
+        # add rotation for given axis
+        self.axis = axis.lower()
+        tr = Cylinder._axis_tr(self.axis, **kwargs)
+        if 'tr' in kwargs:
+            del kwargs['tr']
+        sf = self._get_surfaces()
+        super().__init__(op='and', tr=tr, surfaces=sf, **kwargs)
+
+    def _define_edges(self, num, side):
+        """Calculate edges coordinates from input parameters."""
+        edges = []
+        deg = np.pi/180
+        a = 360/num
+        R = 0.5*side/np.sin(0.5*a*deg)
+        for i in range(num):
+            ang = (i+0.5)*a
+            x = R*np.sin(ang*deg)
+            y = R*np.cos(ang*deg)
+            edges.append([x, y])
+        return edges
+        
+    def _get_surfaces(self):
+        """Get list of planes for the polygon walls."""
+        surfaces = []
+        
+        # convert edges to 3d vectors
+        edges = []
+        for e in self.edges:
+            edges.append([e[0],e[1],0.0])
+        
+        for i in range(len(edges)):
+            # vector along side
+            rs = np.subtract(edges[i],edges[i-1])           
+            rsn = np.sqrt(rs[0]**2+rs[1]**2)
+            rs = rs/rsn
+            # axial vector
+            a = self.caps[1] - self.caps[0]
+            rz = a/np.linalg.norm(a)
+            # unit vector normal to the side/wall (inwards)
+            rn = np.cross(rz,rs)
+            p = rn/np.linalg.norm(rn)
+            # wall centre
+            ctr =  0.5*np.add(edges[i],edges[i-1])
+            # normal distance from the wall
+            d = np.dot(p,ctr)
+            sf = {'shape':'Plane', 'p':list(p), 'd':d}
+            surfaces.append(sf)
+        # add top and bottom planes
+        s_top = {'shape':'Plane', 'p':[0,0,-1], 'd':0.5*self.height}
+        s_bottom = {'shape':'Plane', 'p':[0,0,1], 'd':-0.5*self.height}
+        surfaces.extend([s_top, s_bottom])
+        return surfaces
+    
+    def _param_str(self):
+        vals = [len(self.edges), self.height]
+        fmt = 'edges={:g}, height={:g}'
+        if not np.all(self.caps==0):
+            vals += list(self.caps.flatten)
+            fmt += ', bottom={:g},{:g}, top={:g},{:g}'
+        
+        if not self._def_by_edges:
+            fmt += ', regular'
+        res = fmt.format(*vals)
+        return res
+

@@ -6,7 +6,7 @@ Created on Mon Sep 25 15:33:39 2023
 @author: Jan Saroun, saroun@ujf.cas.cz
 """
 
-#%% Run test
+#%% Test objects
 import abc
 from matplotlib import pyplot as plt
 import matplotlib as mpl
@@ -15,8 +15,8 @@ from stressfit.tracing import options
 options['gpu'] = True
 from stressfit.tracing.cuda import cp, asnumpy, has_gpu, to_numpy
 from stressfit.tracing.cells import Cell, Extinction, Material
-from stressfit.tracing.primitives import Transform, Cylinder, Plane, Sphere, Group
-#from stressfit.tracing.primitives import create_group
+from stressfit.tracing.primitives import Transform, Cylinder, Plane, Sphere, ECylinder
+from stressfit.tracing.primitives import Group, RootGroup
 from stressfit.tracing.events import StrainSampling
 from stressfit.tracing.scan import ScanGeometry
 from stressfit.tracing.integrals import GaugeIntegral
@@ -25,10 +25,13 @@ import pandas as pd
 
 _run_tests = ['scan','primitives', 'integrals']
 _run_tests = ['scan']
-_run_tests = ['primitives']
-_run_tests = [ 'integrals']
 _run_tests = ['bench']
+_run_tests = ['integrals']
+_run_tests = ['primitives']
+#_run_tests = []
 
+# TODO test PolygonBar 
+# TODO test with variable velocities
     
 def test_transform():
     print('\ntest_transform ... ',end='')
@@ -224,7 +227,13 @@ class TestObj():
             xlim[1] = max(xlim[1],1.05*(el.R+o[0]))
             ylim[0] = min(ylim[0],1.05*(-el.R+o[1]))
             ylim[1] = max(ylim[1],1.05*(el.R+o[1]))
-        if isinstance(el, Sphere):
+        elif isinstance(el, ECylinder):
+            o = asnumpy(el.trg.orig[p,0])
+            xlim[0] = min(xlim[0],1.05*(-el.a+o[0]))
+            xlim[1] = max(xlim[1],1.05*(el.a+o[0]))
+            ylim[0] = min(ylim[0],1.05*(-el.b+o[1]))
+            ylim[1] = max(ylim[1],1.05*(el.b+o[1]))
+        elif isinstance(el, Sphere):
             o = asnumpy(el.trg.orig[p,0])
             xlim[0] = min(xlim[0],1.05*(-el.R+o[0]))
             xlim[1] = max(xlim[1],1.05*(el.R+o[0]))
@@ -274,14 +283,18 @@ class TestObj():
                 vi[i] = cp.zeros(n)
                 vf[i] = cp.zeros(n)
         r = cp.array(r)
-        vi = cp.array(vi)
-        vf = cp.array(vf)
+        # +- 10% random spread of velocities
+        dv = 1+(cp.random.random() - 0.5)*0.2
+        vi = dv*cp.array(vi)
+        vf = dv*cp.array(vf)
         return r,vi,vf    
 
     def _create_test_events(self):
+        
         r =  [[0.5,0,0], [-0.25,0,0.75]]
         vi = [[1,0,2], [1,0,1]]
         vf = [[1,0,0], [1,0,-1]]
+
         # normalize velocities
         for i in range(len(vi)):
             vn = np.linalg.norm(vi[i])/self.scale
@@ -289,6 +302,7 @@ class TestObj():
             vn = np.linalg.norm(vf[i])/self.scale
             vf[i] = cp.array(vf[i])/vn
             r[i] = cp.array(r[i])*self.scale
+        
         r = cp.asarray(r).T
         vi = cp.asarray(vi).T
         vf = cp.asarray(vf).T
@@ -415,7 +429,11 @@ class TestObj():
         sf1 = {'shape':'Cylinder', 'R':self.scale*1, 'axis':'y', 'inner':1,
                'tr':{'orig':[-1.0*self.scale, 0.0, 0.0]}}           
         sf2 = {'shape':'Cylinder', 'R':self.scale*1, 'axis':'y'}
-        root = Group(surfaces=[sf1, sf2], op='and')
+        
+        sf1 = {'shape':'ECylinder', 'a':2, 'b':1, 'axis':'y', 'inner':-1,
+               'tr':{'orig':[0, 0.0, 0.0]}} 
+        root = RootGroup(surfaces=[sf1, sf2], op='and')
+        
         return root
 
     def test_rays(self, n=1000):
@@ -453,7 +471,7 @@ class TestSimple(TestObj):
         super().__init__(**kwargs)
     
     def create_group(self):
-        return Group(**self.param)
+        return RootGroup(**self.param)
         #return Box(size=[1,1,1])
     
 
@@ -514,7 +532,7 @@ class TestCone(TestObj):
                 'inner':-1, 'tr':tr}
         g_cyl = {'surfaces':[px3,px4, cyl], 'op':'and', 'inner':-1}
         g_cone = {'surfaces':[px1,px2, cone], 'op':'and', 'inner':-1}
-        root = Group(groups=[g_cyl,g_cone], surfaces=[], op='or', 
+        root = RootGroup(surfaces=[g_cyl,g_cone], op='or', 
                              tr={'angles':[0,self.angle,0]})
         return root
 
@@ -587,11 +605,31 @@ class TestHexagon(TestObj):
                   ]
         elif self.shape=='Box':
             size = [2*R1, 2*R1, 2*R1]
-            ang = [0,45,0]
+            ang1 = [0,0,0]
+            ang2 = [0,60,0]
             sf1 = [{'shape':'Box','size':size,  
-                    'tr':{'orig':[0.0, 0.0, 0.0], 'angles':ang}},
+                    'tr':{'orig':[0.0, 0.0, 0.0], 'angles':ang1}},
                    {'shape':'Box','size':size,
-                    'tr':{'orig':[0.0, 0.0, 2*rho*si], 'angles':ang}}
+                    'tr':{'orig':[0.0, 0.0, 2*rho*si], 'angles':ang2}}
+                  ]
+        elif self.shape=='ECylinder':
+            sf1 = [{'shape':'ECylinder', 'axis':'y', 'a':R1, 'b':R1*0.75, 
+                    'angle':-30, 'tr':{'orig':[0.0, 0.0, 0.0]}},
+                   {'shape':'ECylinder', 'axis':'y', 'a':R1, 'b':R1*0.75, 
+                    'angle':30,'tr':{'orig':[0.0, 0.0, 2*rho*si]}}
+                  ]
+        
+        elif self.shape=='PolygonBar':
+            ang1 = [0,0,0]
+            ang2 = [0,0,0]
+            side=1.0
+            height=50.0
+            sf1 = [{'shape':'PolygonBar',
+                    'num':6, 'side':side,'height':height, 'axis':'y',
+                    'tr':{'orig':[0.0, 0.0, 0.0], 'angles':ang1}},
+                   {'shape':'PolygonBar',
+                    'num':5, 'side':side,'height':height, 'axis':'y',
+                    'tr':{'orig':[0.0, 0.0, 2*rho*si], 'angles':ang1}}
                   ]
         else:
             sf1 = [{'shape':'Cylinder', 'axis':'y', 'R':R1,
@@ -616,25 +654,19 @@ class TestHexagon(TestObj):
         
         # we could just rotate around zero origin, but this will test the full
         # transformation
-        gr2 = {'groups':gr,'op':op[3], 'inner':inner[3], 
+        gr2 = {'surfaces':gr,'op':op[3], 'inner':inner[3], 
                 'tr':{'order':1, 'orig':[2.0, 0.0, -2.0], 'rotctr':[-2,0,0], 
                       'angles':[0, -90, 0]}
                 }
-        
-        # the same with order<0
-        #gr2 = [{'groups':gr,'op':op[3], 'inner':inner[3], 'order':-1, 
-        #        'orig':[2.0, 0.0, 2.0], 'rotctr':[-2,0,0], 'angles':[0, -90, 0]}]
-        
+
         if self.frame=='circle':
             # sphere through hexagon corners
             if self.shape=='Sphere':
-                sf2 = [{'shape':'Sphere', 'R':R2, 'inner':inner[4]}]
+                sf2 = {'shape':'Sphere', 'R':R2, 'inner':inner[4]}
             else:
-                sf2 = [{'shape':'Cylinder', 'axis':'y', 'R':R2, 
-                        'inner':inner[4]}]
-            root = Group(groups=[gr2], surfaces=sf2, op=op[4])
-            #DEBUG
-            #root = Group(groups=[gr2], surfaces=[], op=op[4])
+                sf2 = {'shape':'Cylinder', 'axis':'y', 'R':R2, 
+                        'inner':inner[4]}
+            root = RootGroup(surfaces=[gr2,sf2], op=op[4])
         else:
             g1 = {'shape':'Box', 'size':[2*R2,2*R2,2*R2], 'inner':inner[4]}
             g2 = {'shape':'Box', 'size':[2*R2,2*R2,2*R2], 'inner':inner[4],
@@ -647,8 +679,8 @@ class TestHexagon(TestObj):
             #g1 = {'surfaces':[px1,px2,pz1,pz2], 'op':'and', 'inner':inner[4]}
             #g2 = {'surfaces':[px1,px2,pz1,pz2], 'op':'and', 'inner':inner[4],
             #      'tr':{'angles':[0,45,0]}}
-            root = Group(groups=[gr2], surfaces=[g1, g2], op=op[4],
-                                tr={'angles':[0,30,0]})
+            root = RootGroup(surfaces=[gr2, g1, g2], op=op[4], 
+                         tr={'angles':[0,30,0]})
         return root
 
 
@@ -705,7 +737,7 @@ class TestWires(TestObj):
                'tr':{'orig':[self.rho*co, 0.0, self.rho*si],'angles':[0,dom,0]}}
         sf4 = {'shape':'Cylinder', 'axis':'y', 'R':self.R2, 'inner':1, 
                'tr':{'orig':[self.rho*co, 0.0, -self.rho*si],'angles':[0,-dom,0]}}
-        root = Group(surfaces=[sf1, sf2, sf3, sf4], op='and')
+        root = RootGroup(surfaces=[sf1, sf2, sf3, sf4], op='and')
         return root
     
     
@@ -888,11 +920,12 @@ class AbstractTest():
 
 
     def plot(self, title='', trace=True, limits=None):
+        fnt = 12
         if limits:
             xlim, ylim = limits
         else:
             xlim, ylim = self.get_limits()
-        fig, ax = plt.subplots(figsize=(5,5))
+        fig, ax = plt.subplots(figsize=(7,7))
         ax.set_xlim(xlim)
         ax.set_ylim(ylim)
         self.plot_cell(ax, limits=[xlim, ylim])
@@ -913,11 +946,11 @@ class AbstractTest():
         ax.plot(r2[0], r2[2], color='black', marker='x', linestyle='none', markersize=4)
         if trace:
             self.plot_trace(ax)
-        ax.set_xlabel('x')
-        ax.set_ylabel('z')
+        ax.set_xlabel('x',fontsize=fnt)
+        ax.set_ylabel('z',fontsize=fnt)
         ax.grid()
         if title:
-            plt.title(title, fontsize = 8)
+            plt.title(title, fontsize=fnt)
         plt.show() 
     
     def run(self, tests='all', **options):
@@ -949,7 +982,6 @@ class AbstractTest():
             try:
                 self.run_test(key)
                 print('passed')
-                # TODO
                 # check also nvidia-smi
                 mempool = cp.get_default_memory_pool()
                 mb = 1024**2
@@ -1019,6 +1051,34 @@ class TestSurface(AbstractTest):
     def define_tests(self, **options):
         self.tests.clear()  
         
+        orig = [3,0,0]
+        rotctr = [-3,0,0]
+        stp = -60
+        frame = {'shape':'Sphere', 'R':4, 'inner':-1} 
+        
+        cyl = {'shape':'Cylinder', 'R':1, 'axis':'y', 'inner':1, 
+               'tr':{'orig':orig, 'rotctr':rotctr, 'angles':[0,4*stp,0]}} 
+        sph = {'shape':'Sphere', 'R':1, 'inner':1, 
+               'tr':{'orig':orig, 'rotctr':rotctr, 'angles':[0,1*stp,0]}} 
+        box = {'shape':'Box', 'size':[1.75,1.25,1.5], 'inner':1,
+               'tr':{'orig':orig, 'rotctr':rotctr, 'angles':[0,2*stp,0]}} 
+        
+        cone = {'shape':'Cone', 'a':1, 'axis':'y', 'inner':1, 
+               'tr':{'orig':[3,-1, 0], 'rotctr':rotctr, 'angles':[0,3*stp, 30]}} 
+
+        erod = {'shape':'ECylinder', 'a':1, 'b':0.5, 'axis':'y', 'inner':1, 
+                'angle':90,
+               'tr':{'orig':orig, 'rotctr':rotctr, 'angles':[0,5*stp,0]}}
+        pbar = {'shape':'PolygonBar', 'num':6, 'side':1, 'axis':'y', 'inner':1,
+               'tr':{'orig':orig, 'rotctr':rotctr, 'angles':[0,0,0]}}
+
+        g = {'surfaces':[cyl,sph,box,cone, erod, pbar],'op':'and'}
+        param = {'surfaces':[frame, g], 'op':'and'}
+
+        self.tests['Primitives'] = TestSimple(title='Primitives', param=param, 
+                                              **options)
+        
+        
         self.tests['Moon'] = TestObj(title='Moon', **options)
         
         param = {'R1':0.8, 'R2':2, 
@@ -1050,6 +1110,13 @@ class TestSurface(AbstractTest):
                  'inner':[-1,-1,-1, 1,-1]}  
         self.tests['Hexagon_Box'] = TestHexagon(title='Hexagon_Box', 
                                                 param=param, shape='Box', 
+                                                limits = [[-4,4],[-4,4]],
+                                                **options)
+        param = {'R1':0.5, 'R2':3, 
+                 'op':['or','or','or', 'or','and'], 
+                 'inner':[-1,-1,-1, 1,-1]}  
+        self.tests['Hexagon_Ell'] = TestHexagon(title='Hexagon_Ell', 
+                                                param=param, shape='ECylinder', 
                                                 limits = [[-4,4],[-4,4]],
                                                 **options)
 
@@ -1176,7 +1243,6 @@ class TestConv(AbstractTest):
                             nev=10000, nev_show=20)
         return test
         
-
     def define_tests(self, **options):
         self.tests.clear()
         
@@ -1200,7 +1266,10 @@ class TestConv(AbstractTest):
         self.tests['Test_3'] = self.define_circular_scan(comp='hoop',
                                                          shape='Box', 
                                                          frame='circle') 
-    
+        
+        self.tests['Test_4'] = self.define_circular_scan(comp='hoop',
+                                                         shape='ECylinder', 
+                                                         frame='circle')    
     def initiate(self):
         # load sampling events
         evdata = load_data('events_S_1mm.dat',kind='data')
@@ -1395,7 +1464,7 @@ class TestConv(AbstractTest):
         self.plot_strain(gauge, to_numpy(conv), self.conv_test.scan)
         
     def init_bench(self):
-        self.conv_test = self.define_circular_scan(comp='rad', shape='Box')
+        self.conv_test = self.define_circular_scan(comp='rad', shape='ECylinder')
         self.obj = self.conv_test.obj
         self.conv_test.initiate(self.sampling, self.material)
         
@@ -1440,27 +1509,25 @@ def bench_convolution():
     time = test.bench(n_repeat=100)
     print('time: {:g}'.format(time))
 
+#%% Main
 if __name__ == "__main__":
     print('test_tracing:')
     for test in _run_tests:
         if test=='primitives':
             test = TestSurface()
-            test.run(tests='All', nev=100, random=True)
+            test.run(tests=['Primitives'], nev=100, random=True)
+           # test.run(tests=['Hexagon_Ell'], nev=100, random=True)
         if test=='integrals' in _run_tests:
             test = TestConv(save=True)
-            test.run(tests=['Test_3'])
+            test.run(tests=['Test_4'])
         if test=='scan':
             test_scan()
         if test=='bench':
             bench_convolution()
         
 
-#%%
-#r = cp.eye(3)
-#tr = Transform(angles=[-90,0,0], orig=[0,0.5,0])
-#r1 = tr.r_to_loc(r[2])
-#print(r1)
-#%%
+
+#%% Test cone
 
 def test_cone_depth():
     eps = 1e-10
@@ -1533,8 +1600,115 @@ def test_cone_coord():
     
 
        
-# test_cone_depth()
-# test_cone_coord()
+#test_cone_depth()
+#test_cone_coord()
 
+#%% Test ellipse
+
+from stressfit.tracing.primitives import ellipse_nearest_point
+
+
+def draw(a, b, r=None, rc=None, dist=None, plotnorm=True, color='r'):
+    def get_normal(rc, a, b):
+        mat = np.diagflat([b**2,a**2])
+        n = np.dot(mat,rc)
+        return n/np.linalg.norm(n, axis=0)
+    # plot ellipse
+    t = 2*np.pi*np.linspace(0,1,num=100, dtype=float)
+    y = b*np.sin(t)
+    x = a*np.cos(t)
+    fig, ax = plt.subplots(figsize=(7,7))
+    rng = max(a,b)
+    xlim = [-rng*1.5, rng*1.5]
+    ylim = xlim
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    ax.plot(x,y,'k-')
+    # plot sample points
+    pt_args = {'linestyle':'none', 'marker':'.'}
+    rs = None
+    if r is not None:
+        rs = asnumpy(r)
+        d = asnumpy(dist)
+        if dist is not None:
+            rs_none = rng*10*np.ones(rs.shape)
+            m = np.array(d<0, dtype=int)
+            rs_in = m*rs + (1-m)*rs_none
+            rs_out = m*rs_none + (1-m)*rs
+            ax.plot(rs_in[0,:], rs_in[1,:], color='black', **pt_args)
+            ax.plot(rs_out[0,:], rs_out[1,:], color='gray', **pt_args)
+        else:
+            ax.plot(rs[0,:], rs[1,:], color='black', **pt_args)
+    
+    # plot normals and distances
+    line_solid = {'linestyle':'solid', 'linewidth':0.75, 'marker':'none'}
+    line_dash = {'linestyle':'solid', 'linewidth':0.5, 'marker':'none'}
+    if rc is not None:
+        rr = asnumpy(rc)
+        ax.plot(rr[0,:], rr[1,:], color=color, **pt_args)
+        if rs is not None:
+            for i in range(rr.shape[1]):
+                ax.plot([rr[0,i],rs[0,i]], [rr[1,i],rs[1,i]], 
+                        color=color, **line_solid)
+        if plotnorm:
+            vn = get_normal(rr, a, b)
+            rn = rr + vn 
+            for i in range(rr.shape[1]):
+                ax.plot([rr[0,i],rn[0,i]], [rr[1,i],rn[1,i]], 
+                        color='gray', **line_dash)
+    ax.grid()
+    plt.show()
+ 
+
+# TODO: debug, previous working is version in tracing.primitives
+def test_ellipse_dist(a=5, b=2, ns=1000, tol=0.001, verbose=False):
+    """Test search for nearest point at an ellipse."""
+    if verbose:
+        msg = 'Test distance from ellipse, a={:g}, b={:g}, tol={:g}, np={:g}'
+        print(msg.format(a, b, tol, ns))
+    # get points on the ellipse 
+    phi = cp.linspace(0, 2*cp.pi, num=ns, endpoint=False)
+    tx = cp.cos(phi)
+    ty =  cp.sin(phi)
+    r0 = cp.array([a*tx,b*ty])
+    n = len(phi) # number of points
+    nb = max(1,int(ns/100)) # skip points for visualization, show up to 100 pts
+    # centers of curvature
+    ctr = cp.array([(a*a - b*b)*tx**3/a, 
+                    (b*b - a*a)*ty**3/b]) + 1e-10
+    # normals to the ellipse
+    r1 = r0 - ctr
+    # minimum and maximum distances from the ellipse, relative to r1
+    kmin = cp.maximum(-ctr[0,:]/r1[0,:], -ctr[1,:]/r1[1,:])
+    kmax = cp.ones(n)
+    # random points along normals at r0
+    cp.random.seed(1001)
+    r =  ctr + (kmin + (kmax-kmin)*2*cp.random.rand(n))*r1
+    # normals from these points outwards   
+    mat = cp.diagflat(cp.array([b**2,a**2]))
+    n = cp.dot(mat,r0)
+    rn = n/np.linalg.norm(n, axis=0)
+    # distance of p along these normals, positive for points outside the ellipse 
+    dist0 = cp.sum(rn*(r-r0), axis=0)
+    if verbose:
+        draw(a, b, r=r[:,::nb], rc=r0[:,::nb], dist=dist0[::nb],color='r')
+    # evaluated nearest distance from the ellipse
+    dist1, r1, rn1 = ellipse_nearest_point(a, b, r, tol=0.001)
+    # dist1, rc1  = ell_nearest_point(a, b, r, verbose=verbose, tol=tol)
+    if verbose:
+        draw(a, b, r=r[:,::nb], rc=r1[:,::nb], dist=dist1[::nb], color='g')
+    # difference in nearest points positions
+    dif = r1 - r0
+    # difference of distances
+    ddist = dist1-dist0
+    # check for the maximum difference
+    qry1 = cp.max(cp.abs(dif))
+    qry2 = cp.max(cp.abs(ddist))
+    if verbose:
+        print('maximum coordinate difference: {:g}'.format(qry1))
+        print('maximum distance difference: {:g}'.format(qry2))
+    assert(qry2<tol)
+    
+#test_ellipse_dist(a=5, b=2, verbose=True, ns=100000, tol=0.001)
 
 
